@@ -1,8 +1,15 @@
+//
+//  LabLoginView.swift
+//  MediOps
+//
+//  Created by IOS on 17/03/25.
+//
+
 import SwiftUI
 
-struct DoctorLoginView: View {
+struct LabLoginView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var doctorId: String = ""
+    @State private var labId: String = ""
     @State private var password: String = ""
     @State private var isLoggedIn: Bool = false
     @State private var showError: Bool = false
@@ -25,13 +32,14 @@ struct DoctorLoginView: View {
                             .frame(width: 120, height: 120)
                             .shadow(color: .gray.opacity(0.2), radius: 10)
                         
-                        Image(systemName: "stethoscope")
+                        Image(systemName: "document.fill")
                             .resizable()
                             .scaledToFit()
                             .frame(width: 60, height: 60)
                             .foregroundColor(.teal)
                     }
-                    Text("Doctor Login")
+                    
+                    Text("Lab Login")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.teal)
                 }
@@ -39,13 +47,13 @@ struct DoctorLoginView: View {
                 
                 // Login Form
                 VStack(spacing: 25) {
-                    // Doctor ID field
+                    // Admin ID field
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Doctor ID")
+                        Text("Lab ID")
                             .font(.subheadline)
                             .foregroundColor(.gray)
                         
-                        TextField("Enter your doctor ID", text: $doctorId)
+                        TextField("Enter your Lab ID", text: $labId)
                             .textFieldStyle(CustomTextFieldStyle())
                     }
                     
@@ -86,9 +94,9 @@ struct DoctorLoginView: View {
                 Spacer()
             }
             
-            NavigationLink(destination: DoctorHomeView(), isActive: $isLoggedIn) {
-                EmptyView()
-            }
+//            NavigationLink(destination: AdminHomeView(), isActive: $isLoggedIn) {
+//                EmptyView()
+//            }
         }
         .navigationBarBackButtonHidden(true)
         .navigationBarItems(leading: CustomBackButton())
@@ -101,7 +109,7 @@ struct DoctorLoginView: View {
     
     private func handleLogin() {
         // Validate inputs
-        if doctorId.isEmpty || password.isEmpty {
+        if labId.isEmpty || password.isEmpty {
             errorMessage = "Please fill in all fields"
             showError = true
             return
@@ -114,6 +122,7 @@ struct DoctorLoginView: View {
 
 #Preview {
     NavigationStack {
-        DoctorLoginView()
+        LabLoginView()
     }
-} 
+}
+

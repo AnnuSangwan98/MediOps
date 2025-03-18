@@ -5,6 +5,7 @@ enum AppView {
     case patientLogin
     case doctorLogin
     case adminLogin
+    case labLogin
     case patientSignup
     case patientDetails
     case patientHome

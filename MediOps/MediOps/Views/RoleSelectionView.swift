@@ -4,11 +4,12 @@ struct RoleSelectionView: View {
     @State private var selectedRole: Role = .none
     
     enum Role {
-        case admin, doctor, patient, none
+        case admin, doctor, lab, patient, none
     }
     
     var body: some View {
         NavigationStack {
+            
             VStack(spacing: 40) {
                 // Logo and Welcome Text
                 VStack(spacing: 20) {
@@ -45,8 +46,8 @@ struct RoleSelectionView: View {
                     // Administrator Button
                     NavigationLink(destination: AdminLoginView()) {
                         RoleButton(
-                            icon: "person.badge.key.fill",
-                            title: "Administrator",
+                            icon: "person.badge.key",
+                            title: "Admin",
                             isHighlighted: selectedRole == .admin
                         )
                     }
@@ -66,10 +67,22 @@ struct RoleSelectionView: View {
                         selectedRole = .doctor
                     })
                     
+                    // Lab Button
+                    NavigationLink(destination: LabLoginView()) {
+                        RoleButton(
+                            icon: "document",
+                            title: "Lab",
+                            isHighlighted: selectedRole == .lab
+                        )
+                    }
+                    .simultaneousGesture(TapGesture().onEnded {
+                        selectedRole = .lab
+                    })
+                    
                     // Patient Button
                     NavigationLink(destination: PatientLoginView()) {
                         RoleButton(
-                            icon: "person.circle.fill",
+                            icon: "person",
                             title: "Patient",
                             isHighlighted: selectedRole == .patient
                         )

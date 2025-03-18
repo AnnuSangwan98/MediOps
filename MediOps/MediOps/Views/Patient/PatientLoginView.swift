@@ -22,16 +22,18 @@ struct PatientLoginView: View {
             VStack(spacing: 30) {
                 // Logo and Header
                 VStack(spacing: 15) {
-                    Image(systemName: "person.circle.fill")
-                        .resizable()
-                        .frame(width: 80, height: 80)
-                        .foregroundColor(.teal)
-                        .padding()
-                        .background(
-                            Circle()
-                                .fill(Color.white)
-                                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
-                        )
+                    ZStack {
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 120, height: 120)
+                            .shadow(color: .gray.opacity(0.2), radius: 10)
+                        
+                        Image(systemName: "person.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 60, height: 60)
+                            .foregroundColor(.teal)
+                    }
                     
                     Text("Patient Login")
                         .font(.system(size: 32, weight: .bold))
@@ -103,30 +105,30 @@ struct PatientLoginView: View {
                         .frame(height: 55)
                         .background(
                             LinearGradient(gradient: Gradient(colors: [Color.teal, Color.teal.opacity(0.8)]),
-                                         startPoint: .leading,
-                                         endPoint: .trailing)
+                                           startPoint: .leading,
+                                           endPoint: .trailing)
                         )
                         .cornerRadius(15)
                         .shadow(color: .teal.opacity(0.3), radius: 5, x: 0, y: 5)
                     }
                     .padding(.top, 10)
+                }
+                    .padding(.horizontal, 30)
                     
-                    // Signup Navigation Link
+                    Spacer()
+                    
+                    // Login Navigation Link
                     NavigationLink(destination: PatientSignupView()) {
                         HStack {
                             Text("Not a user?")
                                 .foregroundColor(.gray)
-                            Text("Sign up here")
+                            Text("SignUp here")
                                 .foregroundColor(.teal)
                                 .fontWeight(.semibold)
                         }
                         .font(.subheadline)
                     }
-                    .padding(.top, 20)
-                }
-                .padding(.horizontal, 30)
-                
-                Spacer()
+                    .padding(.vertical, 20)
             }
         }
         .navigationBarBackButtonHidden(true)

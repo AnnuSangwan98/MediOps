@@ -19,17 +19,18 @@ struct AdminLoginView: View {
             VStack(spacing: 30) {
                 // Logo and Header
                 VStack(spacing: 15) {
-                    Image(systemName: "person.badge.shield.checkmark")
-                        .resizable()
-                        .frame(width: 80, height: 80)
-                        .foregroundColor(.teal)
-                        .padding()
-                        .background(
-                            Circle()
-                                .fill(Color.white)
-                                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
-                        )
-                    
+                    ZStack {
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 120, height: 120)
+                            .shadow(color: .gray.opacity(0.2), radius: 10)
+                        
+                        Image(systemName: "person.badge.key.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 60, height: 60)
+                            .foregroundColor(.teal)
+                    }
                     Text("Admin Login")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.teal)

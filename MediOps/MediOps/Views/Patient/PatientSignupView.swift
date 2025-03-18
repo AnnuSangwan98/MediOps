@@ -20,11 +20,27 @@ struct PatientSignupView: View {
                 .ignoresSafeArea()
             
             VStack(spacing: 30) {
-                // Header
-                Text("Sign-Up")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundColor(.teal)
-                    .padding(.top, 50)
+                
+                VStack(spacing: 15) {
+                    ZStack {
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 120, height: 120)
+                            .shadow(color: .gray.opacity(0.2), radius: 10)
+                        
+                        Image(systemName: "person.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 60, height: 60)
+                            .foregroundColor(.teal)
+                    }
+                    
+                    Text("Patient SignUp")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.teal)
+                }
+                .padding(.top, 50)
+
                 
                 // Form Content
                 VStack(spacing: 25) {

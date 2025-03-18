@@ -110,7 +110,7 @@ struct InputPatientDetailsView: View {
                         // Submit Button
                         Button(action: handleSubmit) {
                             HStack {
-                                Text("Complete Signup")
+                                Text("Complete SignUp")
                                     .font(.title3)
                                     .fontWeight(.semibold)
                                 Image(systemName: "checkmark.circle")
