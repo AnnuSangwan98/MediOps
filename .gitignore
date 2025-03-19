@@ -1,0 +1,22 @@
+# Xcode
+DerivedData/
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Ignore Temporary and Cache Files
+*.DS_Store
+*.swp
+*.lock
+*.mode1v3
+# Ignore Logs and Debug Symbols
+*.log
+*.dSYM/
