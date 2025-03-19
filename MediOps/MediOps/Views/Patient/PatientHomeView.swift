@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct PatientHomeView: View {
+    @StateObject private var hospitalVM = HospitalViewModel()
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -34,6 +36,85 @@ struct PatientHomeView: View {
                         }
                         .padding(.horizontal)
                         .padding(.top)
+                        
+                        // Search and Filter Section
+                        VStack(spacing: 10) {
+                            HStack {
+                                HospitalSearchBar(searchText: $hospitalVM.searchText)
+                                
+                                Menu {
+                                    ForEach(hospitalVM.availableCities, id: \.self) { city in
+                                        Button(action: {
+                                            if hospitalVM.selectedCity == city {
+                                                hospitalVM.selectedCity = nil
+                                            } else {
+                                                hospitalVM.selectedCity = city
+                                            }
+                                        }) {
+                                            HStack {
+                                                Text(city)
+                                                if hospitalVM.selectedCity == city {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    Button("Clear Filter", action: {
+                                        hospitalVM.selectedCity = nil
+                                    })
+                                } label: {
+                                    Image(systemName: "line.3.horizontal.decrease.circle")
+                                        .foregroundColor(.teal)
+                                        .font(.title2)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                        
+                        // Hospitals List - Only show when searching
+                        if !hospitalVM.searchText.isEmpty {
+                            VStack(alignment: .leading, spacing: 15) {
+                                Text("Search Results")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .padding(.horizontal)
+                                
+                                if hospitalVM.filteredHospitals.isEmpty {
+                                    Text("No hospitals found")
+                                        .foregroundColor(.gray)
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                        .padding()
+                                } else {
+                                    LazyVStack(spacing: 15) {
+                                        ForEach(hospitalVM.filteredHospitals) { hospital in
+                                            NavigationLink(destination: DoctorListView(hospitalName: hospital.name)) {
+                                                HospitalCard(hospital: hospital)
+                                                    .padding(.horizontal)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Upcoming Appointments
+                        VStack(alignment: .leading, spacing: 15) {
+                            Text("Upcoming Appointments")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .padding(.horizontal)
+                            
+                            // Placeholder for appointments list
+                            Text("No upcoming appointments")
+                                .foregroundColor(.gray)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.white)
+                                .cornerRadius(10)
+                                .shadow(color: .gray.opacity(0.1), radius: 5)
+                        }
+                        .padding()
                         
                         // Quick Actions Grid
                         LazyVGrid(columns: [
@@ -70,23 +151,6 @@ struct PatientHomeView: View {
                         }
                         .padding()
                         
-                        // Upcoming Appointments
-                        VStack(alignment: .leading, spacing: 15) {
-                            Text("Upcoming Appointments")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .padding(.horizontal)
-                            
-                            // Placeholder for appointments list
-                            Text("No upcoming appointments")
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(10)
-                                .shadow(color: .gray.opacity(0.1), radius: 5)
-                        }
-                        .padding()
                     }
                 }
             }
@@ -123,4 +187,4 @@ struct DashboardCard: View {
 
 #Preview {
     PatientHomeView()
-} 
+}
