@@ -4,7 +4,7 @@ struct RoleSelectionView: View {
     @State private var selectedRole: Role = .none
     
     enum Role {
-        case admin, doctor, lab, patient, none
+        case superAdmin, admin, doctor, lab, patient, none
     }
     
     var body: some View {
@@ -43,6 +43,17 @@ struct RoleSelectionView: View {
                 
                 // Role Selection Buttons
                 VStack(spacing: 20) {
+                    // Administrator Button
+                    NavigationLink(destination: SuperAdminLoginView()) {
+                        RoleButton(
+                            icon: "person.badge.key",
+                            title: "Super Admin",
+                            isHighlighted: selectedRole == .superAdmin
+                        )
+                    }
+                    .simultaneousGesture(TapGesture().onEnded {
+                        selectedRole = .admin
+                    })
                     // Administrator Button
                     NavigationLink(destination: AdminLoginView()) {
                         RoleButton(
