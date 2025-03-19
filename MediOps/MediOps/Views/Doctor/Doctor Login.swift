@@ -315,34 +315,6 @@ struct ChangePasswordSheets: View {
     }
 }
 
-// Custom TextField Style
-struct CustomTextFieldStyless: TextFieldStyle {
-    func _body(configuration: TextField<Self._Label>) -> some View {
-        configuration
-            .padding()
-            .background(Color.white)
-            .cornerRadius(10)
-            .shadow(color: .gray.opacity(0.1), radius: 5, x: 0, y: 2)
-    }
-}
-
-// Custom Back Button
-struct CustomBackButtonss: View {
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        Button(action: {
-            dismiss()
-        }) {
-            Image(systemName: "chevron.left")
-                .foregroundColor(.teal)
-                .font(.system(size: 16, weight: .semibold))
-                .padding(10)
-                .background(Circle().fill(Color.white))
-                .shadow(color: .gray.opacity(0.2), radius: 3)
-        }
-    }
-}
 
 #Preview {
     NavigationStack {
