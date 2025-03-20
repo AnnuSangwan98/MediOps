@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DoctorListView: View {
     let hospitalName: String
+    let hospital: Hospital
     @StateObject private var doctorVM = DoctorViewModel()
     @State private var searchText = ""
     
