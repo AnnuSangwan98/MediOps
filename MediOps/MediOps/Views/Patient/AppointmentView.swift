@@ -17,7 +17,7 @@ struct AppointmentView: View {
         _selectedTime = State(initialValue: existingAppointment?.time)
     }
     
-    private let timeSlots = stride(from: 6, through: 22, by: 0.5).map { hour in
+    private let timeSlots = stride(from: 10, through: 20, by: 0.5).map { hour in
         Calendar.current.date(bySettingHour: Int(hour), minute: Int((hour.truncatingRemainder(dividingBy: 1) * 60)), second: 0, of: Date())!
     }
     
