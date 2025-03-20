@@ -52,7 +52,7 @@ struct RoleSelectionView: View {
                         )
                     }
                     .simultaneousGesture(TapGesture().onEnded {
-                        selectedRole = .admin
+                        selectedRole = .superAdmin
                     })
                     // Administrator Button
                     NavigationLink(destination: AdminLoginView()) {
