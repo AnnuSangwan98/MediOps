@@ -10,6 +10,7 @@ import SwiftUI
 struct PatientOTPVerificationView: View {
     @Environment(\.dismiss) private var dismiss
     let email: String
+    let expectedOTP: String  // Add this property
     
     @State private var otp: String = ""
     @State private var showError: Bool = false
@@ -131,7 +132,7 @@ struct PatientOTPVerificationView: View {
     }
     
     private func sendOtp() {
-        // TODO: Implement actual OTP sending
+        // No need to send OTP again as it's already sent from LoginView
         startTimer()
     }
     
@@ -142,8 +143,13 @@ struct PatientOTPVerificationView: View {
             return
         }
         
-        // TODO: Implement actual OTP verification
-        navigateToHome = true
+        // Verify OTP matches
+        if otp == expectedOTP {
+            navigateToHome = true
+        } else {
+            errorMessage = "Invalid OTP. Please try again."
+            showError = true
+        }
     }
     
     private func startTimer() {
