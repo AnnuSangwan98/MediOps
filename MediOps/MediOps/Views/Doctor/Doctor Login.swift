@@ -1,8 +1,8 @@
 import SwiftUI
 
-struct AdminLoginView: View {
+struct DoctorLoginView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var adminId: String = ""
+    @State private var doctorId: String = ""
     @State private var password: String = ""
     @State private var isLoggedIn: Bool = false
     @State private var showError: Bool = false
@@ -14,8 +14,8 @@ struct AdminLoginView: View {
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
-        return !adminId.isEmpty && !password.isEmpty &&
-               isValidAdminId(adminId) && isValidPassword(password)
+        return !doctorId.isEmpty && !password.isEmpty &&
+               isValidAdminId(doctorId) && isValidPassword(password)
     }
     
     private var isValidPasswordChange: Bool {
@@ -34,18 +34,20 @@ struct AdminLoginView: View {
             VStack(spacing: 30) {
                 // Logo and Header
                 VStack(spacing: 15) {
-                    Image(systemName: "person.badge.key.fill")
-                        .resizable()
-                        .frame(width: 80, height: 80)
-                        .foregroundColor(.teal)
-                        .padding()
-                        .background(
-                            Circle()
-                                .fill(Color.white)
-                                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
-                        )
+                    ZStack {
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 120, height: 120)
+                            .shadow(color: .gray.opacity(0.2), radius: 10)
+                        
+                        Image(systemName: "stethoscope")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 60, height: 60)
+                            .foregroundColor(.teal)
+                    }
                     
-                    Text("Admin Login")
+                    Text("Doctor Login")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.teal)
                 }
@@ -55,20 +57,20 @@ struct AdminLoginView: View {
                 VStack(spacing: 25) {
                     // Admin ID field
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Admin ID")
+                        Text("Doctor ID")
                             .font(.subheadline)
                             .foregroundColor(.gray)
                         
-                        TextField("Enter admin ID (e.g. HOS001)", text: $adminId)
+                        TextField("Enter doctor ID (e.g. DOC001)", text: $doctorId)
                             .textFieldStyle(CustomTextFieldStyle())
-                            .onChange(of: adminId) { _, newValue in
+                            .onChange(of: doctorId) { _, newValue in
                                 // Automatically format to uppercase for "HOS" part
                                 if newValue.count >= 3 {
                                     let hosPrefix = newValue.prefix(3).uppercased()
                                     let numericPart = newValue.dropFirst(3)
-                                    adminId = hosPrefix + numericPart
+                                    doctorId = hosPrefix + numericPart
                                 } else if newValue.count > 0 {
-                                    adminId = newValue.uppercased()
+                                    doctorId = newValue.uppercased()
                                 }
                             }
                     }
@@ -137,7 +139,7 @@ struct AdminLoginView: View {
                 Spacer()
             }
             
-            NavigationLink(destination: AdminHomeView(), isActive: $isLoggedIn) {
+            NavigationLink(destination: DoctorHomeView(), isActive: $isLoggedIn) {
                 EmptyView()
             }
         }
@@ -149,7 +151,7 @@ struct AdminLoginView: View {
             Text(errorMessage)
         }
         .sheet(isPresented: $showChangePasswordSheet) {
-            ChangePasswordSheet(
+            ChangePasswordSheets(
                 newPassword: $newPassword,
                 confirmPassword: $confirmPassword,
                 isValidInput: isValidPasswordChange,
@@ -173,7 +175,7 @@ struct AdminLoginView: View {
     
     // Validates that the admin ID is in format HOS followed by numbers
     private func isValidAdminId(_ id: String) -> Bool {
-        let adminIdRegex = #"^HOS\d+$"#
+        let adminIdRegex = #"^DOC\d+$"#
         return NSPredicate(format: "SELF MATCHES %@", adminIdRegex).evaluate(with: id)
     }
     
@@ -199,7 +201,7 @@ struct AdminLoginView: View {
 }
 
 // Change Password Sheet
-struct ChangePasswordSheet: View {
+struct ChangePasswordSheets: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var newPassword: String
     @Binding var confirmPassword: String
@@ -313,37 +315,9 @@ struct ChangePasswordSheet: View {
     }
 }
 
-// Custom TextField Style
-struct CustomTextFieldStyles: TextFieldStyle {
-    func _body(configuration: TextField<Self._Label>) -> some View {
-        configuration
-            .padding()
-            .background(Color.white)
-            .cornerRadius(10)
-            .shadow(color: .gray.opacity(0.1), radius: 5, x: 0, y: 2)
-    }
-}
-
-// Custom Back Button
-struct CustomBackButtons: View {
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        Button(action: {
-            dismiss()
-        }) {
-            Image(systemName: "chevron.left")
-                .foregroundColor(.teal)
-                .font(.system(size: 16, weight: .semibold))
-                .padding(10)
-                .background(Circle().fill(Color.white))
-                .shadow(color: .gray.opacity(0.2), radius: 3)
-        }
-    }
-}
 
 #Preview {
     NavigationStack {
-        AdminLoginView()
+        DoctorLoginView()
     }
 }

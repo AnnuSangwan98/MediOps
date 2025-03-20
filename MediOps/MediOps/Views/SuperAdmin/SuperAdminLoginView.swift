@@ -1,8 +1,8 @@
 import SwiftUI
 
-struct LabLoginView: View {
+struct SuperAdminLoginView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var labId: String = ""
+    @State private var adminId: String = ""
     @State private var password: String = ""
     @State private var isLoggedIn: Bool = false
     @State private var showError: Bool = false
@@ -11,8 +11,8 @@ struct LabLoginView: View {
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
-        return !labId.isEmpty && !password.isEmpty &&
-               isValidLabId(labId) && isValidPassword(password)
+        return !adminId.isEmpty && !password.isEmpty &&
+               isValidAdminId(adminId) && isValidPassword(password)
     }
     
     var body: some View {
@@ -26,20 +26,18 @@ struct LabLoginView: View {
             VStack(spacing: 30) {
                 // Logo and Header
                 VStack(spacing: 15) {
-                    ZStack {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 120, height: 120)
-                            .shadow(color: .gray.opacity(0.2), radius: 10)
-                        
-                        Image(systemName: "cross.case.fill")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 60, height: 60)
-                            .foregroundColor(.teal)
-                    }
+                    Image(systemName: "person.badge.key.fill")
+                        .resizable()
+                        .frame(width: 80, height: 80)
+                        .foregroundColor(.teal)
+                        .padding()
+                        .background(
+                            Circle()
+                                .fill(Color.white)
+                                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
+                        )
                     
-                    Text("Lab Login")
+                    Text("Super Admin Login")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.teal)
                 }
@@ -47,22 +45,22 @@ struct LabLoginView: View {
                 
                 // Login Form
                 VStack(spacing: 25) {
-                    // Lab ID field
+                    // Admin ID field
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Lab ID")
+                        Text("Super Admin ID")
                             .font(.subheadline)
                             .foregroundColor(.gray)
                         
-                        TextField("Enter lab ID (e.g. LAB001)", text: $labId)
+                        TextField("Enter super admin ID (e.g. HOS001)", text: $adminId)
                             .textFieldStyle(CustomTextFieldStyle())
-                            .onChange(of: labId) { _, newValue in
-                                // Automatically format to uppercase for "LAB" part
+                            .onChange(of: adminId) { _, newValue in
+                                // Automatically format to uppercase for "HOS" part
                                 if newValue.count >= 3 {
-                                    let labPrefix = newValue.prefix(3).uppercased()
+                                    let hosPrefix = newValue.prefix(3).uppercased()
                                     let numericPart = newValue.dropFirst(3)
-                                    labId = labPrefix + numericPart
+                                    adminId = hosPrefix + numericPart
                                 } else if newValue.count > 0 {
-                                    labId = newValue.uppercased()
+                                    adminId = newValue.uppercased()
                                 }
                             }
                     }
@@ -126,7 +124,7 @@ struct LabLoginView: View {
                 Spacer()
             }
             
-            NavigationLink(destination: LabDashboardView(), isActive: $isLoggedIn) {
+            NavigationLink(destination: SuperAdminDashboardView(), isActive: $isLoggedIn) {
                 EmptyView()
             }
         }
@@ -144,10 +142,10 @@ struct LabLoginView: View {
         isLoggedIn = true
     }
     
-    // Validates that the lab ID is in format LAB followed by numbers
-    private func isValidLabId(_ id: String) -> Bool {
-        let labIdRegex = #"^LAB\d+$"#
-        return NSPredicate(format: "SELF MATCHES %@", labIdRegex).evaluate(with: id)
+    // Validates that the admin ID is in format HOS followed by numbers
+    private func isValidAdminId(_ id: String) -> Bool {
+        let adminIdRegex = #"^HOS\d+$"#
+        return NSPredicate(format: "SELF MATCHES %@", adminIdRegex).evaluate(with: id)
     }
     
     // Validates password complexity
@@ -173,6 +171,6 @@ struct LabLoginView: View {
 
 #Preview {
     NavigationStack {
-        LabLoginView()
+        SuperAdminLoginView()
     }
 }
