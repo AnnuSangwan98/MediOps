@@ -57,6 +57,19 @@ struct SuperAdminDashboardView: View {
     // Sample data - Replace with actual data source
     @State private var hospitals: [Hospital] = []
     
+    private func isValidEmail(_ email: String) -> Bool {
+        let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
+        return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email)
+    }
+    
+    private func isValidPhoneNumber(_ phone: String) -> Bool {
+        return phone.count == 10 && phone.allSatisfy { $0.isNumber }
+    }
+    
+    private func isValidPinCode(_ pinCode: String) -> Bool {
+        return pinCode.count == 6 && pinCode.allSatisfy { $0.isNumber }
+    }
+    
     var body: some View {
         ZStack {
             LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
@@ -78,14 +91,7 @@ struct SuperAdminDashboardView: View {
                         }
                         Spacer()
                         
-                        Button(action: {
-                            // TODO: Implement profile action
-                        }) {
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .frame(width: 40, height: 40)
-                                .foregroundColor(.teal)
-                        }
+                       
                     }
                     .padding(.horizontal)
                     .padding(.top)
@@ -105,31 +111,12 @@ struct SuperAdminDashboardView: View {
                         }
                         
                         // Admin Management
-                        DashboardCards(
-                            title: "Admins",
-                            icon: "person.badge.key",
-                            color: .green
-                        ) {
-                            // Admin action
-                        }
+                      
                         
                         // Analytics
-                        DashboardCards(
-                            title: "Analytics",
-                            icon: "chart.bar",
-                            color: .purple
-                        ) {
-                            // Analytics action
-                        }
                         
                         // Settings
-                        DashboardCards(
-                            title: "Settings",
-                            icon: "gear",
-                            color: .orange
-                        ) {
-                            // Settings action
-                        }
+                       
                     }
                     .padding()
                     
@@ -215,24 +202,6 @@ struct SuperAdminDashboardView: View {
     }
     
     private func addHospital() {
-        // Validate form
-        guard !hospitalName.isEmpty && !adminName.isEmpty && !licenseNumber.isEmpty && !street.isEmpty &&
-              !city.isEmpty && !state.isEmpty && !zipCode.isEmpty &&
-              !phone.isEmpty && !email.isEmpty else {
-            errorMessage = "Please fill all required fields before submitting."
-            showError = true
-            return
-        }
-        
-        // Check for duplicate hospital
-        if hospitals.contains(where: { $0.name.lowercased() == hospitalName.lowercased() &&
-                                     $0.street.lowercased() == street.lowercased() &&
-                                     $0.city.lowercased() == city.lowercased() }) {
-            errorMessage = "This hospital is already registered."
-            showError = true
-            return
-        }
-        
         // Create new hospital
         let newHospital = Hospital(
             id: Hospital.generateUniqueID(),
@@ -245,7 +214,7 @@ struct SuperAdminDashboardView: View {
             zipCode: zipCode,
             phone: phone,
             email: email,
-            status: .pending,  // Set initial status as pending
+            status: .pending,
             registrationDate: Date(),
             lastModified: Date(),
             lastModifiedBy: "Super Admin"
@@ -254,9 +223,7 @@ struct SuperAdminDashboardView: View {
         hospitals.append(newHospital)
         showSuccessAlert = true
         showHospitalForm = false
-        
-        // TODO: Send email with credentials to admin
-        // TODO: Save to database
+        clearForm() // Only clear form after successful submission
     }
     
     private func updateHospital(_ hospital: Hospital) {
@@ -322,19 +289,19 @@ struct HospitalListItem: View {
                             .opacity(0.2)
                     )
                     .foregroundColor(statusColor)
-                Menu {
-                    Button(action: onEdit) {
-                        Label("Edit", systemImage: "pencil")
-                    }
-                    Button(role: .destructive, action: onDelete) {
-                        Label("Delete", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 20))
-                        .foregroundColor(.gray)
-                        .padding(8)
-                }
+//                Menu {
+//                    Button(action: onEdit) {
+//                        Label("Edit", systemImage: "pencil")
+//                  }
+////                    Button(role: .destructive, action: onDelete) {
+////                        Label("Delete", systemImage: "trash")
+////                    }
+//                } label: {
+//                    Image(systemName: "ellipsis")
+//                        .font(.system(size: 20))
+//                        .foregroundColor(.gray)
+//                        .padding(8)
+//                }
             }
             
             Text("\(hospital.street), \(hospital.city)")
@@ -393,24 +360,105 @@ struct AddHospitalForm: View {
     @Binding var email: String
     let onSubmit: () -> Void
     
+    @State private var showValidationErrors = false
+    @State private var emailError = ""
+    @State private var phoneError = ""
+    @State private var pinCodeError = ""
+    @State private var hospitalIdError = ""
+    
+    private func validateForm() -> Bool {
+        var isValid = true
+        
+        // Reset previous errors
+        emailError = ""
+        phoneError = ""
+        pinCodeError = ""
+        hospitalIdError = ""
+        
+        // Validate Hospital ID format
+        if !licenseNumber.hasPrefix("HOS") || licenseNumber.count != 6 {
+            hospitalIdError = "Hospital ID must start with HOS followed by 3 digits"
+            isValid = false
+        }
+        
+        // Validate email format
+        let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
+        if !NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email) {
+            emailError = "Please enter a valid email address"
+            isValid = false
+        }
+        
+        // Validate phone number
+        if phone.count != 10 || !phone.allSatisfy({ $0.isNumber }) {
+            phoneError = "Please enter a valid 10-digit phone number"
+            isValid = false
+        }
+        
+        // Validate pin code
+        if zipCode.count != 6 || !zipCode.allSatisfy({ $0.isNumber }) {
+            pinCodeError = "Please enter a valid 6-digit pin code"
+            isValid = false
+        }
+        
+        showValidationErrors = !isValid
+        return isValid
+    }
+    
     var body: some View {
         Form {
             Section(header: Text("Hospital Information")) {
                 TextField("Hospital Name", text: $hospitalName)
                 TextField("Admin Name", text: $adminName)
-                TextField("License Number", text: $licenseNumber)
+                TextField("Hospital ID", text: $licenseNumber)
+                    .placeholder(when: licenseNumber.isEmpty) {
+                        Text("Hospital ID (HOSXXXX)")
+                            .foregroundColor(.gray)
+                    }
+                if !hospitalIdError.isEmpty {
+                    Text(hospitalIdError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
             }
             
             Section(header: Text("Address")) {
                 TextField("Street", text: $street)
                 TextField("City", text: $city)
                 TextField("State", text: $state)
-                TextField("Zip Code", text: $zipCode)
+                TextField("Pin Code", text: $zipCode)
+                    .keyboardType(.numberPad)
+                    .placeholder(when: zipCode.isEmpty) {
+                        Text("Pin Code eg: 123456")
+                            .foregroundColor(.gray)
+                    }
+                if !pinCodeError.isEmpty {
+                    Text(pinCodeError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
             }
             
             Section(header: Text("Contact Information")) {
-                TextField("Phone", text: $phone)
+                HStack {
+                    Text("+91")
+                        .foregroundColor(.gray)
+                    TextField("Phone Number", text: $phone)
+                        .keyboardType(.numberPad)
+                }
+                if !phoneError.isEmpty {
+                    Text(phoneError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+                
                 TextField("Email", text: $email)
+                    .keyboardType(.emailAddress)
+                    .autocapitalization(.none)
+                if !emailError.isEmpty {
+                    Text(emailError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
             }
             
             if !hospitalName.isEmpty && !adminName.isEmpty && !licenseNumber.isEmpty && !street.isEmpty &&
@@ -418,7 +466,9 @@ struct AddHospitalForm: View {
                !phone.isEmpty && !email.isEmpty {
                 Section {
                     Button("Submit") {
-                        onSubmit()
+                        if validateForm() {
+                            onSubmit()
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .foregroundColor(.blue)
@@ -442,14 +492,23 @@ struct EditHospitalForm: View {
             Section(header: Text("Hospital Information")) {
                 TextField("Hospital Name", text: $editedHospital.name)
                 TextField("Admin Name", text: $editedHospital.adminName)
-                TextField("License Number", text: $editedHospital.licenseNumber)
+                TextField("Hospital ID", text: $editedHospital.licenseNumber)
+                    .placeholder(when: editedHospital.licenseNumber.isEmpty) {
+                        Text("Hospital ID (HOSXXXX)")
+                            .foregroundColor(.gray)
+                    }
             }
             
             Section(header: Text("Address")) {
                 TextField("Street", text: $editedHospital.street)
                 TextField("City", text: $editedHospital.city)
                 TextField("State", text: $editedHospital.state)
-                TextField("Zip Code", text: $editedHospital.zipCode)
+                TextField("Pin Code", text: $editedHospital.zipCode)
+                    .keyboardType(.numberPad)
+                    .placeholder(when: editedHospital.zipCode.isEmpty) {
+                        Text("Pin Code eg: 123456")
+                            .foregroundColor(.gray)
+                    }
             }
             
             Section(header: Text("Contact Information")) {
@@ -498,6 +557,19 @@ struct DashboardCards: View {
             .background(Color.white)
             .cornerRadius(15)
             .shadow(color: .gray.opacity(0.1), radius: 5)
+        }
+    }
+}
+
+extension View {
+    func placeholder<Content: View>(
+        when shouldShow: Bool,
+        alignment: Alignment = .leading,
+        @ViewBuilder placeholder: () -> Content) -> some View {
+        
+        ZStack(alignment: alignment) {
+            placeholder().opacity(shouldShow ? 1 : 0)
+            self
         }
     }
 }
