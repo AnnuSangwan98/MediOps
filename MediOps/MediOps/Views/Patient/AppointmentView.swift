@@ -21,6 +21,12 @@ struct AppointmentView: View {
         Calendar.current.date(bySettingHour: Int(hour), minute: Int((hour.truncatingRemainder(dividingBy: 1) * 60)), second: 0, of: Date())!
     }
     
+    private func isValidDate(_ date: Date) -> Bool {
+        let calendar = Calendar.current
+        let weekday = calendar.component(.weekday, from: date)
+        return weekday != 1 // 1 represents Sunday
+    }
+    
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -89,10 +95,20 @@ struct AppointmentView: View {
                     DatePicker(
                         "Select Date",
                         selection: $selectedDate,
+                        in: Date()...,
                         displayedComponents: [.date]
                     )
                     .datePickerStyle(.graphical)
                     .padding()
+                    .onChange(of: selectedDate) { newDate in
+                        if !isValidDate(newDate) {
+                            // If Sunday is selected, move to next day
+                            let calendar = Calendar.current
+                            if let nextDay = calendar.date(byAdding: .day, value: 1, to: newDate) {
+                                selectedDate = nextDay
+                            }
+                        }
+                    }
                     
                     // Time slots grid
                     LazyVGrid(columns: Array(repeating: .init(.flexible()), count: 4), spacing: 10) {
