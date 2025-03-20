@@ -472,7 +472,7 @@ struct AdminHomeView: View {
                         // Header
                         HStack {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Admin Dashboard")
+                                Text("Admin's Dashboard")
                                     .font(.title)
                                     .fontWeight(.bold)
                                 Text("Hospital Management System")
