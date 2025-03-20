@@ -1,3 +1,4 @@
+
 # Xcode
 DerivedData/
 xcuserdata/
@@ -20,3 +21,4 @@ Podfile.lock
 # Ignore Logs and Debug Symbols
 *.log
 *.dSYM/
+
