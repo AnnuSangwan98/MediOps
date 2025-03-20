@@ -2,10 +2,20 @@ import SwiftUI
 
 struct AppointmentView: View {
     let doctor: DoctorDetail
+    var existingAppointment: Appointment? = nil
+    var onUpdateAppointment: ((Appointment) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDate = Date()
     @State private var selectedTime: Date?
     @State private var showReviewAndPay = false
+    
+    init(doctor: DoctorDetail, existingAppointment: Appointment? = nil, onUpdateAppointment: ((Appointment) -> Void)? = nil) {
+        self.doctor = doctor
+        self.existingAppointment = existingAppointment
+        self.onUpdateAppointment = onUpdateAppointment
+        _selectedDate = State(initialValue: existingAppointment?.date ?? Date())
+        _selectedTime = State(initialValue: existingAppointment?.time)
+    }
     
     private let timeSlots = stride(from: 6, through: 22, by: 0.5).map { hour in
         Calendar.current.date(bySettingHour: Int(hour), minute: Int((hour.truncatingRemainder(dividingBy: 1) * 60)), second: 0, of: Date())!
@@ -70,12 +80,12 @@ struct AppointmentView: View {
                     .foregroundColor(.gray)
                     .padding()
                     
-                    // Calendar
+                    // Available Time
                     Text("Available Time")
                         .font(.headline)
                         .padding(.horizontal)
                     
-                    // Date selection
+                    // Date Picker
                     DatePicker(
                         "Select Date",
                         selection: $selectedDate,
@@ -84,7 +94,7 @@ struct AppointmentView: View {
                     .datePickerStyle(.graphical)
                     .padding()
                     
-                    // Time slots
+                    // Time slots grid
                     LazyVGrid(columns: Array(repeating: .init(.flexible()), count: 4), spacing: 10) {
                         ForEach(timeSlots, id: \.self) { time in
                             TimeSlotButton(time: time, isSelected: time == selectedTime) {
@@ -95,7 +105,7 @@ struct AppointmentView: View {
                     .padding()
                 }
             }
-            .navigationTitle("Book Appointment")
+            .navigationTitle(existingAppointment != nil ? "Reschedule Appointment" : "Book Appointment")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -103,9 +113,21 @@ struct AppointmentView: View {
                 }
             }
             
-            // Book appointment button
-            Button(action: { showReviewAndPay.toggle() }) {
-                Text("Book Appointment")
+            // Book / Update button
+            Button(action: {
+                if let existingAppointment = existingAppointment, let selectedTime = selectedTime {
+                    // Directly update without opening ReviewAndPayView
+                    var updatedAppointment = existingAppointment
+                    updatedAppointment.date = selectedDate
+                    updatedAppointment.time = selectedTime
+                    onUpdateAppointment?(updatedAppointment)
+                    dismiss()
+                } else {
+                    // New appointment — open ReviewAndPayView
+                    showReviewAndPay.toggle()
+                }
+            }) {
+                Text(existingAppointment != nil ? "Update Appointment" : "Book Appointment")
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding()
