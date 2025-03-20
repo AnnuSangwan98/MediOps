@@ -1,10 +1,9 @@
 import SwiftUI
 
 struct PatientHomeView: View {
-    
     @StateObject private var hospitalVM = HospitalViewModel()
     @StateObject private var appointmentManager = AppointmentManager.shared
-    
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -14,14 +13,14 @@ struct PatientHomeView: View {
             .navigationBarHidden(true)
         }
     }
-    
+
     private var backgroundGradient: some View {
         LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                      startPoint: .topLeading,
-                      endPoint: .bottomTrailing)
+                       startPoint: .topLeading,
+                       endPoint: .bottomTrailing)
             .ignoresSafeArea()
     }
-    
+
     private var mainContent: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -33,7 +32,7 @@ struct PatientHomeView: View {
             }
         }
     }
-    
+
     private var headerSection: some View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
@@ -45,10 +44,8 @@ struct PatientHomeView: View {
                     .foregroundColor(.gray)
             }
             Spacer()
-            
-            Button(action: {
-                // TODO: Implement profile action
-            }) {
+
+            Button(action: {}) {
                 Image(systemName: "person.circle.fill")
                     .resizable()
                     .frame(width: 40, height: 40)
@@ -58,27 +55,22 @@ struct PatientHomeView: View {
         .padding(.horizontal)
         .padding(.top)
     }
-    
+
     private var searchAndFilterSection: some View {
         VStack(spacing: 10) {
             HStack {
                 HospitalSearchBar(searchText: $hospitalVM.searchText)
-                
                 cityFilterMenu
             }
         }
         .padding(.horizontal)
     }
-    
+
     private var cityFilterMenu: some View {
         Menu {
-            ForEach(hospitalVM.availableCities, id: \.self) { city in
+            ForEach(hospitalVM.availableCities, id: \ .self) { city in
                 Button(action: {
-                    if hospitalVM.selectedCity == city {
-                        hospitalVM.selectedCity = nil
-                    } else {
-                        hospitalVM.selectedCity = city
-                    }
+                    hospitalVM.selectedCity = hospitalVM.selectedCity == city ? nil : city
                 }) {
                     HStack {
                         Text(city)
@@ -88,17 +80,15 @@ struct PatientHomeView: View {
                     }
                 }
             }
-            
-            Button("Clear Filter", action: {
-                hospitalVM.selectedCity = nil
-            })
+
+            Button("Clear Filter", action: { hospitalVM.selectedCity = nil })
         } label: {
             Image(systemName: "line.3.horizontal.decrease.circle")
                 .foregroundColor(.teal)
                 .font(.title2)
         }
     }
-    
+
     private var searchResultsSection: some View {
         Group {
             if !hospitalVM.searchText.isEmpty {
@@ -107,7 +97,7 @@ struct PatientHomeView: View {
                         .font(.title2)
                         .fontWeight(.bold)
                         .padding(.horizontal)
-                    
+
                     if hospitalVM.filteredHospitals.isEmpty {
                         Text("No hospitals found")
                             .foregroundColor(.gray)
@@ -127,14 +117,26 @@ struct PatientHomeView: View {
             }
         }
     }
-    
+
     private var upcomingAppointmentsSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Upcoming Appointments")
-                .font(.title2)
-                .fontWeight(.bold)
-                .padding(.horizontal)
-            
+            HStack {
+                Text("Upcoming Appointments")
+                    .font(.title2)
+                    .fontWeight(.bold)
+
+                Spacer()
+
+                if appointmentManager.appointments.count > 1 {
+                    NavigationLink(destination: AllAppointmentsView(appointments: appointmentManager.appointments)) {
+                        Text("See All")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
+            .padding(.horizontal)
+
             if appointmentManager.appointments.isEmpty {
                 Text("No upcoming appointments")
                     .foregroundColor(.gray)
@@ -144,44 +146,133 @@ struct PatientHomeView: View {
                     .cornerRadius(10)
                     .shadow(color: .gray.opacity(0.1), radius: 5)
             } else {
-                ForEach(appointmentManager.appointments) { appointment in
+                ForEach(appointmentManager.appointments.prefix(1)) { appointment in
                     AppointmentCard(appointment: appointment)
                 }
             }
         }
         .padding()
     }
-    
+
     private var quickActionsGrid: some View {
-        LazyVGrid(columns: [
-            GridItem(.flexible()),
-            GridItem(.flexible())
-        ], spacing: 20) {
-            DashboardCard(
-                title: "Appointments",
-                icon: "calendar",
-                color: .blue
-            )
-            
-            DashboardCard(
-                title: "Medical Records",
-                icon: "doc.text",
-                color: .green
-            )
-            
-            DashboardCard(
-                title: "Prescriptions",
-                icon: "pills",
-                color: .purple
-            )
-            
-            DashboardCard(
-                title: "Lab Reports",
-                icon: "cross.case",
-                color: .orange
-            )
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 20) {
+            DashboardCard(title: "Appointments", icon: "calendar", color: .blue)
+            DashboardCard(title: "Medical Records", icon: "doc.text", color: .green)
+            DashboardCard(title: "Prescriptions", icon: "pills", color: .purple)
+            DashboardCard(title: "Lab Reports", icon: "cross.case", color: .orange)
         }
         .padding()
+    }
+}
+
+struct AppointmentCard: View {
+    @State private var showCancelAlert = false
+    @State private var showRescheduleSheet = false
+    let appointment: Appointment
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack(spacing: 15) {
+                Circle()
+                    .fill(Color.teal)
+                    .frame(width: 50, height: 50)
+                    .overlay(
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.white)
+                    )
+
+                VStack(alignment: .leading) {
+                    Text(appointment.doctor.name)
+                        .font(.headline)
+                    Text(appointment.doctor.specialization)
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+
+                Spacer()
+
+                Text(appointment.status.rawValue)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.teal.opacity(0.1))
+                    .foregroundColor(.teal)
+                    .cornerRadius(8)
+            }
+
+            Divider()
+
+            HStack {
+                Image(systemName: "calendar")
+                Text(appointment.date.formatted(date: .long, time: .omitted))
+            }
+
+            HStack {
+                Image(systemName: "clock")
+                Text(appointment.time.formatted(date: .omitted, time: .shortened))
+            }
+
+            HStack(spacing: 12) {
+                Button(action: { showCancelAlert = true }) {
+                    Text("Cancel Appointment")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .padding(8)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                .alert(isPresented: $showCancelAlert) {
+                    Alert(
+                        title: Text("Cancel Appointment"),
+                        message: Text("Are you sure you want to cancel this appointment?"),
+                        primaryButton: .destructive(Text("Yes")) {
+                            AppointmentManager.shared.cancelAppointment(appointment)
+                        },
+                        secondaryButton: .cancel()
+                    )
+                }
+
+                Button(action: { showRescheduleSheet = true }) {
+                    Text("Reschedule")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                        .padding(8)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                .sheet(isPresented: $showRescheduleSheet) {
+                    AppointmentView(
+                        doctor: appointment.doctor,
+                        existingAppointment: appointment,
+                        onUpdateAppointment: { updatedAppointment in
+                            AppointmentManager.shared.updateAppointment(updatedAppointment)
+                        }
+                    )
+                }
+            }
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: .gray.opacity(0.1), radius: 5)
+    }
+}
+
+struct AllAppointmentsView: View {
+    let appointments: [Appointment]
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                ForEach(appointments) { appointment in
+                    AppointmentCard(appointment: appointment)
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Appointments")
     }
 }
 
@@ -189,11 +280,9 @@ struct DashboardCard: View {
     let title: String
     let icon: String
     let color: Color
-    
+
     var body: some View {
-        Button(action: {
-            // TODO: Implement action
-        }) {
+        Button(action: {}) {
             VStack(spacing: 15) {
                 Image(systemName: icon)
                     .font(.system(size: 30))
@@ -208,58 +297,6 @@ struct DashboardCard: View {
             .cornerRadius(15)
             .shadow(color: .gray.opacity(0.1), radius: 5)
         }
-    }
-}
-
-struct AppointmentCard: View {
-    let appointment: Appointment
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            HStack(spacing: 15) {
-                Circle()
-                    .fill(Color.teal)
-                    .frame(width: 50, height: 50)
-                    .overlay(
-                        Image(systemName: "person.fill")
-                            .foregroundColor(.white)
-                    )
-                
-                VStack(alignment: .leading) {
-                    Text(appointment.doctor.name)
-                        .font(.headline)
-                    Text(appointment.doctor.specialization)
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                }
-                
-                Spacer()
-                
-                Text(appointment.status.rawValue)
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.teal.opacity(0.1))
-                    .foregroundColor(.teal)
-                    .cornerRadius(8)
-            }
-            
-            Divider()
-            
-            HStack {
-                Image(systemName: "calendar")
-                Text(appointment.date.formatted(date: .long, time: .omitted))
-            }
-            
-            HStack {
-                Image(systemName: "clock")
-                Text(appointment.time.formatted(date: .omitted, time: .shortened))
-            }
-        }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
     }
 }
 

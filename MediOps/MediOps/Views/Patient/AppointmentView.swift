@@ -2,10 +2,20 @@ import SwiftUI
 
 struct AppointmentView: View {
     let doctor: DoctorDetail
+    var existingAppointment: Appointment? = nil
+    var onUpdateAppointment: ((Appointment) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDate = Date()
     @State private var selectedTime: Date?
     @State private var showReviewAndPay = false
+    
+    init(doctor: DoctorDetail, existingAppointment: Appointment? = nil, onUpdateAppointment: ((Appointment) -> Void)? = nil) {
+            self.doctor = doctor
+            self.existingAppointment = existingAppointment
+            self.onUpdateAppointment = onUpdateAppointment
+            _selectedDate = State(initialValue: existingAppointment?.date ?? Date())
+            _selectedTime = State(initialValue: existingAppointment?.time)
+        }
     
     private let timeSlots = stride(from: 6, through: 22, by: 0.5).map { hour in
         Calendar.current.date(bySettingHour: Int(hour), minute: Int((hour.truncatingRemainder(dividingBy: 1) * 60)), second: 0, of: Date())!
@@ -148,3 +158,4 @@ struct TimeSlotButton: View {
         }
     }
 }
+
