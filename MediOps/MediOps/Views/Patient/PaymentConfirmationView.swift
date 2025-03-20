@@ -7,6 +7,11 @@ struct PaymentConfirmationView: View {
     
     @Environment(\.dismiss) private var dismiss
     @State private var showSuccess = false
+    @State private var sliderOffset: CGFloat = 0
+    @State private var isDragging = false
+    @State private var sliderWidth: CGFloat = 0
+    
+    private let maxSliderOffset: CGFloat = 300 // Adjust this value based on your needs
     
     var body: some View {
         NavigationStack {
@@ -35,13 +40,13 @@ struct PaymentConfirmationView: View {
                         HStack {
                             Text("Consultation fees:")
                             Spacer()
-                            Text("$\(Int(doctor.consultationFee))")
+                            Text("Rs.\(Int(doctor.consultationFee))")
                         }
                         
                         HStack {
                             Text("Booking fee")
                             Spacer()
-                            Text("$10")
+                            Text("Rs.10")
                         }
                         
                         if showSuccess {
@@ -49,7 +54,7 @@ struct PaymentConfirmationView: View {
                                 Text("Promo applied")
                                     .foregroundColor(.green)
                                 Spacer()
-                                Text("-$3")
+                                Text("Rs. -3")
                                     .foregroundColor(.green)
                             }
                         }
@@ -68,7 +73,7 @@ struct PaymentConfirmationView: View {
                             .font(.caption)
                             .foregroundColor(.gray)
                         Spacer()
-                        Text("$207")
+                        Text("Rs.207")
                             .font(.headline)
                     }
                 }
@@ -80,18 +85,51 @@ struct PaymentConfirmationView: View {
                 
                 Spacer()
                 
-                // Swipe to pay button
-                Button(action: { showSuccess.toggle() }) {
-                    HStack {
-                        Image(systemName: "chevron.right.2")
-                        Text("Swipe to Pay")
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.teal)
-                    .cornerRadius(10)
+                // Sliding confirmation button
+                ZStack(alignment: .leading) {
+                    // Background track
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.teal.opacity(0.2))
+                        .frame(height: 60)
+                    
+                    // Slider button
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.teal)
+                        .frame(width: 60, height: 60)
+                        .overlay(
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.white)
+                        )
+                        .offset(x: sliderOffset)
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    isDragging = true
+                                    let newOffset = sliderOffset + value.translation.width
+                                    sliderOffset = min(max(0, newOffset), maxSliderOffset)
+                                }
+                                .onEnded { value in
+                                    isDragging = false
+                                    if sliderOffset >= maxSliderOffset - 20 {
+                                        withAnimation {
+                                            sliderOffset = maxSliderOffset
+                                            showSuccess.toggle()
+                                        }
+                                    } else {
+                                        withAnimation {
+                                            sliderOffset = 0
+                                        }
+                                    }
+                                }
+                        )
+                    
+                    // Text
+                    Text("Swipe to Pay")
+                        .foregroundColor(.teal)
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
                 }
+                .frame(height: 60)
                 .padding()
             }
             .navigationBarItems(trailing: Button("✕") { dismiss() })

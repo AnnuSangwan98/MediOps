@@ -53,7 +53,7 @@ struct AppointmentView: View {
                                 Image(systemName: "star.fill")
                                 Text("Rating")
                             }
-                            Text("\(doctor.rating) (\(doctor.numberOfRatings))")
+                            Text(String(format: "%.1f", doctor.rating))
                                 .font(.headline)
                         }
                         
@@ -62,7 +62,7 @@ struct AppointmentView: View {
                                 Image(systemName: "dollarsign.circle.fill")
                                 Text("Fee")
                             }
-                            Text("$\(Int(doctor.consultationFee))")
+                            Text("Rs.\(Int(doctor.consultationFee))")
                                 .font(.headline)
                         }
                     }

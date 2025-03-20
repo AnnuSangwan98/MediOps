@@ -6,7 +6,7 @@ struct BookingSuccessView: View {
     let appointmentTime: Date
     
     @Environment(\.dismiss) private var dismiss
-    @State private var shouldPopToRoot = false
+    @StateObject private var appointmentManager = AppointmentManager.shared
     
     var body: some View {
         NavigationStack {
@@ -48,11 +48,11 @@ struct BookingSuccessView: View {
                         }
                     }
                     
-                    HStack {
-                        Image(systemName: "video.fill")
-                        Text("Online Consultation")
-                    }
-                    .foregroundColor(.teal)
+//                    HStack {
+//                        Image(systemName: "video.fill")
+//                        Text("Online Consultation")
+//                    }
+//                    .foregroundColor(.teal)
                     
                     HStack {
                         Image(systemName: "calendar")
@@ -82,8 +82,20 @@ struct BookingSuccessView: View {
                 }
                 
                 Button(action: {
-                    // This will dismiss all sheets and modals
-                    NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
+                    // Create and add new appointment
+                    let appointment = Appointment(
+                        doctor: doctor,
+                        date: appointmentDate,
+                        time: appointmentTime,
+                        status: .upcoming
+                    )
+                    appointmentManager.addAppointment(appointment)
+                    
+                    // Set root view to PatientHomeView
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = windowScene.windows.first {
+                        window.rootViewController = UIHostingController(rootView: PatientHomeView())
+                    }
                 }) {
                     Text("Done")
                         .foregroundColor(.white)

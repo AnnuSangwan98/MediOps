@@ -10,9 +10,33 @@
 		EFC466352D830B7A001C272D /* MediOps.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MediOps.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1840B1992D8C13A200749368 /* Exceptions for "MediOps" folder in "MediOps" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Views/Patient/.swift,
+			);
+			target = EFC466342D830B79001C272D /* MediOps */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		1840B19A2D8C13A200749368 /* Exceptions for "MediOps" folder in "Compile Sources" phase from "MediOps" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = EFC466312D830B79001C272D /* Sources */;
+			membershipExceptions = (
+				Views/Patient/.swift,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EFC466372D830B7A001C272D /* MediOps */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1840B1992D8C13A200749368 /* Exceptions for "MediOps" folder in "MediOps" target */,
+				1840B19A2D8C13A200749368 /* Exceptions for "MediOps" folder in "Compile Sources" phase from "MediOps" target */,
+			);
 			path = MediOps;
 			sourceTree = "<group>";
 		};

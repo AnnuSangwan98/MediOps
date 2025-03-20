@@ -67,6 +67,7 @@ struct ReviewAndPayView: View {
                                 )
                             
                             Text("Myself")
+                                .fontWeight(.medium)
                             
                             Spacer()
                             
@@ -74,25 +75,15 @@ struct ReviewAndPayView: View {
                                 .foregroundColor(.gray)
                         }
                         
-                        Text("Note: You can submit patient detail, old prescriptions, and test report in the Drop link")
+                        Text("Note: You can describe your health concerns or any relevant details in the text field below.")
                             .font(.caption)
                             .foregroundColor(.gray)
                         
-                        Button(action: {}) {
-                            HStack {
-                                Image(systemName: "doc.fill")
-                                Text("Click to upload prescription")
-                            }
-                            .foregroundColor(.teal)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
-                                    .foregroundColor(.gray)
-                            )
-                        }
+                        TextField("Enter your health concerns...", text: .constant(""))
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
                     }
+                    .padding()
+
                     .padding()
                     
                     // Payment details
@@ -100,29 +91,29 @@ struct ReviewAndPayView: View {
                         Text("Payment")
                             .font(.headline)
                         
-                        HStack {
-                            TextField("Promo Code", text: $promoCode)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                            
-                            Button("Apply") {}
-                                .foregroundColor(.white)
-                                .padding(.horizontal)
-                                .padding(.vertical, 8)
-                                .background(Color.teal)
-                                .cornerRadius(8)
-                        }
+//                        HStack {
+//                            TextField("Promo Code", text: $promoCode)
+//                                .textFieldStyle(RoundedBorderTextFieldStyle())
+//                            
+//                            Button("Apply") {}
+//                                .foregroundColor(.white)
+//                                .padding(.horizontal)
+//                                .padding(.vertical, 8)
+//                                .background(Color.teal)
+//                                .cornerRadius(8)
+//                        }
                         
                         VStack(spacing: 10) {
                             HStack {
                                 Text("Consultation fees:")
                                 Spacer()
-                                Text("$\(Int(doctor.consultationFee))")
+                                Text("Rs.\(Int(doctor.consultationFee))")
                             }
                             
                             HStack {
                                 Text("Booking fee")
                                 Spacer()
-                                Text("$\(Int(bookingFee))")
+                                Text("Rs.\(Int(bookingFee))")
                             }
                             
                             Divider()
@@ -131,7 +122,7 @@ struct ReviewAndPayView: View {
                                 Text("Total Pay")
                                     .fontWeight(.bold)
                                 Spacer()
-                                Text("$\(Int(doctor.consultationFee + bookingFee))")
+                                Text("Rs.\(Int(doctor.consultationFee + bookingFee))")
                                     .fontWeight(.bold)
                             }
                         }
@@ -151,7 +142,7 @@ struct ReviewAndPayView: View {
             Button(action: { showConfirmation.toggle() }) {
                 HStack {
                     Text("Pay")
-                    Text("$\(Int(doctor.consultationFee + bookingFee))")
+                    Text("Rs.\(Int(doctor.consultationFee + bookingFee))")
                         .padding(.horizontal, 8)
                         .background(Color.teal.opacity(0.2))
                         .cornerRadius(4)

@@ -14,17 +14,9 @@ struct DoctorDetail: Identifiable {
 }
 
 class DoctorViewModel: ObservableObject {
-    @Published var doctors: [DoctorDetail] = [
-        DoctorDetail(
-            name: "Dr. Kevon Lane",
-            specialization: "Gynecologist",
-            qualification: "MBBS, BCS, (Health), MCPS (Gynae & Obs), MRCOG (Gynae & Obs) (UK)",
-            experience: 5,
-            rating: 4.9,
-            numberOfRatings: 500,
-            consultationFee: 200.0,
-            isAvailableNow: true,
-            availableSlots: []
-        )
-    ]
+    @Published var doctors: [DoctorDetail] = []
+    
+    func loadDoctors(for hospital: Hospital) {
+        doctors = hospital.doctors
+    }
 }
