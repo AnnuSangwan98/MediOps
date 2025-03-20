@@ -2,123 +2,302 @@ import SwiftUI
 
 struct PatientSignupView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var mobileNumber: String = ""
-    @State private var otp: String = ""
-    @State private var isOtpSent: Bool = false
+    @State private var name: String = ""
+    @State private var age: String = ""
+    @State private var gender: String = "Male"
+    @State private var email: String = ""
+    @State private var password: String = ""
+    @State private var confirmPassword: String = ""
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
-    @State private var timeRemaining: Int = 60
-    @State private var timer: Timer? = nil
-    @State private var navigateToDetails = false
+    @State private var navigateToOTP = false
+    @State private var suggestedPassword: String? = nil
     
+    let genders = ["Male", "Female", "Other"]
+    
+    private var isValidName: Bool {
+        let nameRegex = "^[A-Za-z\\s]+$"
+        let namePred = NSPredicate(format:"SELF MATCHES %@", nameRegex)
+        return namePred.evaluate(with: name)
+    }
+        
+    private var isValidAge: Bool {
+        if let ageNum = Int(age) {
+            return ageNum > 0 && ageNum < 200
+        }
+        return false
+    }
+        
+    private var isValidPassword: Bool {
+        let passwordRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$"
+        let passwordPred = NSPredicate(format: "SELF MATCHES %@", passwordRegex)
+        return passwordPred.evaluate(with: password)
+    }
+        
+    private var isSubmitButtonEnabled: Bool {
+        !name.isEmpty && isValidName &&
+        !age.isEmpty && isValidAge &&
+        !email.isEmpty && isValidEmail &&
+        isValidPassword && confirmPassword == password
+    }
+    
+    private func generateSuggestedPassword() -> String {
+        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
+        let numbers = "0123456789"
+        let specialCharacters = "@$!%*?&"
+        
+        var password = ""
+        password += String(uppercaseLetters.randomElement()!)
+        password += String(lowercaseLetters.randomElement()!)
+        password += String(numbers.randomElement()!)
+        password += String(specialCharacters.randomElement()!)
+        
+        let allCharacters = uppercaseLetters + lowercaseLetters + numbers
+        for _ in 0..<4 {
+            password += String(allCharacters.randomElement()!)
+        }
+        
+        return String(password.shuffled())
+    }
+
     var body: some View {
         ZStack {
-            // Background gradient
             LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
                          startPoint: .topLeading,
                          endPoint: .bottomTrailing)
                 .ignoresSafeArea()
             
-            VStack(spacing: 30) {
-                
-                VStack(spacing: 15) {
-                    ZStack {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 120, height: 120)
-                            .shadow(color: .gray.opacity(0.2), radius: 10)
-                        
-                        Image(systemName: "person.fill")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 60, height: 60)
-                            .foregroundColor(.teal)
-                    }
-                    
-                    Text("Patient SignUp")
+            ScrollView {
+                VStack(spacing: 25) {
+                    Text("Patient Details")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.teal)
-                }
-                .padding(.top, 50)
-
-                
-                // Form Content
-                VStack(spacing: 25) {
-                    // Mobile Number field
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Mobile Number")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                        
-                        HStack {
-                            Text("+91")
-                                .foregroundColor(.gray)
-                                .padding(.leading, 8)
-                            
-                            TextField("Enter mobile number", text: $mobileNumber)
-                                .keyboardType(.numberPad)
-                                .textContentType(.telephoneNumber)
-                        }
-                        .textFieldStyle(CustomTextFieldStyle())
-                    }
+                        .padding(.top)
                     
-                    if isOtpSent {
-                        // OTP field
+                    VStack(spacing: 25) {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Enter OTP")
+                            Text("Full Name")
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
                             
-                            TextField("Enter 6-digit OTP", text: $otp)
-                                .keyboardType(.numberPad)
-                                .textContentType(.oneTimeCode)
+                            TextField("Enter your full name", text: $name)
                                 .textFieldStyle(CustomTextFieldStyle())
-                            
-                            HStack {
-                                Text("Resend OTP in \(timeRemaining)s")
+                            if !name.isEmpty && !isValidName {
+                                Text("Name should only contain letters and spaces")
                                     .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                        }
+                        
+                        HStack(spacing: 20) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Age")
+                                    .font(.subheadline)
                                     .foregroundColor(.gray)
                                 
-                                Spacer()
-                                
-                                if timeRemaining == 0 {
-                                    Button("Resend OTP") {
-                                        sendOtp()
+                                TextField("Enter age", text: $age)
+                                    .keyboardType(.numberPad)
+                                    .textFieldStyle(CustomTextFieldStyle())
+                                    .frame(maxWidth: 120)
+                            }
+                            .frame(maxWidth: 120, alignment: .leading)
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Gender")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                Menu {
+                                    ForEach(genders, id: \.self) { genderOption in
+                                        Button(action: {
+                                            gender = genderOption
+                                        }) {
+                                            Text(genderOption)
+                                                .foregroundColor(.black)
+                                        }
                                     }
+                                } label: {
+                                    HStack {
+                                        Text(gender)
+                                            .foregroundColor(.black)
+                                        Spacer()
+                                        Image(systemName: "chevron.down")
+                                            .foregroundColor(.gray)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 57)
+                                    .background(Color.white)
+                                    .cornerRadius(10)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                    )
+                                }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if !age.isEmpty && !isValidAge {
+                            Text("Age must be between 1 and 199")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Email")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            TextField("Enter your email", text: $email)
+                                .keyboardType(.emailAddress)
+                                .autocapitalization(.none)
+                                .textFieldStyle(CustomTextFieldStyle())
+                            
+                            if !email.isEmpty && !isValidEmail {
+                                Text("Please enter a valid email address")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                        }
+                        .padding(.top, 0)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Password")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            SecureField("Enter password", text: $password)
+                                .textContentType(.newPassword)
+                                .textFieldStyle(CustomTextFieldStyle())
+                            
+                            Button(action: {
+                                suggestedPassword = generateSuggestedPassword()
+                            }) {
+                                Text("Generate Strong Password")
                                     .font(.caption)
                                     .foregroundColor(.teal)
+                            }
+                            .padding(.top, 4)
+                            
+                            if let suggested = suggestedPassword {
+                                HStack {
+                                    Text("Suggested: \(suggested)")
+                                        .font(.caption)
+                                        .foregroundColor(.teal)
+                                    
+                                    Button(action: {
+                                        password = suggested
+                                        confirmPassword = suggested
+                                        suggestedPassword = nil
+                                    }) {
+                                        Text("Use")
+                                            .font(.caption)
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.teal)
+                                            .cornerRadius(4)
+                                    }
+                                }
+                                .padding(.top, 4)
+                            }
+                            
+                            if !password.isEmpty {
+                                if !isValidPassword {
+                                    Text("Password must contain:")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                        .padding(.top, 4)
+                                    
+                                    HStack(spacing: 12) {
+                                        HStack(spacing: 4) {
+                                            Text("•")
+                                            Text("8+ chars")
+                                        }
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                        
+                                        HStack(spacing: 4) {
+                                            Text("•")
+                                            Text("Uppercase")
+                                        }
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                        
+                                        HStack(spacing: 4) {
+                                            Text("•")
+                                            Text("Lowercase")
+                                        }
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                        
+                                        HStack(spacing: 4) {
+                                            Text("•")
+                                            Text("Number")
+                                        }
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                    }
+                                    .padding(.top, 2)
+                                    
+                                    HStack(spacing: 12) {
+                                        HStack(spacing: 4) {
+                                            Text("•")
+                                            Text("Special (@$!%*?&)")
+                                        }
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                    }
+                                    .padding(.top, 2)
                                 }
                             }
                         }
-                    }
-                    
-                    // Action Button
-                    Button(action: isOtpSent ? handleOtpVerification : sendOtp) {
-                        HStack {
-                            Text(isOtpSent ? "Verify OTP" : "Send OTP")
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            Image(systemName: isOtpSent ? "checkmark.circle" : "arrow.right")
-                                .font(.title3)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Confirm Password")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            SecureField("Confirm your password", text: $confirmPassword)
+                                .textContentType(.newPassword)
+                                .textFieldStyle(CustomTextFieldStyle())
+                            
+                            if !confirmPassword.isEmpty && password != confirmPassword {
+                                Text("Passwords do not match")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
                         }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 55)
-                        .background(
-                            LinearGradient(gradient: Gradient(colors: [Color.teal, Color.teal.opacity(0.8)]),
-                                         startPoint: .leading,
-                                         endPoint: .trailing)
-                        )
-                        .cornerRadius(15)
-                        .shadow(color: .teal.opacity(0.3), radius: 5, x: 0, y: 5)
+
+                        Button(action: handleSubmit) {
+                            HStack {
+                                Text("Proceed")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                                Image(systemName: "arrow.right")
+                                    .font(.title3)
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 55)
+                            .background(
+                                isSubmitButtonEnabled ?
+                                LinearGradient(gradient: Gradient(colors: [Color.teal, Color.teal.opacity(0.8)]),
+                                               startPoint: .leading,
+                                               endPoint: .trailing) :
+                                    LinearGradient(gradient: Gradient(colors: [Color.gray, Color.gray]),
+                                                   startPoint: .leading,
+                                                   endPoint: .trailing)
+                            )
+                            .cornerRadius(15)
+                            .shadow(color: .teal.opacity(0.3), radius: 5, x: 0, y: 5)
+                        }
+                        .disabled(!isSubmitButtonEnabled)
+                        .padding(.top, 10)
                     }
-                    .padding(.top, 10)
+                    .padding(.horizontal, 30)
                 }
-                .padding(.horizontal, 30)
-                
-                Spacer()
-                
-                // Login Navigation Link
                 NavigationLink(destination: PatientLoginView()) {
                     HStack {
                         Text("Already a user?")
@@ -139,55 +318,48 @@ struct PatientSignupView: View {
         } message: {
             Text(errorMessage)
         }
-        .onDisappear {
-            timer?.invalidate()
-            timer = nil
-        }
-        .navigationDestination(isPresented: $navigateToDetails) {
-            InputPatientDetailsView()
+        .navigationDestination(isPresented: $navigateToOTP) {
+            PatientOTPVerificationView(email: email)
         }
     }
     
-    private func sendOtp() {
-        // Validate mobile number
-        if mobileNumber.count != 10 {
-            errorMessage = "Please enter a valid 10-digit mobile number"
+    private var isValidEmail: Bool {
+        let emailRegEx = "^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}$"
+        let emailPred = NSPredicate(format: "SELF MATCHES %@", emailRegEx)
+        return emailPred.evaluate(with: email)
+    }
+    
+    private func handleSubmit() {
+        if !isValidName {
+            errorMessage = "Please enter a valid name (letters only)"
+            showError = true
+            return
+        }
+            
+        if !isValidAge {
+            errorMessage = "Please enter a valid age (between 1 and 199)"
+            showError = true
+            return
+        }
+            
+        if !isValidPassword {
+            errorMessage = "Password doesn't meet the requirements"
+            showError = true
+            return
+        }
+            
+        if password != confirmPassword {
+            errorMessage = "Passwords do not match"
             showError = true
             return
         }
         
-        // TODO: Implement actual OTP sending logic
-        isOtpSent = true
-        startTimer()
-    }
-    
-    private func handleOtpVerification() {
-        // Validate OTP
-        if otp.count != 6 {
-            errorMessage = "Please enter a valid 6-digit OTP"
+        if !isValidEmail {
+            errorMessage = "Please enter a valid email address"
             showError = true
             return
         }
         
-        // TODO: Implement actual OTP verification logic
-        navigateToDetails = true
-    }
-    
-    private func startTimer() {
-        timeRemaining = 60
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            if timeRemaining > 0 {
-                timeRemaining -= 1
-            } else {
-                timer?.invalidate()
-            }
-        }
+        navigateToOTP = true
     }
 }
-
-#Preview {
-    NavigationStack {
-        PatientSignupView()
-    }
-} 

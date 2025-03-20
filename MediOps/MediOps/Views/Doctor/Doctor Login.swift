@@ -1,21 +1,21 @@
 import SwiftUI
 
-struct LabLoginView: View {
+struct DoctorLoginView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var labId: String = ""
+    @State private var doctorId: String = ""
     @State private var password: String = ""
     @State private var isLoggedIn: Bool = false
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
-    @State private var isPasswordVisible: Bool = false
     @State private var showChangePasswordSheet: Bool = false
     @State private var newPassword: String = ""
     @State private var confirmPassword: String = ""
+    @State private var isPasswordVisible: Bool = false
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
-        return !labId.isEmpty && !password.isEmpty &&
-               isValidLabId(labId) && isValidPassword(password)
+        return !doctorId.isEmpty && !password.isEmpty &&
+               isValidAdminId(doctorId) && isValidPassword(password)
     }
     
     private var isValidPasswordChange: Bool {
@@ -40,14 +40,14 @@ struct LabLoginView: View {
                             .frame(width: 120, height: 120)
                             .shadow(color: .gray.opacity(0.2), radius: 10)
                         
-                        Image(systemName: "cross.case.fill")
+                        Image(systemName: "stethoscope")
                             .resizable()
                             .scaledToFit()
                             .frame(width: 60, height: 60)
                             .foregroundColor(.teal)
                     }
                     
-                    Text("Lab Login")
+                    Text("Doctor Login")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.teal)
                 }
@@ -55,27 +55,27 @@ struct LabLoginView: View {
                 
                 // Login Form
                 VStack(spacing: 25) {
-                    // Lab ID field
+                    // Admin ID field
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Lab ID")
+                        Text("Doctor ID")
                             .font(.subheadline)
                             .foregroundColor(.gray)
                         
-                        TextField("Enter lab ID (e.g. LAB001)", text: $labId)
+                        TextField("Enter doctor ID (e.g. DOC001)", text: $doctorId)
                             .textFieldStyle(CustomTextFieldStyle())
-                            .onChange(of: labId) { _, newValue in
-                                // Automatically format to uppercase for "LAB" part
+                            .onChange(of: doctorId) { _, newValue in
+                                // Automatically format to uppercase for "HOS" part
                                 if newValue.count >= 3 {
-                                    let labPrefix = newValue.prefix(3).uppercased()
+                                    let hosPrefix = newValue.prefix(3).uppercased()
                                     let numericPart = newValue.dropFirst(3)
-                                    labId = labPrefix + numericPart
+                                    doctorId = hosPrefix + numericPart
                                 } else if newValue.count > 0 {
-                                    labId = newValue.uppercased()
+                                    doctorId = newValue.uppercased()
                                 }
                             }
                     }
                     
-                    // Password field with toggle
+                    // Password field with requirements hint and toggle
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Password")
                             .font(.subheadline)
@@ -101,6 +101,11 @@ struct LabLoginView: View {
                                 }
                             }
                         }
+                        
+                        Text("Must contain at least 8 characters, one uppercase letter, one number, and one special character")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .padding(.top, 4)
                     }
                     
                     // Login Button
@@ -134,7 +139,7 @@ struct LabLoginView: View {
                 Spacer()
             }
             
-            NavigationLink(destination: LabDashboardView(), isActive: $isLoggedIn) {
+            NavigationLink(destination: DoctorHomeView(), isActive: $isLoggedIn) {
                 EmptyView()
             }
         }
@@ -146,7 +151,7 @@ struct LabLoginView: View {
             Text(errorMessage)
         }
         .sheet(isPresented: $showChangePasswordSheet) {
-            ChangePasswordSheet(
+            ChangePasswordSheets(
                 newPassword: $newPassword,
                 confirmPassword: $confirmPassword,
                 isValidInput: isValidPasswordChange,
@@ -156,7 +161,8 @@ struct LabLoginView: View {
     }
     
     private func handleLogin() {
-        // Show change password sheet instead of direct login
+        // All validation is now handled by the isValidLoginInput computed property
+        // Show change password sheet
         showChangePasswordSheet = true
     }
     
@@ -167,10 +173,10 @@ struct LabLoginView: View {
         isLoggedIn = true
     }
     
-    // Validates that the lab ID is in format LAB followed by numbers
-    private func isValidLabId(_ id: String) -> Bool {
-        let labIdRegex = #"^LAB\d+$"#
-        return NSPredicate(format: "SELF MATCHES %@", labIdRegex).evaluate(with: id)
+    // Validates that the admin ID is in format HOS followed by numbers
+    private func isValidAdminId(_ id: String) -> Bool {
+        let adminIdRegex = #"^DOC\d+$"#
+        return NSPredicate(format: "SELF MATCHES %@", adminIdRegex).evaluate(with: id)
     }
     
     // Validates password complexity
@@ -194,7 +200,8 @@ struct LabLoginView: View {
     }
 }
 
-struct ChangePasswordSheetForLab: View {
+// Change Password Sheet
+struct ChangePasswordSheets: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var newPassword: String
     @Binding var confirmPassword: String
@@ -308,37 +315,9 @@ struct ChangePasswordSheetForLab: View {
     }
 }
 
-// Custom TextField Style
-struct CustomTextFieldStyleForLab: TextFieldStyle {
-    func _body(configuration: TextField<Self._Label>) -> some View {
-        configuration
-            .padding()
-            .background(Color.white)
-            .cornerRadius(10)
-            .shadow(color: .gray.opacity(0.1), radius: 5, x: 0, y: 2)
-    }
-}
-
-// Custom Back Button
-struct CustomBackButtonForLab: View {
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        Button(action: {
-            dismiss()
-        }) {
-            Image(systemName: "chevron.left")
-                .foregroundColor(.teal)
-                .font(.system(size: 16, weight: .semibold))
-                .padding(10)
-                .background(Circle().fill(Color.white))
-                .shadow(color: .gray.opacity(0.2), radius: 3)
-        }
-    }
-}
 
 #Preview {
     NavigationStack {
-        LabLoginView()
+        DoctorLoginView()
     }
 }
