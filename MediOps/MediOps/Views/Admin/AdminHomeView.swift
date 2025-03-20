@@ -41,6 +41,27 @@ struct LabAdmin: Identifiable {
     }
 }
 
+struct Activity: Identifiable {
+    var id = UUID()
+    var type: ActivityType
+    var title: String
+    var timestamp: Date
+    var status: ActivityStatus
+    var doctorDetails: Doctor?  // Added to store doctor details
+    var labAdminDetails: LabAdmin?  // Added to store lab admin details
+    
+    enum ActivityType {
+        case doctorAdded
+        case labAdminAdded
+    }
+    
+    enum ActivityStatus {
+        case pending
+        case approved
+        case rejected
+    }
+}
+
 // MARK: - Modified Admin Dashboard Card
 struct AdminDashboardCard: View {
     let title: String
@@ -82,6 +103,7 @@ struct AddDoctorView: View {
     @State private var address = "" // Added address state
     @State private var showAlert = false
     @State private var alertMessage = ""
+    var onSave: (Activity) -> Void
     
     // Calculate maximum experience based on age
     private var maximumExperience: Int {
@@ -239,10 +261,21 @@ struct AddDoctorView: View {
             experience: experience,
             qualification: qualification,
             license: license,
-            address: address  // Added address
+            address: address
         )
         
-        // TODO: Add code to save the doctor to your data store
+        // Create a new activity with the doctor details
+        let activity = Activity(
+            type: .doctorAdded,
+            title: "New Doctor: \(doctor.fullName)",
+            timestamp: Date(),
+            status: .pending,
+            doctorDetails: doctor,
+            labAdminDetails: nil
+        )
+        
+        // Call onSave callback with the new activity
+        onSave(activity)
         
         // Display success message and dismiss
         alertMessage = "Doctor added successfully!"
@@ -287,16 +320,18 @@ struct AddLabAdminView: View {
     @State private var dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
     @State private var experience = 0
     @State private var qualification = ""
-    @State private var address = "" // Added address state
+    @State private var license = ""
+    @State private var address = ""
     @State private var showAlert = false
     @State private var alertMessage = ""
+    var onSave: (Activity) -> Void
     
     // Calculate maximum experience based on age
     private var maximumExperience: Int {
         let calendar = Calendar.current
         let ageComponents = calendar.dateComponents([.year], from: dateOfBirth, to: Date())
         let age = ageComponents.year ?? 0
-        return max(0, age - 25) // Experience should be 18 years less than admin's age
+        return max(0, age - 25) // Experience should be 25 years less than admin's age
     }
     
     var body: some View {
@@ -325,6 +360,12 @@ struct AddLabAdminView: View {
                 Section(header: Text("Professional Information")) {
                     TextField("Qualification", text: $qualification)
                     
+                    TextField("License (XX12345)", text: $license)
+                        .onChange(of: license) { _, newValue in
+                            // Format license to uppercase
+                            license = newValue.uppercased()
+                        }
+                    
                     Stepper("Experience: \(experience) years", value: $experience, in: 0...maximumExperience)
                         .onChange(of: experience) { _, newValue in
                             // Enforce the maximum experience constraint
@@ -339,7 +380,6 @@ struct AddLabAdminView: View {
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
                     
-                    // Phone field with prefix
                     HStack {
                         Text("+91")
                             .foregroundColor(.gray)
@@ -356,7 +396,6 @@ struct AddLabAdminView: View {
                             }
                     }
                     
-                    // Changed to TextField for address
                     TextField("Address", text: $address)
                 }
             }
@@ -395,7 +434,6 @@ struct AddLabAdminView: View {
             return
         }
         
-        // Phone validation
         if phoneNumber.count != 10 {
             alertMessage = "Please enter a valid 10-digit phone number"
             showAlert = true
@@ -408,7 +446,12 @@ struct AddLabAdminView: View {
             return
         }
         
-        // Added address validation
+        if !isValidLicense(license) {
+            alertMessage = "Please enter a valid license in the format XX12345 (2 letters followed by 5 digits)"
+            showAlert = true
+            return
+        }
+        
         if address.isEmpty {
             alertMessage = "Please enter the lab admin's address"
             showAlert = true
@@ -419,15 +462,26 @@ struct AddLabAdminView: View {
         let labAdmin = LabAdmin(
             fullName: fullName,
             email: email,
-            phone: "+91\(phoneNumber)", // Combine the prefix and number
+            phone: "+91\(phoneNumber)",
             gender: gender,
             dateOfBirth: dateOfBirth,
             experience: experience,
             qualification: qualification,
-            address: address  // Added address
+            address: address
         )
         
-        // TODO: Add code to save the lab admin to your data store
+        // Create a new activity with the lab admin details
+        let activity = Activity(
+            type: .labAdminAdded,
+            title: "New Lab Admin: \(labAdmin.fullName)",
+            timestamp: Date(),
+            status: .pending,
+            doctorDetails: nil,
+            labAdminDetails: labAdmin
+        )
+        
+        // Call onSave callback with the new activity
+        onSave(activity)
         
         // Display success message and dismiss
         alertMessage = "Lab Admin added successfully!"
@@ -445,129 +499,96 @@ struct AddLabAdminView: View {
         dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
         experience = 0
         qualification = ""
-        address = "" // Reset address
+        license = ""
+        address = ""
     }
     
     private func isValidEmail(_ email: String) -> Bool {
         let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
         return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email)
     }
+    
+    private func isValidLicense(_ license: String) -> Bool {
+        let licenseRegex = #"^[A-Z]{2}\d{5}$"#
+        return NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: license)
+    }
 }
 
 // MARK: - Modified Admin Home View
 struct AdminHomeView: View {
-    @State private var showAddDoctorView = false
-    @State private var showAddLabAdminView = false
+    @State private var showAddDoctor = false
+    @State private var showAddLabAdmin = false
+    @State private var recentActivities: [Activity] = []
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                             startPoint: .topLeading,
-                             endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 20) {
-                        // Header
-                        HStack {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Admin's Dashboard")
-                                    .font(.title)
-                                    .fontWeight(.bold)
-                                Text("Hospital Management System")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                            }
-                            Spacer()
-                            
-                            Button(action: {
-                                // TODO: Implement profile action
-                            }) {
-                                Image(systemName: "person.circle.fill")
-                                    .resizable()
-                                    .frame(width: 40, height: 40)
-                                    .foregroundColor(.teal)
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.top)
-                        
-                        // Statistics Summary
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 15) {
-                            AdminStatCard(title: "Doctors", value: "0", icon: "stethoscope")
-                            AdminStatCard(title: "Lab Admins", value: "0", icon: "flask.fill")
-                            AdminStatCard(title: "Staff", value: "0", icon: "person.3")
-                        }
-                        .padding(.horizontal)
-                        
-                        // Quick Actions Grid
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 20) {
-                            // Add Doctor
-                            AdminDashboardCard(
-                                title: "Add Doctor",
-                                icon: "person.badge.plus",
-                                color: .blue,
-                                action: { showAddDoctorView = true }
-                            )
-                            
-                            // Add Lab Admin (replaced Manage Patients)
-                            AdminDashboardCard(
-                                title: "Add Lab Admin",
-                                icon: "flask.fill",
-                                color: .green,
-                                action: { showAddLabAdminView = true }
-                            )
-                            
-                            // Departments
-                            AdminDashboardCard(
-                                title: "Departments",
-                                icon: "building.2.fill",
-                                color: .purple,
-                                action: { /* TODO: Implement action */ }
-                            )
-                            
-                            // Reports
-                            AdminDashboardCard(
-                                title: "Reports",
-                                icon: "chart.bar.fill",
-                                color: .orange,
-                                action: { /* TODO: Implement action */ }
-                            )
-                            
-                            // Settings
-                            AdminDashboardCard(
-                                title: "Settings",
-                                icon: "gear",
-                                color: .gray,
-                                action: { /* TODO: Implement action */ }
-                            )
-                            
-                            // Notifications
-                            AdminDashboardCard(
-                                title: "Notifications",
-                                icon: "bell.fill",
-                                color: .red,
-                                action: { /* TODO: Implement action */ }
-                            )
-                        }
-                        .padding()
-                        
-                        // Recent Activity
-                        VStack(alignment: .leading, spacing: 15) {
-                            Text("Recent Activity")
-                                .font(.title2)
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Header
+                    HStack {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Admin Dashboard")
+                                .font(.title)
                                 .fontWeight(.bold)
-                                .padding(.horizontal)
-                            
-                            // Placeholder for activity list
+                            Text("Hospital Management System")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
+                        Spacer()
+                        
+                        Button(action: {
+                            // TODO: Implement profile action
+                        }) {
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .frame(width: 40, height: 40)
+                                .foregroundColor(.teal)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top)
+                    
+                    // Statistics Summary
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 15) {
+                        AdminStatCard(title: "Doctors", value: "0", icon: "stethoscope")
+                        AdminStatCard(title: "Lab Admins", value: "0", icon: "flask.fill")
+                    }
+                    .padding(.horizontal)
+                    
+                    // Quick Actions Grid
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 20) {
+                        // Add Doctor
+                        AdminDashboardCard(
+                            title: "Add Doctor",
+                            icon: "person.badge.plus",
+                            color: .blue,
+                            action: { showAddDoctor = true }
+                        )
+                        
+                        // Add Lab Admin
+                        AdminDashboardCard(
+                            title: "Add Lab Admin",
+                            icon: "flask.fill",
+                            color: .green,
+                            action: { showAddLabAdmin = true }
+                        )
+                    }
+                    .padding()
+                    
+                    // Recent Activity
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("Recent Activity")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .padding(.horizontal)
+                        
+                        if recentActivities.isEmpty {
                             Text("No recent activity")
                                 .foregroundColor(.gray)
                                 .frame(maxWidth: .infinity)
@@ -575,17 +596,26 @@ struct AdminHomeView: View {
                                 .background(Color.white)
                                 .cornerRadius(10)
                                 .shadow(color: .gray.opacity(0.1), radius: 5)
+                        } else {
+                            ForEach(recentActivities) { activity in
+                                ActivityRow(activity: activity)
+                            }
                         }
-                        .padding()
                     }
+                    .padding()
                 }
             }
-            .navigationBarHidden(true)
-            .sheet(isPresented: $showAddDoctorView) {
-                AddDoctorView()
+            .navigationTitle("Admin Dashboard")
+            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showAddDoctor) {
+                AddDoctorView { activity in
+                    recentActivities.insert(activity, at: 0)
+                }
             }
-            .sheet(isPresented: $showAddLabAdminView) {
-                AddLabAdminView()
+            .sheet(isPresented: $showAddLabAdmin) {
+                AddLabAdminView { activity in
+                    recentActivities.insert(activity, at: 0)
+                }
             }
         }
     }
@@ -612,6 +642,37 @@ struct AdminStatCard: View {
         .padding()
         .background(Color.white)
         .cornerRadius(15)
+        .shadow(color: .gray.opacity(0.1), radius: 5)
+    }
+}
+
+struct ActivityRow: View {
+    let activity: Activity
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(activity.title)
+                    .font(.system(size: 16, weight: .medium))
+                Text(activity.timestamp, style: .relative)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            
+            Spacer()
+            
+            // Status indicator
+            Text(activity.status == .pending ? "Pending" : "")
+                .font(.caption)
+                .foregroundColor(.orange)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(8)
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(10)
         .shadow(color: .gray.opacity(0.1), radius: 5)
     }
 }
