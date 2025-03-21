@@ -17,8 +17,22 @@ struct AppointmentView: View {
         _selectedTime = State(initialValue: existingAppointment?.time)
     }
     
-    private let timeSlots = stride(from: 10, through: 20, by: 0.5).map { hour in
-        Calendar.current.date(bySettingHour: Int(hour), minute: Int((hour.truncatingRemainder(dividingBy: 1) * 60)), second: 0, of: Date())!
+    private var timeSlots: [Date] {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // Generate time slots for the selected date
+        let slots = stride(from: 10, through: 20, by: 0.5).map { hour in
+            calendar.date(bySettingHour: Int(hour), minute: Int((hour.truncatingRemainder(dividingBy: 1) * 60)), second: 0, of: selectedDate)!
+        }
+        
+        // If selected date is today, filter out past times
+        if calendar.isDate(selectedDate, inSameDayAs: now) {
+            return slots.filter { $0 > now }
+        }
+        
+        // For future dates, show all time slots
+        return slots
     }
     
     private func isValidDate(_ date: Date) -> Bool {
@@ -54,7 +68,7 @@ struct AppointmentView: View {
                     .padding()
                     
                     // Stats
-                    HStack(spacing: 30) {
+                    HStack(spacing: 55) {
                         VStack(spacing: 5) {
                             HStack {
                                 Image(systemName: "briefcase.fill")

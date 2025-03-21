@@ -3,6 +3,7 @@ import SwiftUI
 struct PatientHomeView: View {
     @StateObject private var hospitalVM = HospitalViewModel()
     @StateObject private var appointmentManager = AppointmentManager.shared
+    @StateObject private var profileController = PatientProfileController()
     @State private var showProfile = false
 
 
@@ -56,7 +57,7 @@ struct PatientHomeView: View {
                     .foregroundColor(.teal)
             }
             .sheet(isPresented: $showProfile) {
-                PatientProfileView(profileController: PatientProfileController())
+                PatientProfileView(profileController: profileController)
             }
 
         }
@@ -135,8 +136,8 @@ struct PatientHomeView: View {
 
                 Spacer()
 
-                if appointmentManager.appointments.count > 1 {
-                    NavigationLink(destination: AllAppointmentsView(appointments: appointmentManager.appointments)) {
+                if appointmentManager.upcomingAppointments.count > 1 {
+                    NavigationLink(destination: AllAppointmentsView()) {
                         Text("See All")
                             .font(.caption)
                             .foregroundColor(.blue)
@@ -145,7 +146,7 @@ struct PatientHomeView: View {
             }
             .padding(.horizontal)
 
-            if appointmentManager.appointments.isEmpty {
+            if appointmentManager.upcomingAppointments.isEmpty {
                 Text("No upcoming appointments")
                     .foregroundColor(.gray)
                     .frame(maxWidth: .infinity)
@@ -154,7 +155,7 @@ struct PatientHomeView: View {
                     .cornerRadius(10)
                     .shadow(color: .gray.opacity(0.1), radius: 5)
             } else {
-                ForEach(appointmentManager.appointments.prefix(1)) { appointment in
+                ForEach(appointmentManager.upcomingAppointments.prefix(1)) { appointment in
                     AppointmentCard(appointment: appointment)
                 }
             }
@@ -177,7 +178,17 @@ struct AppointmentCard: View {
     @State private var showCancelAlert = false
     @State private var showRescheduleSheet = false
     let appointment: Appointment
-
+    
+    private var isWithin12Hours: Bool {
+        let appointmentDateTime = Calendar.current.date(bySettingHour: Calendar.current.component(.hour, from: appointment.time),
+                                                      minute: Calendar.current.component(.minute, from: appointment.time),
+                                                      second: 0,
+                                                      of: appointment.date) ?? appointment.date
+        
+        let timeDifference = appointmentDateTime.timeIntervalSince(Date())
+        return timeDifference <= 12 * 3600 // 12 hours in seconds
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack(spacing: 15) {
@@ -230,6 +241,8 @@ struct AppointmentCard: View {
                         .background(Color.red.opacity(0.1))
                         .cornerRadius(8)
                 }
+                .disabled(isWithin12Hours)
+                .opacity(isWithin12Hours ? 0.5 : 1)
                 .alert(isPresented: $showCancelAlert) {
                     Alert(
                         title: Text("Cancel Appointment"),
@@ -250,6 +263,8 @@ struct AppointmentCard: View {
                         .background(Color.blue.opacity(0.1))
                         .cornerRadius(8)
                 }
+                .disabled(isWithin12Hours)
+                .opacity(isWithin12Hours ? 0.5 : 1)
                 .sheet(isPresented: $showRescheduleSheet) {
                     AppointmentView(
                         doctor: appointment.doctor,
@@ -260,6 +275,13 @@ struct AppointmentCard: View {
                     )
                 }
             }
+            
+            if isWithin12Hours {
+                Text("Appointments cannot be modified within 12 hours of the scheduled time")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .padding(.top, 5)
+            }
         }
         .padding()
         .background(Color.white)
@@ -269,12 +291,12 @@ struct AppointmentCard: View {
 }
 
 struct AllAppointmentsView: View {
-    let appointments: [Appointment]
-
+    @StateObject private var appointmentManager = AppointmentManager.shared
+    
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                ForEach(appointments) { appointment in
+                ForEach(appointmentManager.upcomingAppointments) { appointment in
                     AppointmentCard(appointment: appointment)
                 }
             }
