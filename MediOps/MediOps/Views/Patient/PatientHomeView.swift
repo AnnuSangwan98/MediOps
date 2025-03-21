@@ -3,6 +3,8 @@ import SwiftUI
 struct PatientHomeView: View {
     @StateObject private var hospitalVM = HospitalViewModel()
     @StateObject private var appointmentManager = AppointmentManager.shared
+    @State private var showProfile = false
+
 
     var body: some View {
         NavigationStack {
@@ -45,12 +47,18 @@ struct PatientHomeView: View {
             }
             Spacer()
 
-            Button(action: {}) {
+            Button(action: {
+                showProfile.toggle()
+            }) {
                 Image(systemName: "person.circle.fill")
                     .resizable()
                     .frame(width: 40, height: 40)
                     .foregroundColor(.teal)
             }
+            .sheet(isPresented: $showProfile) {
+                PatientProfileView(profileController: PatientProfileController())
+            }
+
         }
         .padding(.horizontal)
         .padding(.top)
