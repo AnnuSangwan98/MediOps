@@ -8,8 +8,8 @@ app = Flask(__name__)
 # Email configuration
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SENDER_EMAIL = "aryanshukla0024@gmail.com"  # Replace with your Gmail
-SENDER_PASSWORD = "jqlj tdhn rmjs vyha"   # Replace with your app password
+SENDER_EMAIL = "mediops.infosys@gmail.com"  # Replace with your Gmail
+SENDER_PASSWORD = "zofa bied qcsx alnd"   # Replace with your app password
 
 def send_otp_email(to_email, otp):
     msg = MIMEMultipart()
