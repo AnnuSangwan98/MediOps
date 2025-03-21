@@ -10,10 +10,13 @@ import SwiftUI
 struct PatientOTPVerificationView: View {
     @Environment(\.dismiss) private var dismiss
     let email: String
+    let expectedOTP: String  // Add this property
     
     @State private var otp: String = ""
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
+    @State private var showSuccess: Bool = false
+    @State private var successMessage: String = ""
     @State private var timeRemaining: Int = 30
     @State private var timer: Timer? = nil
     @State private var navigateToHome = false
@@ -73,7 +76,7 @@ struct PatientOTPVerificationView: View {
                         
                         if timeRemaining == 0 {
                             Button("Resend OTP") {
-                                sendOtp()
+                                sendOtp(isResend: true)
                             }
                             .font(.caption)
                             .foregroundColor(.teal)
@@ -113,10 +116,16 @@ struct PatientOTPVerificationView: View {
         }
         .navigationBarBackButtonHidden(true)
         .navigationBarItems(leading: CustomBackButton())
-        .alert("Error", isPresented: $showError) {
+        .alert(showError ? "Error" : "Success", isPresented: Binding(
+            get: { showError || showSuccess },
+            set: { newValue in
+                showError = newValue && showError
+                showSuccess = newValue && showSuccess
+            }
+        )) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(errorMessage)
+            Text(showError ? errorMessage : successMessage)
         }
         .onAppear {
             sendOtp()
@@ -130,9 +139,49 @@ struct PatientOTPVerificationView: View {
         }
     }
     
-    private func sendOtp() {
-        // TODO: Implement actual OTP sending
-        startTimer()
+    private func sendOtp(isResend: Bool = false) {
+        // Send a new OTP email using the email server
+        Task {
+            do {
+                let url = URL(string: "http://172.20.2.50:8082/send-email")!
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                
+                let body: [String: Any] = [
+                    "to": email,
+                    "role": "patient",
+                    "otp": expectedOTP
+                ]
+                
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                
+                let (_, response) = try await URLSession.shared.data(for: request)
+                
+                await MainActor.run {
+                    if let httpResponse = response as? HTTPURLResponse {
+                        if httpResponse.statusCode == 200 {
+                            startTimer()
+                            if isResend {
+                                successMessage = "OTP resent successfully"
+                                showSuccess = true
+                            }
+                        } else {
+                            errorMessage = "Failed to send OTP. Please try again."
+                            showError = true
+                        }
+                    } else {
+                        errorMessage = "Invalid server response. Please try again."
+                        showError = true
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Network error. Please check your connection and try again."
+                    showError = true
+                }
+            }
+        }
     }
     
     private func handleOtpVerification() {
@@ -142,8 +191,13 @@ struct PatientOTPVerificationView: View {
             return
         }
         
-        // TODO: Implement actual OTP verification
-        navigateToHome = true
+        // Verify OTP matches
+        if otp == expectedOTP {
+            navigateToHome = true
+        } else {
+            errorMessage = "Invalid OTP. Please try again."
+            showError = true
+        }
     }
     
     private func startTimer() {

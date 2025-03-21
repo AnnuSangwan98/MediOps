@@ -8,6 +8,8 @@ struct PatientLoginView: View {
     @State private var errorMessage: String = ""
     @State private var navigateToOTP = false
     @State private var showForgotPassword = false
+    @State private var isLoading = false
+    @State private var currentOTP: String = ""
     
     private var isloginButtonEnabled: Bool {
         !email.isEmpty && !password.isEmpty && isValidEmail(email) && password.count >= 8
@@ -122,7 +124,7 @@ struct PatientLoginView: View {
                 }
             }
             .navigationDestination(isPresented: $navigateToOTP) {
-                PatientOTPVerificationView(email: email)
+                PatientOTPVerificationView(email: email, expectedOTP: currentOTP)
             }
             .navigationDestination(isPresented: $showForgotPassword) {
                 PatientForgotPasswordView()
@@ -149,9 +151,69 @@ struct PatientLoginView: View {
             showError = true
             return
         }
-        navigateToOTP = true
+        
+        sendOTP()
     }
-
+    
+    private func generateOTP() -> String {
+        String(Int.random(in: 100000...999999))
+    }
+    
+    private func sendOTP() {
+        isLoading = true
+        currentOTP = generateOTP()
+        
+        // Use your machine's IP address instead of localhost
+        guard let url = URL(string: "http://172.20.2.50:8082/send-email") else {  // Replace X with your IP
+            errorMessage = "Unable to connect to the server. Please verify your network connection and try again."
+            showError = true
+            isLoading = false
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let emailData: [String: Any] = [
+            "to": email,
+            "role": "patient",
+            "otp": currentOTP
+        ]
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: emailData)
+            
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                DispatchQueue.main.async {
+                    isLoading = false
+                    
+                    if let error = error {
+                        errorMessage = error.localizedDescription.contains("connection") ? 
+                            "Cannot reach the server. Please check your internet connection and try again." :
+                            "Error: \(error.localizedDescription)"
+                        showError = true
+                        return
+                    }
+                    
+                    if let httpResponse = response as? HTTPURLResponse {
+                        if httpResponse.statusCode == 200 {
+                            navigateToOTP = true
+                        } else {
+                            errorMessage = "Failed to send OTP. Please try again later."
+                            showError = true
+                        }
+                    }
+                }
+            }.resume()
+        } catch {
+            DispatchQueue.main.async {
+                isLoading = false
+                errorMessage = "Error: Failed to prepare email data"
+                showError = true
+            }
+        }
+    }
     
     private func isValidEmail(_ email: String) -> Bool {
         let emailRegEx = "^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}$"
