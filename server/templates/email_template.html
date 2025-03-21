@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OTP Verification</title>
+</head>
+<body style="font-family: Arial, sans-serif; background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%); margin: 0; padding: 40px 20px;">
+    <div style="max-width: 500px; margin: 0 auto; background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); border-radius: 16px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); padding: 40px 30px; text-align: center;">
+        <div style="margin-bottom: 30px; background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%); padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(13, 148, 136, 0.15);">
+            <div style="font-size: 32px; font-weight: bold; color: #ffffff; letter-spacing: -0.5px; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">MediOps</div>
+            <div style="font-size: 14px; color: rgba(255, 255, 255, 0.9); margin-top: 5px;">Healthcare Management System</div>
+        </div>
+        
+        <div style="font-size: 24px; font-weight: bold; margin-bottom: 20px; color: #1e293b;">Verify Your Account</div>
+        
+        <div style="font-size: 15px; color: #475569; margin-bottom: 30px; line-height: 1.6;">
+            Please use the verification code below to complete your account setup.<br>
+            This code will expire in <span style="font-weight: 600; color: #0d9488;">5 minutes</span>.
+        </div>
+        
+        <div style="display: flex; justify-content: center; gap: 12px; margin-bottom: 30px;">
+            {{#each (str_split body)}}
+            <div style="font-size: 28px; font-weight: bold; color: #1e293b; padding: 16px 20px; border: 2px solid #e2e8f0; border-radius: 12px; min-width: 45px; text-align: center; background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); font-family: 'Courier New', monospace; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); transition: all 0.3s ease;">
+                {{this}}
+            </div>
+            {{/each}}
+        </div>
+        
+        <div style="background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%); border: 1px solid #99f6e4; border-radius: 12px; padding: 20px; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(153, 246, 228, 0.15);">
+            <div style="font-size: 14px; color: #0d9488; font-weight: 500;">
+                🔒 For your security, never share this code with anyone
+            </div>
+        </div>
+        
+        <div style="font-size: 13px; color: #64748b; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; line-height: 1.6;">
+            If you didn't request this verification, you can safely ignore this email.<br>
+            This is an automated message, please do not reply.
+        </div>
+        
+        <div style="font-size: 12px; color: #94a3b8; margin-top: 20px;">
+            &copy; 2024 MediOps. All rights reserved.
+        </div>
+    </div>
+</body>
+</html>
