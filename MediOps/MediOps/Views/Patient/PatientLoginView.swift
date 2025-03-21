@@ -7,6 +7,7 @@ struct PatientLoginView: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var navigateToOTP = false
+    @State private var showForgotPassword = false
     
     private var isloginButtonEnabled: Bool {
         !email.isEmpty && !password.isEmpty && isValidEmail(email) && password.count >= 8
@@ -69,6 +70,13 @@ struct PatientLoginView: View {
                                     .font(.caption)
                                     .foregroundColor(.red)
                             }
+                            Button(action: { showForgotPassword = true }) {
+                                Text("Forgot Password?")
+                                    .font(.caption)
+                                    .foregroundColor(.teal)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.top, 4)
                         }
                         Button(action: handleLogin) {
                             HStack {
@@ -115,6 +123,9 @@ struct PatientLoginView: View {
             }
             .navigationDestination(isPresented: $navigateToOTP) {
                 PatientOTPVerificationView(email: email)
+            }
+            .navigationDestination(isPresented: $showForgotPassword) {
+                PatientForgotPasswordView()
             }
             .navigationBarBackButtonHidden(true)
             .navigationBarItems(leading: CustomBackButton())
