@@ -106,24 +106,16 @@ struct PatientOTPVerificationView: View {
     }
     
     private func verifyOTP() {
-        Task {
-            do {
-                let isValid = try await SupabaseService.shared.verifyOTP(email: email, otp: expectedOTP)
-                await MainActor.run {
-                    if isValid {
-                        isVerified = true
-                        navigateToHome = true
-                    } else {
-                        errorMessage = "Invalid OTP. Please try again."
-                        showError = true
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    errorMessage = "Verification failed: \(error.localizedDescription)"
-                    showError = true
-                }
-            }
+        // Get the complete OTP from the fields
+        let enteredOTP = otpFields.joined()
+        
+        // Check if the entered OTP matches the expected OTP
+        if enteredOTP == expectedOTP {
+            isVerified = true
+            navigateToHome = true
+        } else {
+            errorMessage = "Invalid OTP. Please try again."
+            showError = true
         }
     }
     

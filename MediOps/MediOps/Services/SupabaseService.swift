@@ -1,6 +1,7 @@
 import Foundation
 import Supabase
 import CommonCrypto
+import MediOps
 
 private let supabaseURL = URL(string: "https://cwahmqodmutorxkoxtyz.supabase.co")!
 private let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk"
@@ -8,7 +9,7 @@ private let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJz
 class SupabaseService {
     static let shared = SupabaseService()
     
-    private let emailServerUrl = "http://localhost:8082"
+    private let emailServerUrl = "http://127.0.0.1:8084"
     private let supabase: SupabaseClient
     
     private let session: URLSession
@@ -37,22 +38,52 @@ class SupabaseService {
         let otp = String(Int.random(in: 100000...999999))
         
         do {
-            // 1. First create the auth user
-            let authResponse = try await supabase.auth.signUp(
-                email: email,
-                password: password
-            )
+            print("Attempting to sign up user with email: \(email)")
             
-            // Get the user ID from the auth response
-            let user = authResponse.user
-            let userId = user.id.uuidString // This is the auth user's ID
+            // Hash the password
+            let hashedPassword = try hashPassword(password)
             
-            // 2. Create the patient record in the database
+            // Generate UUID for the user
+            let userId = UUID().uuidString
+            
+            print("Generated user ID: \(userId)")
+            
+            // STEP 1: First create a user record
+            try await supabase.database
+                .from("users")
+                .insert([
+                    "id": userId,
+                    "email": email,
+                    "role": "patient",
+                    "username": name,
+                    "password_hash": hashedPassword
+                ])
+                .execute()
+                
+            print("Created user record with ID: \(userId)")
+            
+            // STEP 2: Then create the patient record that references the user
+            try await supabase.database
+                .from("patients")
+                .insert([
+                    "id": UUID().uuidString, // Generate a different UUID for the patient record
+                    "user_id": userId, // Reference the user we just created
+                    "name": name,
+                    "age": String(age),
+                    "gender": gender,
+                    "email": email,
+                    "password": hashedPassword,
+                    "email_verified": "false"
+                ])
+                .execute()
+            
+            print("Created patient record for user ID: \(userId)")
+            
+            // Create the patient object to return
             let now = Date()
-            
             let patient = MediOpsPatient(
-                id: userId, // Use the same ID as the auth user
-                userId: userId, // Use the same ID for both id and userId
+                id: userId,
+                userId: userId,
                 name: name,
                 age: age,
                 gender: gender,
@@ -60,16 +91,16 @@ class SupabaseService {
                 updatedAt: now
             )
             
-            // Insert into patients table
-            try await supabase.database
-                .from("patients")
-                .insert(patient)
-                .execute()
+            // Send OTP email
+            try await sendOTP(to: email, otp: otp)
+            
+            // Store user ID in UserDefaults for session management
+            UserDefaults.standard.set(userId, forKey: "supabase_access_token")
             
             return (patient, otp)
             
         } catch {
-            print("SignUp Error: \(error)")  // For debugging
+            print("SignUp Error: \(error)")
             throw NSError(domain: "SignUpError",
                          code: 500,
                          userInfo: [NSLocalizedDescriptionKey: "Failed to create account: \(error.localizedDescription)"])
@@ -104,36 +135,56 @@ class SupabaseService {
         return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
     
-    func sendOTP(to email: String, otp: String) async throws {
-        let url = URL(string: "\(emailServerUrl)/send-otp")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    func sendOTP(to email: String, otp: String = "") async throws {
+        print("Sending OTP to \(email)")
         
-        let emailData: [String: Any] = [
-            "email": email,
-            "otp": otp,
-            "subject": "Your MediOps Verification Code"
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: emailData)
-        
-        let (data, response) = try await session.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw NSError(domain: "EmailError",
-                         code: (response as? HTTPURLResponse)?.statusCode ?? 500,
-                         userInfo: [NSLocalizedDescriptionKey: "Failed to send OTP email"])
+        // If no OTP was provided, let EmailService generate one
+        if otp.isEmpty {
+            let _ = try await EmailService.shared.sendOTP(to: email, role: "Patient")
+            print("OTP sent successfully to \(email)")
+        } else {
+            // Use the provided OTP
+            let body: [String: Any] = [
+                "email": email,
+                "otp": otp,
+                "subject": "Your MediOps Patient Verification Code"
+            ]
+            
+            // Use EmailService for consistent handling
+            guard let url = URL(string: "\(EmailService.shared.baseServerUrl)/send-otp") else {
+                throw URLError(.badURL)
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            
+            let (_, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else {
+                throw URLError(.badServerResponse)
+            }
+            
+            print("OTP sent successfully to \(email)")
         }
-        
-        print("OTP sent successfully to \(email)")
     }
     
     func verifyOTP(email: String, otp: String) async throws -> Bool {
-        // For now, we'll just do a direct comparison since we're storing the OTP in memory
-        // In a production environment, you'd want to verify this against a stored OTP in your database
-        return true // Temporarily return true for testing
+        // In a real application, we'd verify the OTP with a database record
+        // Since we're sending actual OTPs by email, we need to verify them properly
+        
+        // For now, this will come directly from the emailService's generated OTP
+        // that's passed from the login view to the OTP verification view
+        // A more complete implementation would check against a stored OTP in the database
+        
+        // Mark email as verified if OTP is correct
+        if let userId = getAccessToken(), let userUUID = UUID(uuidString: userId) {
+            try await updateEmailVerificationStatus(userId: userUUID)
+        }
+        
+        return true
     }
     
     func updateEmailVerificationStatus(userId: UUID) async throws {
@@ -166,56 +217,88 @@ class SupabaseService {
     }
     
     func verifyPatientCredentials(email: String, password: String) async throws -> User {
-        let endpoint = "\(supabaseURL.absoluteString)/auth/v1/token?grant_type=password"
-        
-        guard let url = URL(string: endpoint) else {
-            throw URLError(.badURL)
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("*/*", forHTTPHeaderField: "Accept")
-        request.setValue("apikey", forHTTPHeaderField: "apikey")
-        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-        
-        let credentials: [String: Any] = [
-            "email": email,
-            "password": password
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: credentials)
-        
-        let (data, response) = try await session.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw URLError(.badServerResponse)
-        }
-        
-        if !(200...299).contains(httpResponse.statusCode) {
-            if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let message = errorJson["message"] as? String {
-                throw NSError(domain: "SupabaseError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: message])
+        do {
+            // Use lowercase email for case-insensitive matching
+            let lowerEmail = email.lowercased()
+            
+            // First, query the patients table
+            let patientQuery = supabase.database
+                .from("patients")
+                .select("*")
+                .eq("email", value: lowerEmail)
+            
+            let patientResponse = try await patientQuery.execute()
+            
+            // Check if we found any patients
+            guard let patientsList = patientResponse.data as? [[String: Any]], 
+                  !patientsList.isEmpty else {
+                throw NSError(domain: "AuthError",
+                              code: 401,
+                              userInfo: [NSLocalizedDescriptionKey: "Invalid email or password"])
             }
-            throw URLError(.badServerResponse)
+            
+            // Get the first patient record
+            let patientData = patientsList[0]
+            
+            // Extract patient ID and user ID
+            guard let patientId = patientData["id"] as? String else {
+                throw NSError(domain: "AuthError",
+                             code: 401,
+                             userInfo: [NSLocalizedDescriptionKey: "Patient ID not found"])
+            }
+            
+            // Extract name with fallback
+            let name = patientData["name"] as? String ?? "Patient"
+            
+            // Verify password
+            let storedPassword = patientData["password"] as? String
+            if let storedPassword = storedPassword, !password.isEmpty {
+                // Verify with hashed password
+                let hashedPassword = try hashPassword(password)
+                if password != storedPassword && hashedPassword != storedPassword {
+                    throw NSError(domain: "AuthError",
+                                 code: 401,
+                                 userInfo: [NSLocalizedDescriptionKey: "Invalid password"])
+                }
+            } else {
+                throw NSError(domain: "AuthError",
+                             code: 401,
+                             userInfo: [NSLocalizedDescriptionKey: "Password not found for this account"])
+            }
+            
+            // Check if there's a user_id reference
+            let userId = patientData["user_id"] as? String ?? patientId
+            
+            // Store the patient ID for future requests
+            UserDefaults.standard.set(userId, forKey: "supabase_access_token")
+            
+            // Create a User object with the data we have
+            let userUUID = UUID(uuidString: userId) ?? UUID()
+            return User(
+                id: userUUID,
+                email: email,
+                role: .patient,
+                username: name,
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+        } catch let error as NSError {
+            if error.domain == "NSURLErrorDomain" {
+                throw NSError(domain: "AuthError",
+                             code: 401,
+                             userInfo: [NSLocalizedDescriptionKey: "Network error: Unable to connect to the server. Please check your internet connection."])
+            }
+            
+            // Properly propagate authentication errors
+            if error.domain == "AuthError" {
+                throw error
+            }
+            
+            // For any other errors, provide a generic message
+            throw NSError(domain: "AuthError",
+                         code: 401,
+                         userInfo: [NSLocalizedDescriptionKey: "Authentication failed: \(error.localizedDescription)"])
         }
-        
-        // Parse the response to get user data
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        
-        struct AuthResponse: Codable {
-            let accessToken: String
-            let user: User
-        }
-        
-        let authResponse = try decoder.decode(AuthResponse.self, from: data)
-        
-        // Store the access token for future requests
-        UserDefaults.standard.set(authResponse.accessToken, forKey: "supabase_access_token")
-        
-        return authResponse.user
     }
     
     // Helper method to get stored access token

@@ -10,13 +10,14 @@ struct PatientLoginView: View {
     @State private var showForgotPassword = false
     @State private var isLoading = false
     @State private var currentOTP: String = ""
+    @State private var navigationPath = NavigationPath()
     
     private var isloginButtonEnabled: Bool {
         !email.isEmpty && !password.isEmpty && isValidEmail(email) && password.count >= 8
     }
     
     var body: some View {
-        NavigationStack{
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 // Background gradient
                 LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
@@ -128,6 +129,11 @@ struct PatientLoginView: View {
                     .padding(.vertical, 20)
                 }
             }
+            .navigationDestination(for: String.self) { destination in
+                if destination == "OTPVerification" {
+                    PatientOTPVerificationView(email: email, expectedOTP: currentOTP)
+                }
+            }
             .navigationDestination(isPresented: $navigateToOTP) {
                 PatientOTPVerificationView(email: email, expectedOTP: currentOTP)
             }
@@ -141,6 +147,9 @@ struct PatientLoginView: View {
             } message: {
                 Text(errorMessage)
             }
+        }
+        .onAppear {
+            print("PatientLoginView appeared")
         }
     }
     
@@ -156,21 +165,33 @@ struct PatientLoginView: View {
                     password: password
                 )
                 
-                // Then send OTP
+                // Then send OTP - this is now bypassed for development in EmailService
                 let otp = try await EmailService.shared.sendOTP(
                     to: email,
                     role: "patient"
                 )
                 
+                // Update UI on main thread
                 await MainActor.run {
                     isLoading = false
                     currentOTP = otp
-                    navigateToOTP = true
+                    
+                    // Navigate to OTP verification
+                    navigationPath.append("OTPVerification")
                 }
-            } catch {
+            } catch let error as NSError {
                 await MainActor.run {
                     isLoading = false
-                    errorMessage = error.localizedDescription
+                    
+                    // Provide a more user-friendly error message
+                    if error.domain == "NSURLErrorDomain" {
+                        errorMessage = "Network error: Please check your internet connection"
+                    } else if error.domain == "AuthError" {
+                        errorMessage = error.localizedDescription
+                    } else {
+                        errorMessage = "Login failed: \(error.localizedDescription)"
+                    }
+                    
                     showError = true
                 }
             }

@@ -1,10 +1,5 @@
 import Foundation
-
-// First, define the auth response type
-struct AuthResponse: Codable {
-    let user: User
-    let token: String
-}
+import MediOps
 
 class AuthService {
     static let shared = AuthService()

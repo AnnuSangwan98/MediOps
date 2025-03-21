@@ -1,4 +1,7 @@
 import SwiftUI
+import Charts
+import Foundation
+import MediOps
 
 // MARK: - Models
 struct DoctorView: Identifiable {
