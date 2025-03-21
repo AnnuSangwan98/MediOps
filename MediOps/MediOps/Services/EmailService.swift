@@ -1,10 +1,14 @@
 import Foundation
+// Fix the import for Process
+#if os(macOS)
+import Foundation.NSProcessInfo // This brings in Process on macOS
+#endif
 
 class EmailService {
     static let shared = EmailService()
     
     // Make this public for other services to use
-    private(set) var serverUrl = "http://127.0.0.1:8085"
+    private(set) var serverUrl = "http://127.0.0.1:8089"
     
     // Public accessor for the server URL
     var baseServerUrl: String {
@@ -31,11 +35,13 @@ class EmailService {
         }
     }
     
+    // Method to send OTP and store it in memory for verification
     func sendOTP(to email: String, role: String) async throws -> String {
         // Generate a random 6-digit OTP
         let otp = String(Int.random(in: 100000...999999))
         print("Sending OTP: \(otp) to \(email)")
         
+        // In all builds, send the email
         guard let url = URL(string: "\(serverUrl)/send-otp") else {
             print("Invalid URL: \(serverUrl)/send-otp")
             throw URLError(.badURL)
@@ -51,41 +57,46 @@ class EmailService {
             "subject": "Your MediOps \(role) Verification Code"
         ]
         
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let responseString = String(data: data, encoding: .utf8) ?? "No response data"
+            print("Email server error: \(responseString)")
             
-            let (data, response) = try await URLSession.shared.data(for: request)
+            // Try to restart the server if it's not responding
+            tryRestartEmailServer()
             
-            if let httpResponse = response as? HTTPURLResponse {
-                if !(200...299).contains(httpResponse.statusCode) {
-                    let responseString = String(data: data, encoding: .utf8) ?? "No response data"
-                    print("Email server error: \(responseString)")
-                    throw NSError(domain: "EmailError", 
-                                 code: httpResponse.statusCode,
-                                 userInfo: [NSLocalizedDescriptionKey: "Failed to send verification code. Please try again later."])
-                }
-            }
-            
-            print("OTP sent successfully to \(email)")
-            return otp
-        } catch let error as NSError {
-            if error.domain == "NSURLErrorDomain" {
-                // Check if email server is running
-                print("Email server connection error: \(error.localizedDescription)")
-                
-                // For a better user experience, try to restart the email server
-                tryRestartEmailServer()
-                
-                throw NSError(domain: "EmailError", 
-                             code: error.code,
-                             userInfo: [NSLocalizedDescriptionKey: "Could not connect to email service. Please try again."])
-            }
-            
-            print("Error sending OTP: \(error.localizedDescription)")
             throw NSError(domain: "EmailError", 
-                         code: error.code,
-                         userInfo: [NSLocalizedDescriptionKey: "Failed to send verification code: \(error.localizedDescription)"])
+                         code: (response as? HTTPURLResponse)?.statusCode ?? 500,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to send verification code. Please try again later."])
         }
+        
+        print("OTP sent successfully to \(email)")
+        
+        // Store OTP in UserDefaults temporarily for verification (not secure for production!)
+        // This is just to make the current flow work
+        UserDefaults.standard.set(otp, forKey: "otp_for_\(email)")
+        
+        return otp
+    }
+    
+    // Method to verify OTP
+    func verifyOTP(email: String, otp: String) -> Bool {
+        guard let storedOTP = UserDefaults.standard.string(forKey: "otp_for_\(email)") else {
+            return false
+        }
+        
+        let isValid = storedOTP == otp
+        
+        // Remove the OTP from storage after verification
+        if isValid {
+            UserDefaults.standard.removeObject(forKey: "otp_for_\(email)")
+        }
+        
+        return isValid
     }
     
     // Method to update the server port if it changes
@@ -100,19 +111,33 @@ class EmailService {
         #if DEBUG
         print("Attempting to restart email server...")
         
-        // Execute the email_server.sh script
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/bash")
-        task.arguments = ["/Users/aryanshukla/Documents/GitHub/MediOps/MediOps/Services/email_server.sh"]
+        #if os(macOS)
+        let process = Process()
+        let pipe = Pipe()
+        
+        process.standardOutput = pipe
+        process.standardError = pipe
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["/Users/aryanshukla/Documents/GitHub/MediOps/MediOps/Services/email_server.sh"]
         
         do {
-            try task.run()
+            try process.run()
+            process.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8) {
+                print("Server restart output: \(output)")
+            }
+            
             // Wait a moment for server to start
             Thread.sleep(forTimeInterval: 3)
             print("Email server restart attempt completed")
         } catch {
             print("Failed to restart email server: \(error.localizedDescription)")
         }
+        #else
+        print("Server restart not implemented for this platform")
+        #endif
         #endif
     }
 } 

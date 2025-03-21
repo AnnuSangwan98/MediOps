@@ -109,10 +109,50 @@ struct PatientOTPVerificationView: View {
         // Get the complete OTP from the fields
         let enteredOTP = otpFields.joined()
         
+        // Normalize email by trimming whitespace and converting to lowercase
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        
         // Check if the entered OTP matches the expected OTP
         if enteredOTP == expectedOTP {
-            isVerified = true
-            navigateToHome = true
+            isLoading = true
+            
+            print("OTP verification successful, updating email_verified status for: \(normalizedEmail)")
+            
+            // Update the email_verified status in the database
+            Task {
+                do {
+                    // First get patient by email
+                    let patients = try await SupabaseController.shared.select(
+                        from: "patients",
+                        where: "email",
+                        equals: normalizedEmail
+                    )
+                    
+                    if let patientData = patients.first, let patientId = patientData["id"] as? String {
+                        print("Found patient with ID: \(patientId), updating email verification status")
+                        
+                        // Update email_verified status
+                        try await PatientController.shared.verifyPatientEmail(patientId: patientId)
+                        
+                        await MainActor.run {
+                            isLoading = false
+                            isVerified = true
+                            navigateToHome = true
+                        }
+                    } else {
+                        print("Patient not found for email: \(normalizedEmail)")
+                        throw NSError(domain: "PatientError", code: 404, userInfo: [NSLocalizedDescriptionKey: "Patient not found"])
+                    }
+                } catch {
+                    print("Error verifying email: \(error.localizedDescription)")
+                    
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = "Failed to verify email: \(error.localizedDescription)"
+                        showError = true
+                    }
+                }
+            }
         } else {
             errorMessage = "Invalid OTP. Please try again."
             showError = true
@@ -122,7 +162,7 @@ struct PatientOTPVerificationView: View {
     private func resendOTP() {
         Task {
             do {
-                try await SupabaseService.shared.sendOTP(to: email, otp: expectedOTP)
+                try await EmailService.shared.sendOTP(to: email, role: "Patient")
             } catch {
                 await MainActor.run {
                     errorMessage = "Failed to resend OTP: \(error.localizedDescription)"

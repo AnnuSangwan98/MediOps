@@ -157,27 +157,76 @@ struct PatientLoginView: View {
         guard isValidInput() else { return }
         isLoading = true
         
+        // Normalize email by trimming whitespace and converting to lowercase
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        
+        print("LOGIN ATTEMPT: Starting login process with email: \(normalizedEmail)")
+        
         Task {
             do {
-                // First verify credentials
-                let user = try await SupabaseService.shared.verifyPatientCredentials(
-                    email: email,
-                    password: password
-                )
+                // Try to get all users first - this is a quick diagnostic to help troubleshooting
+                print("LOGIN DIAGNOSTIC: Checking database connection")
+                let allPatients = try await SupabaseController.shared.select(from: "patients")
+                print("LOGIN DIAGNOSTIC: Database connection successful, found \(allPatients.count) patients")
                 
-                // Then send OTP - this is now bypassed for development in EmailService
-                let otp = try await EmailService.shared.sendOTP(
-                    to: email,
-                    role: "patient"
-                )
+                // Check if this specific patient exists using enhanced method
+                print("LOGIN DIAGNOSTIC: Checking if patient exists with email: \(normalizedEmail)")
+                let patientExists = try await AuthService.shared.checkPatientExists(email: normalizedEmail)
                 
-                // Update UI on main thread
+                if !patientExists {
+                    print("LOGIN DIAGNOSTIC: Patient doesn't exist in database. Suggesting signup.")
+                    throw AuthError.userNotFound
+                }
+                
+                print("LOGIN DIAGNOSTIC: Patient found, proceeding with credentials check")
+                
+                // Verify credentials
+                do {
+                    let (patient, token) = try await AuthService.shared.loginPatient(
+                        email: normalizedEmail,
+                        password: password
+                    )
+                    
+                    print("LOGIN DIAGNOSTIC: Login successful for patient: \(patient.id)")
+                    
+                    // Then send OTP
+                    let otp = try await EmailService.shared.sendOTP(
+                        to: normalizedEmail,
+                        role: "patient"
+                    )
+                    
+                    // Update UI on main thread
+                    await MainActor.run {
+                        isLoading = false
+                        currentOTP = otp
+                        
+                        // Navigate to OTP verification
+                        navigationPath.append("OTPVerification")
+                    }
+                } catch let authError as AuthError {
+                    if authError == AuthError.invalidCredentials {
+                        print("LOGIN DIAGNOSTIC: Invalid credentials for existing patient")
+                        throw authError
+                    } else {
+                        throw authError
+                    }
+                }
+            } catch let error as AuthError {
                 await MainActor.run {
                     isLoading = false
-                    currentOTP = otp
                     
-                    // Navigate to OTP verification
-                    navigationPath.append("OTPVerification")
+                    if error == AuthError.userNotFound {
+                        errorMessage = "Patient account not found. Please check your email or sign up first."
+                    } else if error == AuthError.invalidCredentials {
+                        errorMessage = "Invalid email or password. Please try again."
+                    } else {
+                        errorMessage = error.localizedDescription
+                    }
+                    
+                    // More detailed error for debugging
+                    print("LOGIN ERROR: AuthError: \(error)")
+                    
+                    showError = true
                 }
             } catch let error as NSError {
                 await MainActor.run {
@@ -191,6 +240,9 @@ struct PatientLoginView: View {
                     } else {
                         errorMessage = "Login failed: \(error.localizedDescription)"
                     }
+                    
+                    // More detailed error for debugging
+                    print("LOGIN ERROR: NSError: \(error)")
                     
                     showError = true
                 }
@@ -215,8 +267,8 @@ struct PatientLoginView: View {
     }
     
     private func isValidEmail(_ email: String) -> Bool {
-        let emailRegEx = "^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}$"
-        let emailPred = NSPredicate(format: "SELF MATCHES %@", emailRegEx)
-        return emailPred.evaluate(with: email)
+        let emailRegEx = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
+        let emailPredicate = NSPredicate(format:"SELF MATCHES %@", emailRegEx)
+        return emailPredicate.evaluate(with: email)
     }
-}
+} 

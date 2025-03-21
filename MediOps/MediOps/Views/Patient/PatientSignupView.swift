@@ -340,20 +340,41 @@ struct PatientSignupView: View {
         guard isSubmitButtonEnabled else { return }
         isLoading = true
         
+        // Normalize email by trimming whitespace and converting to lowercase
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        
+        print("Registering new patient with email: \(normalizedEmail)")
+        
         Task {
             do {
-                let (patient, _) = try await SupabaseService.shared.signUpPatient(
-                    email: email,
+                // First check if user already exists
+                let userExists = try await UserController.shared.checkUserExists(email: normalizedEmail)
+                
+                if userExists {
+                    print("DEBUG: User already exists with this email. Cannot register.")
+                    throw AuthError.emailAlreadyExists
+                }
+                
+                let (patient, token) = try await AuthService.shared.signUpPatient(
+                    email: normalizedEmail,
                     password: password,
-                    name: name,
+                    username: name,
                     age: Int(age) ?? 0,
                     gender: gender
                 )
                 
+                print("Successfully registered patient with ID: \(patient.id)")
+                
+                // Verify user was created successfully
+                let verifyUser = try await UserController.shared.checkUserExists(email: normalizedEmail)
+                print("DEBUG: After registration, user exists check: \(verifyUser)")
+                
                 let otp = try await EmailService.shared.sendOTP(
-                    to: email,
+                    to: normalizedEmail,
                     role: "patient"
                 )
+                
+                print("OTP sent: \(otp)")
                 
                 await MainActor.run {
                     isLoading = false
@@ -361,10 +382,20 @@ struct PatientSignupView: View {
                     navigateToOTP = true
                 }
             } catch {
-                await MainActor.run {
-                    isLoading = false
-                    errorMessage = "Failed to create account: \(error.localizedDescription)"
-                    showError = true
+                print("Registration error: \(error.localizedDescription)")
+                
+                if let authError = error as? AuthError, authError == AuthError.emailAlreadyExists {
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = "An account with this email already exists. Please log in instead."
+                        showError = true
+                    }
+                } else {
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = "Failed to create account: \(error.localizedDescription)"
+                        showError = true
+                    }
                 }
             }
         }

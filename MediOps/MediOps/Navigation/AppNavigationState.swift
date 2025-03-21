@@ -1,5 +1,4 @@
 import SwiftUI
-import MediOps
 
 enum AppView {
     case roleSelection

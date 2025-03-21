@@ -49,19 +49,20 @@ struct SignUpView: View {
         Task {
             do {
                 // First create the user and get OTP
-                let (patient, otp) = try await SupabaseService.shared.signUpPatient(
+                let (patient, token) = try await AuthService.shared.signUpPatient(
                     email: email,
                     password: password,
-                    name: name,
+                    username: name,
                     age: age,
                     gender: gender
                 )
                 
-                // Store the OTP
+                // Generate an OTP (we should move this to a dedicated service)
+                let otp = String(Int.random(in: 100000...999999))
                 currentOTP = otp
                 
-                // Send OTP email
-                try await SupabaseService.shared.sendOTP(to: email, otp: otp)
+                // TODO: Send OTP email (replace with actual implementation)
+                print("OTP: \(otp) would be sent to \(email)")
                 
                 await MainActor.run {
                     isLoading = false
@@ -105,10 +106,9 @@ struct SignUpView: View {
         .padding()
         .fullScreenCover(isPresented: $showOTPVerification) {
             NavigationView {
-                OTPVerificationView(
+                PatientOTPVerificationView(
                     email: email,
-                    expectedOTP: currentOTP,
-                    role: "patient"
+                    expectedOTP: currentOTP
                 )
             }
         }

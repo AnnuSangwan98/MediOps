@@ -1,7 +1,6 @@
 import SwiftUI
 import Charts
 import Foundation
-import MediOps
 
 // MARK: - Models
 struct DoctorView: Identifiable {
@@ -44,14 +43,14 @@ struct LabAdminView: Identifiable {
     }
 }
 
-struct Activity: Identifiable {
+struct AdminActivity: Identifiable {
     var id: UUID = UUID()
     var type: ActivityType
     var title: String
     var timestamp: Date
     var status: ActivityStatus
-    var doctorDetails: Doctor?
-    var labAdminDetails: LabAdmin?
+    var doctorDetails: Models.Doctor?
+    var labAdminDetails: Models.LabAdmin?
     
     enum ActivityType {
         case doctorAdded
@@ -106,7 +105,7 @@ struct AddDoctorView: View {
     @State private var address = "" // Added address state
     @State private var showAlert = false
     @State private var alertMessage = ""
-    var onSave: (Activity) -> Void
+    var onSave: (AdminActivity) -> Void
     
     // Calculate maximum experience based on age
     private var maximumExperience: Int {
@@ -266,18 +265,18 @@ struct AddDoctorView: View {
         }
         
         // Create a new doctor with full formatted phone number
-        let doctor = Doctor(
-            id: UUID(),
-            userId: UUID(),
+        let doctor = Models.Doctor(
+            id: UUID().uuidString,
+            userId: UUID().uuidString,
             name: fullName,
             specialization: specialization,
-            hospitalAdminId: UUID(),
+            hospitalAdminId: UUID().uuidString,
             createdAt: Date(),
             updatedAt: Date()
         )
         
         // Create a new activity with the doctor details
-        let activity = Activity(
+        let activity = AdminActivity(
             type: .doctorAdded,
             title: "New Doctor: \(doctor.name)",
             timestamp: Date(),
@@ -332,7 +331,7 @@ struct AddLabAdminView: View {
     @State private var address = ""
     @State private var showAlert = false
     @State private var alertMessage = ""
-    var onSave: (Activity) -> Void
+    var onSave: (AdminActivity) -> Void
     
     // Calculate maximum experience based on age
     private var maximumExperience: Int {
@@ -478,18 +477,18 @@ struct AddLabAdminView: View {
         }
         
         // Create a new lab admin with full formatted phone number
-        let labAdmin = LabAdmin(
-            id: UUID(),
-            userId: UUID(),
+        let labAdmin = Models.LabAdmin(
+            id: UUID().uuidString,
+            userId: UUID().uuidString,
             name: fullName,
             labName: "",
-            hospitalAdminId: UUID(),
+            hospitalAdminId: UUID().uuidString,
             createdAt: Date(),
             updatedAt: Date()
         )
         
         // Create a new activity with the lab admin details
-        let activity = Activity(
+        let activity = AdminActivity(
             type: .labAdminAdded,
             title: "New Lab Admin: \(labAdmin.name)",
             timestamp: Date(),
@@ -532,7 +531,7 @@ struct AddLabAdminView: View {
 struct AdminHomeView: View {
     @State private var showAddDoctor = false
     @State private var showAddLabAdmin = false
-    @State private var recentActivities: [Activity] = []
+    @State private var recentActivities: [AdminActivity] = []
     
     var body: some View {
         NavigationStack {
@@ -679,9 +678,9 @@ struct AdminStatCard: View {
 }
 
 struct ActivityRow: View {
-    let activity: Activity
-    let onEdit: (Activity) -> Void
-    let onDelete: (Activity) -> Void
+    let activity: AdminActivity
+    let onEdit: (AdminActivity) -> Void
+    let onDelete: (AdminActivity) -> Void
     
     var body: some View {
         HStack {

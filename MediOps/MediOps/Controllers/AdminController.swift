@@ -1,0 +1,452 @@
+import Foundation
+
+class AdminController {
+    static let shared = AdminController()
+    
+    private let supabase = SupabaseController.shared
+    private let userController = UserController.shared
+    
+    private init() {}
+    
+    // MARK: - Hospital Admin Management
+    
+    /// Register a new hospital admin
+    func registerHospitalAdmin(email: String, password: String, name: String, hospitalName: String) async throws -> (HospitalAdmin, String) {
+        // 1. Register the base user
+        let authResponse = try await userController.register(
+            email: email,
+            password: password,
+            username: name,
+            role: .hospitalAdmin
+        )
+        
+        // 2. Create hospital admin record
+        let adminId = UUID().uuidString
+        let now = Date()
+        let dateFormatter = ISO8601DateFormatter()
+        let createdAt = dateFormatter.string(from: now)
+        
+        let adminData: [String: String] = [
+            "id": adminId,
+            "user_id": authResponse.user.id,
+            "name": name,
+            "hospital_name": hospitalName,
+            "created_at": createdAt,
+            "updated_at": createdAt
+        ]
+        
+        try await supabase.insert(into: "hospital_admins", data: adminData)
+        
+        // 3. Return hospital admin object and token
+        let admin = HospitalAdmin(
+            id: adminId,
+            userId: authResponse.user.id,
+            name: name,
+            hospitalName: hospitalName,
+            createdAt: now,
+            updatedAt: now
+        )
+        
+        return (admin, authResponse.token)
+    }
+    
+    /// Get hospital admin by ID
+    func getHospitalAdmin(id: String) async throws -> HospitalAdmin {
+        let admins = try await supabase.select(
+            from: "hospital_admins", 
+            where: "id", 
+            equals: id
+        )
+        
+        guard let adminData = admins.first else {
+            throw AdminError.adminNotFound
+        }
+        
+        return try parseHospitalAdminData(adminData)
+    }
+    
+    /// Get hospital admin by user ID
+    func getHospitalAdminByUserId(userId: String) async throws -> HospitalAdmin {
+        let admins = try await supabase.select(
+            from: "hospital_admins", 
+            where: "user_id", 
+            equals: userId
+        )
+        
+        guard let adminData = admins.first else {
+            throw AdminError.adminNotFound
+        }
+        
+        return try parseHospitalAdminData(adminData)
+    }
+    
+    // MARK: - Doctor Management
+    
+    /// Register a new doctor
+    func createDoctor(email: String, password: String, name: String, specialization: String, hospitalAdminId: String) async throws -> (Doctor, String) {
+        // 1. Register the base user
+        let authResponse = try await userController.register(
+            email: email,
+            password: password,
+            username: name,
+            role: .doctor
+        )
+        
+        // 2. Create doctor record
+        let doctorId = UUID().uuidString
+        let now = Date()
+        let dateFormatter = ISO8601DateFormatter()
+        let createdAt = dateFormatter.string(from: now)
+        
+        let doctorData: [String: String] = [
+            "id": doctorId,
+            "user_id": authResponse.user.id,
+            "name": name,
+            "specialization": specialization,
+            "hospital_admin_id": hospitalAdminId,
+            "created_at": createdAt,
+            "updated_at": createdAt
+        ]
+        
+        try await supabase.insert(into: "doctors", data: doctorData)
+        
+        // 3. Return doctor object and token
+        let doctor = Doctor(
+            id: doctorId,
+            userId: authResponse.user.id,
+            name: name,
+            specialization: specialization,
+            hospitalAdminId: hospitalAdminId,
+            createdAt: now,
+            updatedAt: now
+        )
+        
+        return (doctor, authResponse.token)
+    }
+    
+    /// Get doctor by ID
+    func getDoctor(id: String) async throws -> Doctor {
+        let doctors = try await supabase.select(
+            from: "doctors", 
+            where: "id", 
+            equals: id
+        )
+        
+        guard let doctorData = doctors.first else {
+            throw AdminError.doctorNotFound
+        }
+        
+        return try parseDoctorData(doctorData)
+    }
+    
+    /// Get doctors by hospital admin ID
+    func getDoctorsByHospitalAdmin(hospitalAdminId: String) async throws -> [Doctor] {
+        let doctors = try await supabase.select(
+            from: "doctors", 
+            where: "hospital_admin_id", 
+            equals: hospitalAdminId
+        )
+        
+        return try doctors.map { try parseDoctorData($0) }
+    }
+    
+    // MARK: - Lab Admin Management
+    
+    /// Register a new lab admin
+    func createLabAdmin(email: String, password: String, name: String, labName: String, hospitalAdminId: String) async throws -> (LabAdmin, String) {
+        // 1. Register the base user
+        let authResponse = try await userController.register(
+            email: email,
+            password: password,
+            username: name,
+            role: .labAdmin
+        )
+        
+        // 2. Create lab admin record
+        let labAdminId = UUID().uuidString
+        let now = Date()
+        let dateFormatter = ISO8601DateFormatter()
+        let createdAt = dateFormatter.string(from: now)
+        
+        let labAdminData: [String: String] = [
+            "id": labAdminId,
+            "user_id": authResponse.user.id,
+            "name": name,
+            "lab_name": labName,
+            "hospital_admin_id": hospitalAdminId,
+            "created_at": createdAt,
+            "updated_at": createdAt
+        ]
+        
+        try await supabase.insert(into: "lab_admins", data: labAdminData)
+        
+        // 3. Return lab admin object and token
+        let labAdmin = LabAdmin(
+            id: labAdminId,
+            userId: authResponse.user.id,
+            name: name,
+            labName: labName,
+            hospitalAdminId: hospitalAdminId,
+            createdAt: now,
+            updatedAt: now
+        )
+        
+        return (labAdmin, authResponse.token)
+    }
+    
+    /// Get lab admin by ID
+    func getLabAdmin(id: String) async throws -> LabAdmin {
+        let labAdmins = try await supabase.select(
+            from: "lab_admins", 
+            where: "id", 
+            equals: id
+        )
+        
+        guard let labAdminData = labAdmins.first else {
+            throw AdminError.labAdminNotFound
+        }
+        
+        return try parseLabAdminData(labAdminData)
+    }
+    
+    /// Get lab admins by hospital admin ID
+    func getLabAdminsByHospitalAdmin(hospitalAdminId: String) async throws -> [LabAdmin] {
+        let labAdmins = try await supabase.select(
+            from: "lab_admins", 
+            where: "hospital_admin_id", 
+            equals: hospitalAdminId
+        )
+        
+        return try labAdmins.map { try parseLabAdminData($0) }
+    }
+    
+    // MARK: - Activity Management
+    
+    /// Create a new activity
+    func createActivity(type: String, title: String, doctorId: String? = nil, labAdminId: String? = nil) async throws -> Models.Activity {
+        let activityId = UUID().uuidString
+        let now = Date()
+        let dateFormatter = ISO8601DateFormatter()
+        let timestamp = dateFormatter.string(from: now)
+        
+        // Create a base dictionary with required values
+        var activityData: [String: String] = [
+            "id": activityId,
+            "type": type,
+            "title": title,
+            "timestamp": timestamp,
+            "status": "pending"
+        ]
+        
+        // Add optional values if present
+        if let doctorId = doctorId {
+            activityData["doctor_id"] = doctorId
+        }
+        
+        if let labAdminId = labAdminId {
+            activityData["lab_admin_id"] = labAdminId
+        }
+        
+        try await supabase.insert(into: "activities", data: activityData)
+        
+        return Models.Activity(
+            id: activityId,
+            type: type,
+            title: title,
+            timestamp: now,
+            status: "pending",
+            doctorId: doctorId,
+            labAdminId: labAdminId
+        )
+    }
+    
+    /// Get activities by status
+    func getActivities(status: String? = nil) async throws -> [Models.Activity] {
+        var activities: [[String: Any]]
+        
+        if let status = status {
+            activities = try await supabase.select(
+                from: "activities", 
+                where: "status", 
+                equals: status
+            )
+        } else {
+            activities = try await supabase.select(from: "activities")
+        }
+        
+        return try activities.map { try parseActivityData($0) }
+    }
+    
+    /// Update activity status
+    func updateActivityStatus(id: String, status: String) async throws -> Models.Activity {
+        let updateData: [String: String] = [
+            "status": status,
+            "timestamp": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        try await supabase.update(
+            table: "activities", 
+            data: updateData, 
+            where: "id", 
+            equals: id
+        )
+        
+        // Get updated activity
+        let activities = try await supabase.select(
+            from: "activities", 
+            where: "id", 
+            equals: id
+        )
+        
+        guard let activityData = activities.first else {
+            throw AdminError.activityNotFound
+        }
+        
+        return try parseActivityData(activityData)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func parseHospitalAdminData(_ data: [String: Any]) throws -> HospitalAdmin {
+        guard
+            let id = data["id"] as? String,
+            let userId = data["user_id"] as? String,
+            let name = data["name"] as? String,
+            let hospitalName = data["hospital_name"] as? String,
+            let createdAtString = data["created_at"] as? String,
+            let updatedAtString = data["updated_at"] as? String
+        else {
+            throw AdminError.invalidAdminData
+        }
+        
+        let dateFormatter = ISO8601DateFormatter()
+        let createdAt = dateFormatter.date(from: createdAtString) ?? Date()
+        let updatedAt = dateFormatter.date(from: updatedAtString) ?? Date()
+        
+        return HospitalAdmin(
+            id: id,
+            userId: userId,
+            name: name,
+            hospitalName: hospitalName,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+    
+    private func parseDoctorData(_ data: [String: Any]) throws -> Doctor {
+        guard
+            let id = data["id"] as? String,
+            let userId = data["user_id"] as? String,
+            let name = data["name"] as? String,
+            let specialization = data["specialization"] as? String,
+            let hospitalAdminId = data["hospital_admin_id"] as? String,
+            let createdAtString = data["created_at"] as? String,
+            let updatedAtString = data["updated_at"] as? String
+        else {
+            throw AdminError.invalidDoctorData
+        }
+        
+        let dateFormatter = ISO8601DateFormatter()
+        let createdAt = dateFormatter.date(from: createdAtString) ?? Date()
+        let updatedAt = dateFormatter.date(from: updatedAtString) ?? Date()
+        
+        return Doctor(
+            id: id,
+            userId: userId,
+            name: name,
+            specialization: specialization,
+            hospitalAdminId: hospitalAdminId,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+    
+    private func parseLabAdminData(_ data: [String: Any]) throws -> LabAdmin {
+        guard
+            let id = data["id"] as? String,
+            let userId = data["user_id"] as? String,
+            let name = data["name"] as? String,
+            let labName = data["lab_name"] as? String,
+            let hospitalAdminId = data["hospital_admin_id"] as? String,
+            let createdAtString = data["created_at"] as? String,
+            let updatedAtString = data["updated_at"] as? String
+        else {
+            throw AdminError.invalidLabAdminData
+        }
+        
+        let dateFormatter = ISO8601DateFormatter()
+        let createdAt = dateFormatter.date(from: createdAtString) ?? Date()
+        let updatedAt = dateFormatter.date(from: updatedAtString) ?? Date()
+        
+        return LabAdmin(
+            id: id,
+            userId: userId,
+            name: name,
+            labName: labName,
+            hospitalAdminId: hospitalAdminId,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+    
+    private func parseActivityData(_ data: [String: Any]) throws -> Models.Activity {
+        guard
+            let id = data["id"] as? String,
+            let type = data["type"] as? String,
+            let title = data["title"] as? String,
+            let timestampString = data["timestamp"] as? String,
+            let status = data["status"] as? String
+        else {
+            throw AdminError.invalidActivityData
+        }
+        
+        let dateFormatter = ISO8601DateFormatter()
+        let timestamp = dateFormatter.date(from: timestampString) ?? Date()
+        
+        let doctorId = data["doctor_id"] as? String
+        let labAdminId = data["lab_admin_id"] as? String
+        
+        return Models.Activity(
+            id: id,
+            type: type,
+            title: title,
+            timestamp: timestamp,
+            status: status,
+            doctorId: doctorId,
+            labAdminId: labAdminId
+        )
+    }
+}
+
+// MARK: - Admin Errors
+enum AdminError: Error, LocalizedError {
+    case adminNotFound
+    case doctorNotFound
+    case labAdminNotFound
+    case activityNotFound
+    case invalidAdminData
+    case invalidDoctorData
+    case invalidLabAdminData
+    case invalidActivityData
+    
+    var errorDescription: String? {
+        switch self {
+        case .adminNotFound:
+            return "Hospital admin not found"
+        case .doctorNotFound:
+            return "Doctor not found"
+        case .labAdminNotFound:
+            return "Lab admin not found"
+        case .activityNotFound:
+            return "Activity not found"
+        case .invalidAdminData:
+            return "Invalid hospital admin data"
+        case .invalidDoctorData:
+            return "Invalid doctor data"
+        case .invalidLabAdminData:
+            return "Invalid lab admin data"
+        case .invalidActivityData:
+            return "Invalid activity data"
+        }
+    }
+} 
