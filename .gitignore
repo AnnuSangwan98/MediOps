@@ -23,3 +23,9 @@ Podfile.lock
 *.dSYM/
 
 *.xcuserstate
+
+# Supabase
+.supabase
+**/supabase/.branches
+**/supabase/.temp
+
