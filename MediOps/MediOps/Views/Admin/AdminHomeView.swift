@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Models
 struct DoctorView: Identifiable {
-    var id = UUID()
+    var id: UUID = UUID()
     var fullName: String
     var specialization: String
     var email: String
@@ -23,7 +23,7 @@ struct DoctorView: Identifiable {
 }
 
 struct LabAdminView: Identifiable {
-    var id = UUID()
+    var id: UUID = UUID()
     var fullName: String
     var email: String
     var phone: String // This will store the full phone number including +91
@@ -42,13 +42,13 @@ struct LabAdminView: Identifiable {
 }
 
 struct Activity: Identifiable {
-    var id = UUID()
+    var id: UUID = UUID()
     var type: ActivityType
     var title: String
     var timestamp: Date
     var status: ActivityStatus
-    var doctorDetails: DoctorView?  // Added to store doctor details
-    var labAdminDetails: LabAdmin?  // Added to store lab admin details
+    var doctorDetails: Doctor?
+    var labAdminDetails: LabAdmin?
     
     enum ActivityType {
         case doctorAdded
@@ -95,7 +95,7 @@ struct AddDoctorView: View {
     @State private var specialization = ""
     @State private var email = ""
     @State private var phoneNumber = "" // This will store only the 10 digits part
-    @State private var gender: Doctor.Gender = .male
+    @State private var gender: DoctorView.Gender = .male
     @State private var dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
     @State private var experience = 0
     @State private var qualification = ""
@@ -131,7 +131,7 @@ struct AddDoctorView: View {
                     TextField("Full Name", text: $fullName)
                     
                     Picker("Gender", selection: $gender) {
-                        ForEach(Doctor.Gender.allCases) { gender in
+                        ForEach(DoctorView.Gender.allCases) { gender in
                             Text(gender.rawValue).tag(gender)
                         }
                     }
@@ -264,22 +264,19 @@ struct AddDoctorView: View {
         
         // Create a new doctor with full formatted phone number
         let doctor = Doctor(
-            fullName: fullName,
+            id: UUID(),
+            userId: UUID(),
+            name: fullName,
             specialization: specialization,
-            email: email,
-            phone: "+91\(phoneNumber)", // Combine the prefix and number
-            gender: gender,
-            dateOfBirth: dateOfBirth,
-            experience: experience,
-            qualification: qualification,
-            license: license,
-            address: address
+            hospitalAdminId: UUID(),
+            createdAt: Date(),
+            updatedAt: Date()
         )
         
         // Create a new activity with the doctor details
         let activity = Activity(
             type: .doctorAdded,
-            title: "New Doctor: \(doctor.fullName)",
+            title: "New Doctor: \(doctor.name)",
             timestamp: Date(),
             status: .pending,
             doctorDetails: doctor,
@@ -324,7 +321,7 @@ struct AddLabAdminView: View {
     @State private var fullName = ""
     @State private var email = ""
     @State private var phoneNumber = "" // This will store only the 10 digits part
-    @State private var gender: LabAdmin.Gender = .male
+    @State private var gender: LabAdminView.Gender = .male
     @State private var dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
     @State private var experience = 0
     @State private var qualification = ""
@@ -359,7 +356,7 @@ struct AddLabAdminView: View {
                     TextField("Full Name", text: $fullName)
                     
                     Picker("Gender", selection: $gender) {
-                        ForEach(LabAdmin.Gender.allCases) { gender in
+                        ForEach(LabAdminView.Gender.allCases) { gender in
                             Text(gender.rawValue).tag(gender)
                         }
                     }
@@ -479,20 +476,19 @@ struct AddLabAdminView: View {
         
         // Create a new lab admin with full formatted phone number
         let labAdmin = LabAdmin(
-            fullName: fullName,
-            email: email,
-            phone: "+91\(phoneNumber)",
-            gender: gender,
-            dateOfBirth: dateOfBirth,
-            experience: experience,
-            qualification: qualification,
-            address: address
+            id: UUID(),
+            userId: UUID(),
+            name: fullName,
+            labName: "",
+            hospitalAdminId: UUID(),
+            createdAt: Date(),
+            updatedAt: Date()
         )
         
         // Create a new activity with the lab admin details
         let activity = Activity(
             type: .labAdminAdded,
-            title: "New Lab Admin: \(labAdmin.fullName)",
+            title: "New Lab Admin: \(labAdmin.name)",
             timestamp: Date(),
             status: .pending,
             doctorDetails: nil,

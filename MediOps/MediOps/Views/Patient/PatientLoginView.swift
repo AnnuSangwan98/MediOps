@@ -82,11 +82,16 @@ struct PatientLoginView: View {
                         }
                         Button(action: handleLogin) {
                             HStack {
-                                Text("Proceed")
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
-                                Image(systemName: "arrow.right")
-                                    .font(.title3)
+                                if isLoading {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                } else {
+                                    Text("Proceed")
+                                        .font(.title3)
+                                        .fontWeight(.semibold)
+                                    Image(systemName: "arrow.right")
+                                        .font(.title3)
+                                }
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -103,7 +108,7 @@ struct PatientLoginView: View {
                             .cornerRadius(15)
                             .shadow(color: isloginButtonEnabled ? .teal.opacity(0.3) : .gray.opacity(0.3), radius: 5, x: 0, y: 5)
                         }
-                        .disabled(!isloginButtonEnabled)
+                        .disabled(!isloginButtonEnabled || isLoading)
                         .padding(.top, 10)
                     }
                     .padding(.horizontal, 30)
@@ -139,80 +144,53 @@ struct PatientLoginView: View {
         }
     }
     
-    
-   private func handleLogin() {
-        if !isValidEmail(email) {
-            errorMessage = "Please enter a valid email address"
-            showError = true
-            return
-        }
-        if password.count < 8 {
-            errorMessage = "Password must be at least 8 characters"
-            showError = true
-            return
-        }
-        
-        sendOTP()
-    }
-    
-    private func generateOTP() -> String {
-        String(Int.random(in: 100000...999999))
-    }
-    
-    private func sendOTP() {
+    private func handleLogin() {
+        guard isValidInput() else { return }
         isLoading = true
-        currentOTP = generateOTP()
         
-        // Use your machine's IP address instead of localhost
-        guard let url = URL(string: "http://172.20.2.50:8082/send-email") else {  // Replace X with your IP
-            errorMessage = "Unable to connect to the server. Please verify your network connection and try again."
-            showError = true
-            isLoading = false
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let emailData: [String: Any] = [
-            "to": email,
-            "role": "patient",
-            "otp": currentOTP
-        ]
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: emailData)
-            
-            URLSession.shared.dataTask(with: request) { data, response, error in
-                DispatchQueue.main.async {
+        Task {
+            do {
+                // First verify credentials
+                let user = try await SupabaseService.shared.verifyPatientCredentials(
+                    email: email,
+                    password: password
+                )
+                
+                // Then send OTP
+                let otp = try await EmailService.shared.sendOTP(
+                    to: email,
+                    role: "patient"
+                )
+                
+                await MainActor.run {
                     isLoading = false
-                    
-                    if let error = error {
-                        errorMessage = error.localizedDescription.contains("connection") ? 
-                            "Cannot reach the server. Please check your internet connection and try again." :
-                            "Error: \(error.localizedDescription)"
-                        showError = true
-                        return
-                    }
-                    
-                    if let httpResponse = response as? HTTPURLResponse {
-                        if httpResponse.statusCode == 200 {
-                            navigateToOTP = true
-                        } else {
-                            errorMessage = "Failed to send OTP. Please try again later."
-                            showError = true
-                        }
-                    }
+                    currentOTP = otp
+                    navigateToOTP = true
                 }
-            }.resume()
-        } catch {
-            DispatchQueue.main.async {
-                isLoading = false
-                errorMessage = "Error: Failed to prepare email data"
-                showError = true
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
             }
         }
+    }
+    
+    private func isValidInput() -> Bool {
+        guard !email.isEmpty, !password.isEmpty else {
+            errorMessage = "Please fill in all fields"
+            showError = true
+            return false
+        }
+        
+        guard email.contains("@") else {
+            errorMessage = "Please enter a valid email"
+            showError = true
+            return false
+        }
+        
+        return true
     }
     
     private func isValidEmail(_ email: String) -> Bool {

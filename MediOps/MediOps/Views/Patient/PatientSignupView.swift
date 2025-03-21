@@ -1,7 +1,5 @@
 import SwiftUI
 
-
-
 struct PatientSignupView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String = ""
@@ -15,6 +13,7 @@ struct PatientSignupView: View {
     @State private var navigateToOTP = false
     @State private var suggestedPassword: String? = nil
     @State private var currentOTP: String = ""
+    @State private var isLoading = false
     
     let genders = ["Male", "Female", "Other"]
     
@@ -273,7 +272,7 @@ struct PatientSignupView: View {
                             }
                         }
 
-                        Button(action: handleSubmit) {
+                        Button(action: handleSignup) {
                             HStack {
                                 Text("Proceed")
                                     .font(.title3)
@@ -324,6 +323,11 @@ struct PatientSignupView: View {
         .navigationDestination(isPresented: $navigateToOTP) {
             PatientOTPVerificationView(email: email, expectedOTP: currentOTP)
         }
+        if isLoading {
+            ProgressView("Creating account...")
+                .progressViewStyle(CircularProgressViewStyle())
+                .padding()
+        }
     }
     
     private var isValidEmail: Bool {
@@ -332,90 +336,36 @@ struct PatientSignupView: View {
         return emailPred.evaluate(with: email)
     }
     
-    private func generateOTP() -> String {
-        String(Int.random(in: 100000...999999))
-    }
-    
-    private func handleSubmit() {
-        if !isValidName {
-            errorMessage = "Please enter a valid name (letters only)"
-            showError = true
-            return
-        }
-            
-        if !isValidAge {
-            errorMessage = "Please enter a valid age (between 1 and 199)"
-            showError = true
-            return
-        }
-            
-        if !isValidPassword {
-            errorMessage = "Password doesn't meet the requirements"
-            showError = true
-            return
-        }
-            
-        if password != confirmPassword {
-            errorMessage = "Passwords do not match"
-            showError = true
-            return
-        }
+    private func handleSignup() {
+        guard isSubmitButtonEnabled else { return }
+        isLoading = true
         
-        if !isValidEmail {
-            errorMessage = "Please enter a valid email address"
-            showError = true
-            return
-        }
-        
-        sendOTP()
-    }
-    
-    private func sendOTP() {
-        currentOTP = generateOTP()
-        
-        guard let url = URL(string: "http://172.20.2.50:8082/send-email") else {
-            errorMessage = "Unable to connect to the server. Please verify your network connection and try again."
-            showError = true
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let emailData: [String: Any] = [
-            "to": email,
-            "role": "patient",
-            "otp": currentOTP
-        ]
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: emailData)
-            
-            URLSession.shared.dataTask(with: request) { data, response, error in
-                DispatchQueue.main.async {
-                    if let error = error {
-                        errorMessage = error.localizedDescription.contains("connection") ? 
-                            "Cannot reach the server. Please check your internet connection and try again." :
-                            "Error: \(error.localizedDescription)"
-                        showError = true
-                        return
-                    }
-                    
-                    if let httpResponse = response as? HTTPURLResponse {
-                        if httpResponse.statusCode == 200 {
-                            navigateToOTP = true
-                        } else {
-                            errorMessage = "Failed to send OTP. Please try again later."
-                            showError = true
-                        }
-                    }
+        Task {
+            do {
+                let (patient, _) = try await SupabaseService.shared.signUpPatient(
+                    email: email,
+                    password: password,
+                    name: name,
+                    age: Int(age) ?? 0,
+                    gender: gender
+                )
+                
+                let otp = try await EmailService.shared.sendOTP(
+                    to: email,
+                    role: "patient"
+                )
+                
+                await MainActor.run {
+                    isLoading = false
+                    currentOTP = otp
+                    navigateToOTP = true
                 }
-            }.resume()
-        } catch {
-            DispatchQueue.main.async {
-                errorMessage = "Error: Failed to prepare email data"
-                showError = true
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Failed to create account: \(error.localizedDescription)"
+                    showError = true
+                }
             }
         }
     }

@@ -25,10 +25,6 @@ Podfile.lock
 *.xcuserstate
 
 
-# Supabase
-.supabase
-**/supabase/.branches
-**/supabase/.temp
 
 
 *.extension

@@ -9,7 +9,7 @@ enum UserRole: String, Codable {
 }
 
 struct User: Codable {
-    let id: String
+    let id: UUID
     let email: String
     let role: UserRole
     let username: String?
@@ -27,8 +27,8 @@ struct User: Codable {
 }
 
 struct Patient: Codable {
-    let id: String
-    let userId: String
+    let id: UUID
+    let userId: UUID
     let name: String
     let age: Int
     let gender: String
@@ -47,8 +47,8 @@ struct Patient: Codable {
 }
 
 struct HospitalAdmin: Codable {
-    let id: String
-    let userId: String
+    let id: UUID
+    let userId: UUID
     let name: String
     let hospitalName: String
     let createdAt: Date
@@ -65,11 +65,11 @@ struct HospitalAdmin: Codable {
 }
 
 struct Doctor: Codable {
-    let id: String
-    let userId: String
+    let id: UUID
+    let userId: UUID
     let name: String
     let specialization: String
-    let hospitalAdminId: String
+    let hospitalAdminId: UUID
     let createdAt: Date
     let updatedAt: Date
     
@@ -85,11 +85,11 @@ struct Doctor: Codable {
 }
 
 struct LabAdmin: Codable {
-    let id: String
-    let userId: String
+    let id: UUID
+    let userId: UUID
     let name: String
     let labName: String
-    let hospitalAdminId: String
+    let hospitalAdminId: UUID
     let createdAt: Date
     let updatedAt: Date
     

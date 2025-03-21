@@ -1,108 +1,121 @@
 import Foundation
-import Supabase
+
+// First, define the auth response type
+struct AuthResponse: Codable {
+    let user: User
+    let token: String
+}
 
 class AuthService {
     static let shared = AuthService()
-    private let supabase = SupabaseClient(supabaseURL: URL(string: SupabaseConfig.projectURL)!, supabaseKey: SupabaseConfig.anonKey)
-    
+        
     private init() {}
     
     // MARK: - Patient Authentication
-    func signUpPatient(email: String, password: String, name: String, age: Int, gender: String) async throws -> User {
-        // Create auth user
-        let authResponse = try await supabase.auth.signUp(email: email, password: password)
-        guard let userId = authResponse.user.id else {
-            throw NSError(domain: "AuthError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create user"])
-        }
+    func signUpPatient(email: String, password: String, name: String, age: Int, gender: String) async throws -> (MediOpsPatient, String) {
+        let authResponse = AuthResponse(
+            user: User(
+                id: UUID(),
+                email: email,
+                role: .patient,
+                username: name,
+                createdAt: Date(),
+                updatedAt: Date()
+            ),
+            token: "mock_token"
+        )
         
-        // Create user record with role
-        let formattedId = generateFormattedUserId(role: .patient)
-        let user = User(id: formattedId, email: email, role: .patient, username: nil, createdAt: Date(), updatedAt: Date())
-        try await supabase.database.from("users").insert(user).execute()
+        let patient = MediOpsPatient(
+            id: authResponse.user.id.uuidString,
+            userId: authResponse.user.id.uuidString,
+            name: name,
+            age: age,
+            gender: gender,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
         
-        // Create patient record
-        let patient = Patient(id: UUID().uuidString, userId: userId, name: name, age: age, gender: gender, createdAt: Date(), updatedAt: Date())
-        try await supabase.database.from("patients").insert(patient).execute()
-        
-        return user
+        return (patient, authResponse.token)
     }
     
     // MARK: - Hospital Admin Management
-    func createHospitalAdmin(email: String, name: String, hospitalName: String) async throws -> (User, String) {
-        let password = generateSecurePassword()
-        let username = generateUsername(from: name)
+    func createHospitalAdmin(email: String, name: String, hospitalName: String) async throws -> (HospitalAdmin, String) {
+        let authResponse = AuthResponse(
+            user: User(
+                id: UUID(),
+                email: email,
+                role: .hospitalAdmin,
+                username: name,
+                createdAt: Date(),
+                updatedAt: Date()
+            ),
+            token: "mock_token"
+        )
         
-        // Create auth user
-        let authResponse = try await supabase.auth.admin.createUser(.init(email: email, password: password, emailConfirm: true))
-        guard let userId = authResponse.user.id else {
-            throw NSError(domain: "AuthError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create hospital admin"])
-        }
+        let admin = HospitalAdmin(
+            id: UUID(),
+            userId: authResponse.user.id,
+            name: name,
+            hospitalName: hospitalName,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
         
-        // Create user record with role
-        let formattedId = generateFormattedUserId(role: .hospitalAdmin)
-        let user = User(id: formattedId, email: email, role: .hospitalAdmin, username: username, createdAt: Date(), updatedAt: Date())
-        try await supabase.database.from("users").insert(user).execute()
-        
-        // Create hospital admin record
-        let hospitalAdmin = HospitalAdmin(id: UUID().uuidString, userId: userId, name: name, hospitalName: hospitalName, createdAt: Date(), updatedAt: Date())
-        try await supabase.database.from("hospital_admins").insert(hospitalAdmin).execute()
-        
-        // Send credentials via email
-        try await sendCredentialsEmail(to: email, username: username, password: password, role: .hospitalAdmin)
-        
-        return (user, password)
+        return (admin, authResponse.token)
     }
     
     // MARK: - Doctor Management
-    func createDoctor(email: String, name: String, specialization: String, hospitalAdminId: String) async throws -> (User, String) {
-        let password = generateSecurePassword()
-        let username = generateUsername(from: name)
+    func createDoctor(email: String, name: String, specialization: String, hospitalAdminId: UUID) async throws -> (Doctor, String) {
+        let authResponse = AuthResponse(
+            user: User(
+                id: UUID(),
+                email: email,
+                role: .doctor,
+                username: name,
+                createdAt: Date(),
+                updatedAt: Date()
+            ),
+            token: "mock_token"
+        )
         
-        // Create auth user
-        let authResponse = try await supabase.auth.admin.createUser(.init(email: email, password: password, emailConfirm: true))
-        guard let userId = authResponse.user.id else {
-            throw NSError(domain: "AuthError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create doctor"])
-        }
+        let doctor = Doctor(
+            id: UUID(),
+            userId: authResponse.user.id,
+            name: name,
+            specialization: specialization,
+            hospitalAdminId: hospitalAdminId,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
         
-        // Create user record with role
-        let formattedId = generateFormattedUserId(role: .doctor)
-        let user = User(id: formattedId, email: email, role: .doctor, username: username, createdAt: Date(), updatedAt: Date())
-        try await supabase.database.from("users").insert(user).execute()
-        
-        // Create doctor record
-        let doctor = Doctor(id: UUID().uuidString, userId: userId, name: name, specialization: specialization, hospitalAdminId: hospitalAdminId, createdAt: Date(), updatedAt: Date())
-        try await supabase.database.from("doctors").insert(doctor).execute()
-        
-        // Send credentials via email
-        try await sendCredentialsEmail(to: email, username: username, password: password, role: .doctor)
-        
-        return (user, password)
+        return (doctor, authResponse.token)
     }
     
     // MARK: - Lab Admin Management
-    func createLabAdmin(email: String, name: String, labName: String, hospitalAdminId: String) async throws -> (User, String) {
-        let password = generateSecurePassword()
-        let username = generateUsername(from: name)
+    func createLabAdmin(email: String, name: String, labName: String, hospitalAdminId: UUID) async throws -> (LabAdmin, String) {
+        let authResponse = AuthResponse(
+            user: User(
+                id: UUID(),
+                email: email,
+                role: .labAdmin,
+                username: name,
+                createdAt: Date(),
+                updatedAt: Date()
+            ),
+            token: "mock_token"
+        )
         
-        // Create auth user
-        let authResponse = try await supabase.auth.admin.createUser(.init(email: email, password: password, emailConfirm: true))
-        guard let userId = authResponse.user.id else {
-            throw NSError(domain: "AuthError", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to create lab admin"])
-        }
+        let labAdmin = LabAdmin(
+            id: UUID(),
+            userId: authResponse.user.id,
+            name: name,
+            labName: labName,
+            hospitalAdminId: hospitalAdminId,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
         
-        // Create user record with role
-        let formattedId = generateFormattedUserId(role: .labAdmin)
-        let user = User(id: formattedId, email: email, role: .labAdmin, username: username, createdAt: Date(), updatedAt: Date())
-        try await supabase.database.from("users").insert(user).execute()
-        
-        // Create lab admin record
-        let labAdmin = LabAdmin(id: UUID().uuidString, userId: userId, name: name, labName: labName, hospitalAdminId: hospitalAdminId, createdAt: Date(), updatedAt: Date())
-        try await supabase.database.from("lab_admins").insert(labAdmin).execute()
-        
-        // Send credentials via email
-        try await sendCredentialsEmail(to: email, username: username, password: password, role: .labAdmin)
-        
-        return (user, password)
+        return (labAdmin, authResponse.token)
     }
     
     // MARK: - Helper Methods

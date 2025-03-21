@@ -8,208 +8,167 @@
 import SwiftUI
 
 struct PatientOTPVerificationView: View {
-    @Environment(\.dismiss) private var dismiss
     let email: String
-    let expectedOTP: String  // Add this property
+    let expectedOTP: String
     
-    @State private var otp: String = ""
-    @State private var showError: Bool = false
-    @State private var errorMessage: String = ""
-    @State private var showSuccess: Bool = false
-    @State private var successMessage: String = ""
-    @State private var timeRemaining: Int = 30
-    @State private var timer: Timer? = nil
+    @State private var otpFields: [String] = Array(repeating: "", count: 6)
+    @State private var currentField: Int = 0
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var isLoading = false
+    @State private var isVerified = false
     @State private var navigateToHome = false
     
-    private var isVerifyButtonEnabled: Bool {
-        otp.count == 6
-    }
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        ZStack {
-            LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                         startPoint: .topLeading,
-                         endPoint: .bottomTrailing)
-                .ignoresSafeArea()
+        VStack(spacing: 30) {
+            // Header
+            VStack(spacing: 15) {
+                Image(systemName: "envelope.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 60, height: 60)
+                    .foregroundColor(.teal)
+                
+                Text("OTP Verification")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(.teal)
+                
+                Text("Enter the OTP sent to\n\(email)")
+                    .font(.system(size: 16))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.gray)
+            }
+            .padding(.top, 50)
             
-            VStack(spacing: 30) {
-                VStack(spacing: 15) {
-                    ZStack {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 120, height: 120)
-                            .shadow(color: .gray.opacity(0.2), radius: 10)
-                        
-                        Image(systemName: "envelope.fill")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 60, height: 60)
-                            .foregroundColor(.teal)
+            // OTP Fields
+            HStack(spacing: 10) {
+                ForEach(0..<6) { index in
+                    OTPTextField(text: $otpFields[index], isFocused: currentField == index) { newValue in
+                        handleOTPInput(index: index, newValue: newValue)
                     }
-                    
-                    Text("OTP Verification")
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundColor(.teal)
                 }
-                .padding(.top, 50)
-                
-                VStack(spacing: 25) {
-                    Text("Enter the verification code sent to")
-                        .foregroundColor(.gray)
-                    
-                    Text(email)
-                        .font(.headline)
-                        .foregroundColor(.teal)
-                    
-                    TextField("Enter 6-digit OTP", text: $otp)
-                        .keyboardType(.numberPad)
-                        .textContentType(.oneTimeCode)
-                        .multilineTextAlignment(.center)
-                        .textFieldStyle(CustomTextFieldStyle())
-                    
-                    HStack {
-                        Text("Resend OTP in \(timeRemaining)s")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        
-                        Spacer()
-                        
-                        if timeRemaining == 0 {
-                            Button("Resend OTP") {
-                                sendOtp(isResend: true)
-                            }
-                            .font(.caption)
-                            .foregroundColor(.teal)
-                        }
-                    }
-                    
-                    Button(action: handleOtpVerification) {
-                        HStack {
-                            Text("Verify OTP")
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            Image(systemName: "checkmark.circle")
-                                .font(.title3)
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 55)
-                        .background(
-                            isVerifyButtonEnabled ?
-                            LinearGradient(gradient: Gradient(colors: [Color.teal, Color.teal.opacity(0.8)]),
-                                           startPoint: .leading,
-                                           endPoint: .trailing) :
-                                LinearGradient(gradient: Gradient(colors: [Color.gray, Color.gray]),
-                                               startPoint: .leading,
-                                               endPoint: .trailing)
-                        )
-                        .cornerRadius(15)
-                        .shadow(color: isVerifyButtonEnabled ? .teal.opacity(0.3) : .gray.opacity(0.3), radius: 5, x: 0, y: 5)
-                    }
-                    .disabled(!isVerifyButtonEnabled)
-                    .padding(.top, 10)
-                }
-                .padding(.horizontal, 30)
-                
-                Spacer()
             }
+            .padding(.horizontal)
+            
+            // Verify Button
+            Button(action: verifyOTP) {
+                if isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                } else {
+                    Text("Verify OTP")
+                        .fontWeight(.semibold)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.teal)
+            .foregroundColor(.white)
+            .cornerRadius(10)
+            .padding(.horizontal)
+            .disabled(isLoading || !isOTPComplete)
+            
+            // Resend OTP
+            Button(action: resendOTP) {
+                Text("Resend OTP")
+                    .foregroundColor(.teal)
+            }
+            .padding(.top)
+            
+            Spacer()
         }
-        .navigationBarBackButtonHidden(true)
-        .navigationBarItems(leading: CustomBackButton())
-        .alert(showError ? "Error" : "Success", isPresented: Binding(
-            get: { showError || showSuccess },
-            set: { newValue in
-                showError = newValue && showError
-                showSuccess = newValue && showSuccess
-            }
-        )) {
+        .padding()
+        .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(showError ? errorMessage : successMessage)
-        }
-        .onAppear {
-            sendOtp()
-        }
-        .onDisappear {
-            timer?.invalidate()
-            timer = nil
+            Text(errorMessage)
         }
         .navigationDestination(isPresented: $navigateToHome) {
             PatientHomeView()
         }
     }
     
-    private func sendOtp(isResend: Bool = false) {
-        // Send a new OTP email using the email server
+    private var isOTPComplete: Bool {
+        otpFields.allSatisfy { !$0.isEmpty }
+    }
+    
+    private func handleOTPInput(index: Int, newValue: String) {
+        // Move to next field if current field is filled
+        if !newValue.isEmpty && index < 5 {
+            currentField = index + 1
+        }
+        // Move to previous field if current field is emptied
+        else if newValue.isEmpty && index > 0 {
+            currentField = index - 1
+        }
+    }
+    
+    private func verifyOTP() {
         Task {
             do {
-                let url = URL(string: "http://172.20.2.50:8082/send-email")!
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                
-                let body: [String: Any] = [
-                    "to": email,
-                    "role": "patient",
-                    "otp": expectedOTP
-                ]
-                
-                request.httpBody = try JSONSerialization.data(withJSONObject: body)
-                
-                let (_, response) = try await URLSession.shared.data(for: request)
-                
+                let isValid = try await SupabaseService.shared.verifyOTP(email: email, otp: expectedOTP)
                 await MainActor.run {
-                    if let httpResponse = response as? HTTPURLResponse {
-                        if httpResponse.statusCode == 200 {
-                            startTimer()
-                            if isResend {
-                                successMessage = "OTP resent successfully"
-                                showSuccess = true
-                            }
-                        } else {
-                            errorMessage = "Failed to send OTP. Please try again."
-                            showError = true
-                        }
+                    if isValid {
+                        isVerified = true
+                        navigateToHome = true
                     } else {
-                        errorMessage = "Invalid server response. Please try again."
+                        errorMessage = "Invalid OTP. Please try again."
                         showError = true
                     }
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = "Network error. Please check your connection and try again."
+                    errorMessage = "Verification failed: \(error.localizedDescription)"
                     showError = true
                 }
             }
         }
     }
     
-    private func handleOtpVerification() {
-        if otp.count != 6 {
-            errorMessage = "Please enter a valid 6-digit OTP"
-            showError = true
-            return
-        }
-        
-        // Verify OTP matches
-        if otp == expectedOTP {
-            navigateToHome = true
-        } else {
-            errorMessage = "Invalid OTP. Please try again."
-            showError = true
-        }
-    }
-    
-    private func startTimer() {
-        timeRemaining = 30
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            if timeRemaining > 0 {
-                timeRemaining -= 1
-            } else {
-                timer?.invalidate()
+    private func resendOTP() {
+        Task {
+            do {
+                try await SupabaseService.shared.sendOTP(to: email, otp: expectedOTP)
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to resend OTP: \(error.localizedDescription)"
+                    showError = true
+                }
             }
         }
+    }
+}
+
+// Custom OTP TextField
+struct OTPTextField: View {
+    @Binding var text: String
+    let isFocused: Bool
+    let onInput: (String) -> Void
+    
+    var body: some View {
+        TextField("", text: $text)
+            .keyboardType(.numberPad)
+            .multilineTextAlignment(.center)
+            .frame(width: 45, height: 45)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isFocused ? Color.teal : Color.gray, lineWidth: 1)
+            )
+            .onChange(of: text) { newValue in
+                // Limit to single digit
+                if newValue.count > 1 {
+                    text = String(newValue.prefix(1))
+                }
+                onInput(text)
+            }
+    }
+}
+
+#Preview {
+    NavigationView {
+        PatientOTPVerificationView(email: "test@example.com", expectedOTP: "123456")
     }
 }
 
