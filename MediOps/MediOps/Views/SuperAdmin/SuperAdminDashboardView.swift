@@ -144,6 +144,7 @@ struct SuperAdminDashboardView: View {
                         }
                     }
                     .padding()
+                    .navigationBarHidden(true)
                 }
             }
         }
@@ -163,9 +164,6 @@ struct SuperAdminDashboardView: View {
                     onSubmit: addHospital
                 )
                 .navigationTitle("Add Hospital")
-                .navigationBarItems(trailing: Button("Cancel") {
-                    showHospitalForm = false
-                })
             }
         }
         .sheet(isPresented: $showEditForm) {
@@ -359,12 +357,29 @@ struct AddHospitalForm: View {
     @Binding var phone: String
     @Binding var email: String
     let onSubmit: () -> Void
+    @Environment(\.dismiss) private var dismiss
     
     @State private var showValidationErrors = false
     @State private var emailError = ""
     @State private var phoneError = ""
     @State private var pinCodeError = ""
     @State private var hospitalIdError = ""
+    
+    private var isFormValid: Bool {
+        !hospitalName.isEmpty && 
+        !adminName.isEmpty && 
+        !licenseNumber.isEmpty && 
+        !street.isEmpty &&
+        !city.isEmpty && 
+        !state.isEmpty && 
+        !zipCode.isEmpty &&
+        !phone.isEmpty && 
+        !email.isEmpty &&
+        emailError.isEmpty &&
+        phoneError.isEmpty &&
+        pinCodeError.isEmpty &&
+        hospitalIdError.isEmpty
+    }
     
     private func validateForm() -> Bool {
         var isValid = true
@@ -408,34 +423,31 @@ struct AddHospitalForm: View {
         Form {
             Section(header: Text("Hospital Information")) {
                 TextField("Hospital Name", text: $hospitalName)
+                    .onChange(of: hospitalName) { validateForm() }
                 TextField("Admin Name", text: $adminName)
+                    .onChange(of: adminName) { validateForm() }
                 TextField("Hospital ID", text: $licenseNumber)
                     .placeholder(when: licenseNumber.isEmpty) {
                         Text("Hospital ID (HOSXXXX)")
                             .foregroundColor(.gray)
                     }
-                if !hospitalIdError.isEmpty {
-                    Text(hospitalIdError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
+                    .onChange(of: licenseNumber) { validateForm() }
             }
             
             Section(header: Text("Address")) {
                 TextField("Street", text: $street)
+                    .onChange(of: street) { validateForm() }
                 TextField("City", text: $city)
+                    .onChange(of: city) { validateForm() }
                 TextField("State", text: $state)
+                    .onChange(of: state) { validateForm() }
                 TextField("Pin Code", text: $zipCode)
                     .keyboardType(.numberPad)
                     .placeholder(when: zipCode.isEmpty) {
                         Text("Pin Code eg: 123456")
                             .foregroundColor(.gray)
                     }
-                if !pinCodeError.isEmpty {
-                    Text(pinCodeError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
+                    .onChange(of: zipCode) { validateForm() }
             }
             
             Section(header: Text("Contact Information")) {
@@ -444,37 +456,27 @@ struct AddHospitalForm: View {
                         .foregroundColor(.gray)
                     TextField("Phone Number", text: $phone)
                         .keyboardType(.numberPad)
-                }
-                if !phoneError.isEmpty {
-                    Text(phoneError)
-                        .font(.caption)
-                        .foregroundColor(.red)
+                        .onChange(of: phone) { validateForm() }
                 }
                 
                 TextField("Email", text: $email)
                     .keyboardType(.emailAddress)
                     .autocapitalization(.none)
-                if !emailError.isEmpty {
-                    Text(emailError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-            }
-            
-            if !hospitalName.isEmpty && !adminName.isEmpty && !licenseNumber.isEmpty && !street.isEmpty &&
-               !city.isEmpty && !state.isEmpty && !zipCode.isEmpty &&
-               !phone.isEmpty && !email.isEmpty {
-                Section {
-                    Button("Submit") {
-                        if validateForm() {
-                            onSubmit()
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .foregroundColor(.blue)
-                }
+                    .onChange(of: email) { validateForm() }
             }
         }
+        .navigationBarItems(
+            leading: Button("Cancel") {
+                dismiss()
+            },
+            trailing: Button("Save") {
+                if validateForm() {
+                    onSubmit()
+                }
+            }
+            .disabled(!isFormValid)
+            .foregroundColor(isFormValid ? .blue : .gray)
+        )
     }
 }
 

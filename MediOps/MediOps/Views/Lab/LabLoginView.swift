@@ -40,7 +40,7 @@ struct LabLoginView: View {
                             .frame(width: 120, height: 120)
                             .shadow(color: .gray.opacity(0.2), radius: 10)
                         
-                        Image(systemName: "cross.case.fill")
+                        Image(systemName: "document.fill")
                             .resizable()
                             .scaledToFit()
                             .frame(width: 60, height: 60)

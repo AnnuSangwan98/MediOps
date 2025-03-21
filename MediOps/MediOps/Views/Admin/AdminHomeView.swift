@@ -537,97 +537,105 @@ struct AdminHomeView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Header
-                    HStack {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Admin Dashboard")
-                                .font(.title)
+            ZStack {
+                // Background gradient
+                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                             startPoint: .topLeading,
+                             endPoint: .bottomTrailing)
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Header
+                        HStack {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Admin Dashboard")
+                                    .font(.title)
+                                    .fontWeight(.bold)
+                                Text("Hospital Management System")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                            }
+                            Spacer()
+                            
+                            Button(action: {
+                                // TODO: Implement profile action
+                            }) {
+                                Image(systemName: "person.circle.fill")
+                                    .resizable()
+                                    .frame(width: 40, height: 40)
+                                    .foregroundColor(.teal)
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.top)
+                        
+                        // Statistics Summary
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 15) {
+                            AdminStatCard(title: "Doctors", value: "0", icon: "stethoscope")
+                            AdminStatCard(title: "Lab Admins", value: "0", icon: "flask.fill")
+                        }
+                        .padding(.horizontal)
+                        
+                        // Quick Actions Grid
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 20) {
+                            // Add Doctor
+                            AdminDashboardCard(
+                                title: "Add Doctor",
+                                icon: "person.badge.plus",
+                                color: .blue,
+                                action: { showAddDoctor = true }
+                            )
+                            
+                            // Add Lab Admin
+                            AdminDashboardCard(
+                                title: "Add Lab Admin",
+                                icon: "flask.fill",
+                                color: .green,
+                                action: { showAddLabAdmin = true }
+                            )
+                        }
+                        .padding()
+                        
+                        // Recent Activity
+                        VStack(alignment: .leading, spacing: 15) {
+                            Text("Recent Activity")
+                                .font(.title2)
                                 .fontWeight(.bold)
-                            Text("Hospital Management System")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                        }
-                        Spacer()
-                        
-                        Button(action: {
-                            // TODO: Implement profile action
-                        }) {
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .frame(width: 40, height: 40)
-                                .foregroundColor(.teal)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.top)
-                    
-                    // Statistics Summary
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 15) {
-                        AdminStatCard(title: "Doctors", value: "0", icon: "stethoscope")
-                        AdminStatCard(title: "Lab Admins", value: "0", icon: "flask.fill")
-                    }
-                    .padding(.horizontal)
-                    
-                    // Quick Actions Grid
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 20) {
-                        // Add Doctor
-                        AdminDashboardCard(
-                            title: "Add Doctor",
-                            icon: "person.badge.plus",
-                            color: .blue,
-                            action: { showAddDoctor = true }
-                        )
-                        
-                        // Add Lab Admin
-                        AdminDashboardCard(
-                            title: "Add Lab Admin",
-                            icon: "flask.fill",
-                            color: .green,
-                            action: { showAddLabAdmin = true }
-                        )
-                    }
-                    .padding()
-                    
-                    // Recent Activity
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Recent Activity")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .padding(.horizontal)
-                        
-                        if recentActivities.isEmpty {
-                            Text("No recent activity")
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(10)
-                                .shadow(color: .gray.opacity(0.1), radius: 5)
-                        } else {
-                            ForEach(recentActivities) { activity in
-                                ActivityRow(activity: activity) { updatedActivity in
-                                    // Handle edit
-                                    if let index = recentActivities.firstIndex(where: { $0.id == activity.id }) {
-                                        recentActivities[index] = updatedActivity
-                                    }
-                                } onDelete: { deletedActivity in
-                                    // Handle delete
-                                    if let index = recentActivities.firstIndex(where: { $0.id == deletedActivity.id }) {
-                                        recentActivities.remove(at: index)
+                                .padding(.horizontal)
+                            
+                            if recentActivities.isEmpty {
+                                Text("No recent activity")
+                                    .foregroundColor(.gray)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.white)
+                                    .cornerRadius(10)
+                                    .shadow(color: .gray.opacity(0.1), radius: 5)
+                            } else {
+                                ForEach(recentActivities) { activity in
+                                    ActivityRow(activity: activity) { updatedActivity in
+                                        // Handle edit
+                                        if let index = recentActivities.firstIndex(where: { $0.id == activity.id }) {
+                                            recentActivities[index] = updatedActivity
+                                        }
+                                    } onDelete: { deletedActivity in
+                                        // Handle delete
+                                        if let index = recentActivities.firstIndex(where: { $0.id == deletedActivity.id }) {
+                                            recentActivities.remove(at: index)
+                                        }
                                     }
                                 }
                             }
                         }
+                        .padding()
                     }
-                    .padding()
                 }
             }
             .navigationBarBackButtonHidden(true)

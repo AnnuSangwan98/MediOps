@@ -288,88 +288,88 @@ struct LabDashboardView: View {
                         }
                         Spacer()
                         
-                        Button(action: {
-                            // TODO: Implement profile action
-                        }) {
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .frame(width: 40, height: 40)
-                                .foregroundColor(.teal)
-                        }
+//                        Button(action: {
+//                            // TODO: Implement profile action
+//                        }) {
+//                            Image(systemName: "person.circle.fill")
+//                                .resizable()
+//                                .frame(width: 40, height: 40)
+//                                .foregroundColor(.teal)
+//                        }
                     }
                     .padding(.horizontal)
                     .padding(.top)
                     
                     // Search Bar
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.gray)
-                        TextField("Search by patient name, test ID or type", text: $searchText)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                    }
-                    .padding(.horizontal)
+//                    HStack {
+//                        Image(systemName: "magnifyingglass")
+//                            .foregroundColor(.gray)
+//                        TextField("Search by patient name, test ID or type", text: $searchText)
+//                            .textFieldStyle(RoundedBorderTextFieldStyle())
+//                    }
+//                    .padding(.horizontal)
                     
                     // Quick Actions Grid
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 20) {
-                        // Test Reports
-                        DashboardCard(
-                            title: "Test Reports",
-                            icon: "doc.text",
-                            color: .blue
-                        )
-                        
-                        // Sample Collection
-                        DashboardCard(
-                            title: "Sample Collection",
-                            icon: "cross.case",
-                            color: .green
-                        )
-                        
-                        // Test Results
-                        DashboardCard(
-                            title: "Test Results",
-                            icon: "checkmark.circle",
-                            color: .purple
-                        )
-                        
-                        // Analytics
-                        DashboardCard(
-                            title: "Analytics",
-                            icon: "chart.bar",
-                            color: .orange
-                        )
-                    }
-                    .padding()
+//                    LazyVGrid(columns: [
+//                        GridItem(.flexible()),
+//                        GridItem(.flexible())
+//                    ], spacing: 20) {
+//                        // Test Reports
+//                        DashboardCard(
+//                            title: "Test Reports",
+//                            icon: "doc.text",
+//                            color: .blue
+//                        )
+//                        
+//                        // Sample Collection
+//                        DashboardCard(
+//                            title: "Sample Collection",
+//                            icon: "cross.case",
+//                            color: .green
+//                        )
+//                        
+//                        // Test Results
+//                        DashboardCard(
+//                            title: "Test Results",
+//                            icon: "checkmark.circle",
+//                            color: .purple
+//                        )
+//                        
+//                        // Analytics
+//                        DashboardCard(
+//                            title: "Analytics",
+//                            icon: "chart.bar",
+//                            color: .orange
+//                        )
+//                    }
+//                    .padding()
                     
                     // Recent Tests
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Recent Tests")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .padding(.horizontal)
-                        
-                        if filteredReports.isEmpty {
-                            Text("No tests found")
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(10)
-                                .shadow(color: .gray.opacity(0.1), radius: 5)
-                        } else {
-                            ForEach(filteredReports) { report in
-                                TestReportCard(report: report) {
-                                    selectedReport = report
-                                    showReportDetail = true
-                                }
-                                .padding(.horizontal)
-                            }
-                        }
-                    }
-                    .padding()
+//                    VStack(alignment: .leading, spacing: 15) {
+//                        Text("Recent Tests")
+//                            .font(.title2)
+//                            .fontWeight(.bold)
+//                            .padding(.horizontal)
+//                        
+//                        if filteredReports.isEmpty {
+//                            Text("No tests found")
+//                                .foregroundColor(.gray)
+//                                .frame(maxWidth: .infinity)
+//                                .padding()
+//                                .background(Color.white)
+//                                .cornerRadius(10)
+//                                .shadow(color: .gray.opacity(0.1), radius: 5)
+//                        } else {
+//                            ForEach(filteredReports) { report in
+//                                TestReportCard(report: report) {
+//                                    selectedReport = report
+//                                    showReportDetail = true
+//                                }
+//                                .padding(.horizontal)
+//                            }
+//                        }
+//                    }
+//                    .padding()
                 }
             }
         }
