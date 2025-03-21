@@ -6,7 +6,7 @@ enum HospitalStatus: String {
     case inactive = "Inactive"
 }
 
-struct Hospital: Identifiable {
+struct AdminHospital: Identifiable {
     let id: String
     var name: String
     var adminName: String
@@ -48,14 +48,14 @@ struct SuperAdminDashboardView: View {
     @State private var email = ""
     @State private var showSuccessAlert = false
     @State private var showDeleteConfirmation = false
-    @State private var hospitalToDelete: Hospital?
+    @State private var hospitalToDelete: AdminHospital?
     @State private var showEditForm = false
-    @State private var selectedHospital: Hospital?
+    @State private var selectedHospital: AdminHospital?
     @State private var errorMessage = ""
     @State private var showError = false
     
     // Sample data - Replace with actual data source
-    @State private var hospitals: [Hospital] = []
+    @State private var hospitals: [AdminHospital] = []
     
     private func isValidEmail(_ email: String) -> Bool {
         let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
@@ -203,8 +203,8 @@ struct SuperAdminDashboardView: View {
     
     private func addHospital() {
         // Create new hospital
-        let newHospital = Hospital(
-            id: Hospital.generateUniqueID(),
+        let newHospital = AdminHospital(
+            id: AdminHospital.generateUniqueID(),
             name: hospitalName,
             adminName: adminName,
             licenseNumber: licenseNumber,
@@ -226,7 +226,7 @@ struct SuperAdminDashboardView: View {
         clearForm() // Only clear form after successful submission
     }
     
-    private func updateHospital(_ hospital: Hospital) {
+    private func updateHospital(_ hospital: AdminHospital) {
         if let index = hospitals.firstIndex(where: { $0.id == hospital.id }) {
             hospitals[index] = hospital
             showEditForm = false
@@ -234,7 +234,7 @@ struct SuperAdminDashboardView: View {
         }
     }
     
-    private func deleteHospital(_ hospital: Hospital) {
+    private func deleteHospital(_ hospital: AdminHospital) {
         if let index = hospitals.firstIndex(where: { $0.id == hospital.id }) {
             // Remove the hospital from the list
             hospitals.remove(at: index)
@@ -262,7 +262,7 @@ struct SuperAdminDashboardView: View {
 }
 
 struct HospitalListItem: View {
-    let hospital: Hospital
+    let hospital: AdminHospital
     let onEdit: () -> Void
     let onDelete: () -> Void
     @State private var showMenu = false
@@ -479,10 +479,10 @@ struct AddHospitalForm: View {
 }
 
 struct EditHospitalForm: View {
-    @State private var editedHospital: Hospital
-    let onSave: (Hospital) -> Void
+    @State private var editedHospital: AdminHospital
+    let onSave: (AdminHospital) -> Void
     
-    init(hospital: Hospital, onSave: @escaping (Hospital) -> Void) {
+    init(hospital: AdminHospital, onSave: @escaping (AdminHospital) -> Void) {
         _editedHospital = State(initialValue: hospital)
         self.onSave = onSave
     }
