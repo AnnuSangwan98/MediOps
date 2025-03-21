@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DoctorHomeView: View {
+    var doctorName  = "Mathur"
     var body: some View {
         NavigationStack {
             ZStack {
@@ -14,7 +15,7 @@ struct DoctorHomeView: View {
                         // Header
                         HStack {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Welcome, Dr.")
+                                Text("Welcome, Dr. \(doctorName)")
                                     .font(.title)
                                     .fontWeight(.bold)
                                 Text("Your Practice Dashboard")
@@ -23,77 +24,77 @@ struct DoctorHomeView: View {
                             }
                             Spacer()
                             
-                            Button(action: {
-                                // TODO: Implement profile action
-                            }) {
-                                Image(systemName: "person.circle.fill")
-                                    .resizable()
-                                    .frame(width: 40, height: 40)
-                                    .foregroundColor(.teal)
-                            }
+//                            Button(action: {
+//                                // TODO: Implement profile action
+//                            }) {
+//                                Image(systemName: "person.circle.fill")
+//                                    .resizable()
+//                                    .frame(width: 40, height: 40)
+//                                    .foregroundColor(.teal)
+//                            }
                         }
                         .padding(.horizontal)
                         .padding(.top)
                         
                         // Today's Summary
-                        HStack(spacing: 20) {
-                            StatCard(title: "Appointments", value: "0", icon: "calendar")
-                            StatCard(title: "Patients", value: "0", icon: "person.2")
-                        }
-                        .padding(.horizontal)
+//                        HStack(spacing: 20) {
+//                            StatCard(title: "Appointments", value: "0", icon: "calendar")
+//                            StatCard(title: "Patients", value: "0", icon: "person.2")
+//                        }
+//                        .padding(.horizontal)
                         
                         // Quick Actions Grid
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 20) {
-                            // Schedule
-                            DoctorDashboardCard(
-                                title: "Schedule",
-                                icon: "calendar.badge.clock",
-                                color: .blue
-                            )
-                            
-                            // Patient Records
-                            DoctorDashboardCard(
-                                title: "Patient Records",
-                                icon: "folder.fill",
-                                color: .green
-                            )
-                            
-                            // Prescriptions
-                            DoctorDashboardCard(
-                                title: "Prescriptions",
-                                icon: "doc.text.fill",
-                                color: .purple
-                            )
-                            
-                            // Lab Orders
-                            DoctorDashboardCard(
-                                title: "Lab Orders",
-                                icon: "cross.case.fill",
-                                color: .orange
-                            )
-                        }
-                        .padding()
+//                        LazyVGrid(columns: [
+//                            GridItem(.flexible()),
+//                            GridItem(.flexible())
+//                        ], spacing: 20) {
+//                            // Schedule
+//                            DoctorDashboardCard(
+//                                title: "Schedule",
+//                                icon: "calendar.badge.clock",
+//                                color: .blue
+//                            )
+//                            
+//                            // Patient Records
+//                            DoctorDashboardCard(
+//                                title: "Patient Records",
+//                                icon: "folder.fill",
+//                                color: .green
+//                            )
+//                            
+//                            // Prescriptions
+//                            DoctorDashboardCard(
+//                                title: "Prescriptions",
+//                                icon: "doc.text.fill",
+//                                color: .purple
+//                            )
+//                            
+//                            // Lab Orders
+//                            DoctorDashboardCard(
+//                                title: "Lab Orders",
+//                                icon: "cross.case.fill",
+//                                color: .orange
+//                            )
+//                        }
+//                        .padding()
                         
                         // Upcoming Appointments
-                        VStack(alignment: .leading, spacing: 15) {
-                            Text("Today's Appointments")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .padding(.horizontal)
-                            
-                            // Placeholder for appointments list
-                            Text("No appointments scheduled")
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(10)
-                                .shadow(color: .gray.opacity(0.1), radius: 5)
-                        }
-                        .padding()
+//                        VStack(alignment: .leading, spacing: 15) {
+//                            Text("Today's Appointments")
+//                                .font(.title2)
+//                                .fontWeight(.bold)
+//                                .padding(.horizontal)
+//                            
+//                            // Placeholder for appointments list
+//                            Text("No appointments scheduled")
+//                                .foregroundColor(.gray)
+//                                .frame(maxWidth: .infinity)
+//                                .padding()
+//                                .background(Color.white)
+//                                .cornerRadius(10)
+//                                .shadow(color: .gray.opacity(0.1), radius: 5)
+//                        }
+//                        .padding()
                     }
                 }
             }
