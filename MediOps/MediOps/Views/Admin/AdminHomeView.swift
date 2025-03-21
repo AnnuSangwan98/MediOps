@@ -1,7 +1,7 @@
 import SwiftUI
 
 // MARK: - Models
-struct Doctor: Identifiable {
+struct DoctorView: Identifiable {
     var id = UUID()
     var fullName: String
     var specialization: String
@@ -22,7 +22,7 @@ struct Doctor: Identifiable {
     }
 }
 
-struct LabAdmin: Identifiable {
+struct LabAdminView: Identifiable {
     var id = UUID()
     var fullName: String
     var email: String
@@ -47,7 +47,7 @@ struct Activity: Identifiable {
     var title: String
     var timestamp: Date
     var status: ActivityStatus
-    var doctorDetails: Doctor?  // Added to store doctor details
+    var doctorDetails: DoctorView?  // Added to store doctor details
     var labAdminDetails: LabAdmin?  // Added to store lab admin details
     
     enum ActivityType {
