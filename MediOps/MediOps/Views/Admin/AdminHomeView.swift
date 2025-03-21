@@ -113,6 +113,17 @@ struct AddDoctorView: View {
         return max(0, age - 25) // Experience should be 19 years less than doctor's age
     }
     
+    // Add computed property to check if form is valid
+    private var isFormValid: Bool {
+        !fullName.isEmpty &&
+        !specialization.isEmpty &&
+        isValidEmail(email) &&
+        phoneNumber.count == 10 &&
+        !qualification.isEmpty &&
+        isValidLicense(license) &&
+        !address.isEmpty
+    }
+    
     var body: some View {
         NavigationStack {
             Form {
@@ -195,6 +206,7 @@ struct AddDoctorView: View {
                     Button("Save") {
                         saveDoctor()
                     }
+                    .disabled(!isFormValid)
                 }
             }
             .alert(alertMessage, isPresented: $showAlert) {
@@ -277,12 +289,8 @@ struct AddDoctorView: View {
         // Call onSave callback with the new activity
         onSave(activity)
         
-        // Display success message and dismiss
-        alertMessage = "Doctor added successfully!"
-        showAlert = true
-        
-        // Reset form for next entry
-        resetForm()
+        // Dismiss the view immediately
+        dismiss()
     }
     
     private func resetForm() {
@@ -332,6 +340,16 @@ struct AddLabAdminView: View {
         let ageComponents = calendar.dateComponents([.year], from: dateOfBirth, to: Date())
         let age = ageComponents.year ?? 0
         return max(0, age - 25) // Experience should be 25 years less than admin's age
+    }
+    
+    // Add computed property to check if form is valid
+    private var isFormValid: Bool {
+        !fullName.isEmpty &&
+        isValidEmail(email) &&
+        phoneNumber.count == 10 &&
+        !qualification.isEmpty &&
+        isValidLicense(license) &&
+        !address.isEmpty
     }
     
     var body: some View {
@@ -412,6 +430,7 @@ struct AddLabAdminView: View {
                     Button("Save") {
                         saveLabAdmin()
                     }
+                    .disabled(!isFormValid)
                 }
             }
             .alert(alertMessage, isPresented: $showAlert) {
@@ -483,12 +502,8 @@ struct AddLabAdminView: View {
         // Call onSave callback with the new activity
         onSave(activity)
         
-        // Display success message and dismiss
-        alertMessage = "Lab Admin added successfully!"
-        showAlert = true
-        
-        // Reset form for next entry
-        resetForm()
+        // Dismiss the view immediately
+        dismiss()
     }
     
     private func resetForm() {
@@ -598,15 +613,25 @@ struct AdminHomeView: View {
                                 .shadow(color: .gray.opacity(0.1), radius: 5)
                         } else {
                             ForEach(recentActivities) { activity in
-                                ActivityRow(activity: activity)
+                                ActivityRow(activity: activity) { updatedActivity in
+                                    // Handle edit
+                                    if let index = recentActivities.firstIndex(where: { $0.id == activity.id }) {
+                                        recentActivities[index] = updatedActivity
+                                    }
+                                } onDelete: { deletedActivity in
+                                    // Handle delete
+                                    if let index = recentActivities.firstIndex(where: { $0.id == deletedActivity.id }) {
+                                        recentActivities.remove(at: index)
+                                    }
+                                }
                             }
                         }
                     }
                     .padding()
                 }
             }
-            .navigationTitle("Admin Dashboard")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
+            .navigationBarHidden(true)
             .sheet(isPresented: $showAddDoctor) {
                 AddDoctorView { activity in
                     recentActivities.insert(activity, at: 0)
@@ -648,6 +673,8 @@ struct AdminStatCard: View {
 
 struct ActivityRow: View {
     let activity: Activity
+    let onEdit: (Activity) -> Void
+    let onDelete: (Activity) -> Void
     
     var body: some View {
         HStack {
@@ -669,6 +696,20 @@ struct ActivityRow: View {
                 .padding(.vertical, 4)
                 .background(Color.orange.opacity(0.1))
                 .cornerRadius(8)
+            
+            // Three dots menu
+            Menu {
+                Button(action: { onEdit(activity) }) {
+                    Label("Edit", systemImage: "pencil")
+                }
+                Button(role: .destructive, action: { onDelete(activity) }) {
+                    Label("Delete", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .foregroundColor(.gray)
+                    .padding(8)
+            }
         }
         .padding()
         .background(Color.white)
