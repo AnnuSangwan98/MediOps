@@ -36,6 +36,21 @@ class SupabaseController {
             .execute()
     }
     
+    /// Attempt to rollback a previously inserted record if a subsequent operation fails
+    /// This creates a manual transaction-like functionality since Supabase JS client doesn't support transactions directly
+    func deleteRollback(from table: String, where column: String, equals value: String) async {
+        do {
+            try await client.database
+                .from(table)
+                .delete()
+                .eq(column, value: value)
+                .execute()
+            print("ROLLBACK: Successfully removed record from \(table) where \(column) = \(value)")
+        } catch {
+            print("ROLLBACK: Failed to remove record from \(table): \(error.localizedDescription)")
+        }
+    }
+    
     /// Generic method to retrieve data from a table
     func select(from table: String, columns: String = "*") async throws -> [[String: Any]] {
         let response = try await client.database

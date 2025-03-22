@@ -117,8 +117,72 @@ class AuthService {
         
         print("PATIENT CHECK: Looking for patient with normalized email: \(normalizedEmail)")
         
-        // First check directly in the patients table by email
-        // This is more direct and might catch patients that have email mismatches
+        // First check for a direct match in the users table
+        // This is the most important check since login is primarily done through the users table
+        let users = try await SupabaseController.shared.select(
+            from: "users"
+        )
+        
+        print("PATIENT CHECK: Found \(users.count) total users in database")
+        
+        // Find the user with case-insensitive email match
+        var userId: String? = nil
+        
+        for user in users {
+            if let userEmail = user["email"] as? String,
+               userEmail.lowercased() == normalizedEmail {
+                userId = user["id"] as? String
+                print("PATIENT CHECK: Found user with matching email: \(userEmail), ID: \(userId ?? "unknown")")
+                
+                // Print user role info for debugging
+                if let roleString = user["role"] as? String {
+                    print("PATIENT CHECK: User role is: \(roleString)")
+                }
+                break
+            }
+        }
+        
+        // If we didn't find a user, show more detailed diagnostics about what emails are in the system
+        if userId == nil {
+            print("PATIENT CHECK: No user found with exact email: \(normalizedEmail)")
+            print("PATIENT CHECK: Here are all emails in the users table:")
+            for user in users {
+                if let userEmail = user["email"] as? String {
+                    print("  - \(userEmail)")
+                }
+            }
+            return false
+        }
+        
+        // Now check if a patient record exists for this user
+        // First try to find by user_id
+        let patientsByUserId = try await SupabaseController.shared.select(
+            from: "patients",
+            where: "user_id",
+            equals: userId ?? ""
+        )
+        
+        if !patientsByUserId.isEmpty {
+            if let patient = patientsByUserId.first {
+                print("PATIENT CHECK: Found patient record by user_id: \(patient["id"] as? String ?? "unknown")")
+                print("PATIENT CHECK: Patient name: \(patient["name"] as? String ?? "unknown")")
+                
+                // Check if patient email matches the login email
+                if let patientEmail = patient["email"] as? String {
+                    print("PATIENT CHECK: Patient email in record: \(patientEmail)")
+                    
+                    // If emails don't match, this might be the source of the problem
+                    if patientEmail.lowercased() != normalizedEmail {
+                        print("PATIENT CHECK: WARNING - Patient email doesn't match login email!")
+                    }
+                }
+                
+                return true
+            }
+        }
+        
+        // If not found by user_id, try directly by email in patients table as fallback
+        print("PATIENT CHECK: No patient found by user_id, trying email lookup in patients table")
         let patients = try await SupabaseController.shared.select(
             from: "patients"
         )
@@ -129,52 +193,27 @@ class AuthService {
         for patient in patients {
             if let patientEmail = patient["email"] as? String, 
                patientEmail.lowercased() == normalizedEmail {
-                print("PATIENT CHECK: Found direct match in patients table for email: \(patientEmail)")
+                
+                let patientId = patient["id"] as? String ?? "unknown"
+                let patientUserId = patient["user_id"] as? String ?? "unknown"
+                
+                print("PATIENT CHECK: Found patient with matching email: \(patientEmail)")
+                print("PATIENT CHECK: Patient ID: \(patientId), User ID: \(patientUserId)")
+                
+                // Critical issue: the user_id in the patient record doesn't match the actual user's ID
+                if patientUserId != userId {
+                    print("PATIENT CHECK: WARNING - Patient's user_id (\(patientUserId)) doesn't match user's ID (\(userId ?? "nil"))")
+                    
+                    // Consider this a patient match anyway
+                    return true
+                }
+                
                 return true
             }
         }
         
-        // If not found directly in patients table, check the traditional way through users table
-        print("PATIENT CHECK: No direct match in patients table, checking users table next")
-        
-        // Check if user exists in users table
-        let users = try await SupabaseController.shared.select(
-            from: "users"
-        )
-        
-        print("PATIENT CHECK: Found \(users.count) total users")
-        
-        // Find the user with a case-insensitive email match
-        var userId: String? = nil
-        for user in users {
-            if let userEmail = user["email"] as? String,
-               userEmail.lowercased() == normalizedEmail {
-                userId = user["id"] as? String
-                print("PATIENT CHECK: Found user with matching email: \(userEmail), ID: \(userId ?? "unknown")")
-                break
-            }
-        }
-        
-        guard let userId = userId else {
-            print("PATIENT CHECK: No user found with email: \(normalizedEmail)")
-            return false
-        }
-        
-        // Check if patient record exists in patients table with this user_id
-        let patientRecords = try await SupabaseController.shared.select(
-            from: "patients",
-            where: "user_id",
-            equals: userId
-        )
-        
-        let patientExists = !patientRecords.isEmpty
-        print("PATIENT CHECK: Patient record exists for user \(userId): \(patientExists)")
-        
-        if patientExists, let patientData = patientRecords.first {
-            print("PATIENT CHECK: Patient details - ID: \(patientData["id"] as? String ?? "unknown"), Name: \(patientData["name"] as? String ?? "unknown")")
-        }
-        
-        return patientExists
+        print("PATIENT CHECK: No patient found with matching email in patients table")
+        return false
     }
     
     /// Generate a secure random password

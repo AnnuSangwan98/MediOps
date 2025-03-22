@@ -182,7 +182,7 @@ struct PatientLoginView: View {
                 
                 // Verify credentials
                 do {
-                    let (patient, token) = try await AuthService.shared.loginPatient(
+                    let (patient, _) = try await AuthService.shared.loginPatient(
                         email: normalizedEmail,
                         password: password
                     )
@@ -237,6 +237,10 @@ struct PatientLoginView: View {
                         errorMessage = "Network error: Please check your internet connection"
                     } else if error.domain == "AuthError" {
                         errorMessage = error.localizedDescription
+                    } else if error.localizedDescription.contains("violates unique constraint") {
+                        // This shouldn't happen during login, but just in case
+                        errorMessage = "There was an issue with your account. Please contact support."
+                        print("LOGIN ERROR: Unique constraint violation during login - this shouldn't happen!")
                     } else {
                         errorMessage = "Login failed: \(error.localizedDescription)"
                     }

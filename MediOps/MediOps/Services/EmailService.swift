@@ -140,4 +140,89 @@ class EmailService {
         #endif
         #endif
     }
+    
+    /// Method to send a password reset email and return the token
+    func sendPasswordResetEmail(to email: String, role: String) async throws -> String {
+        print("Sending password reset email to \(email)")
+        
+        guard let url = URL(string: "\(serverUrl)/send-password-reset") else {
+            print("Invalid URL: \(serverUrl)/send-password-reset")
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = [
+            "email": email,
+            "role": role
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let responseString = String(data: data, encoding: .utf8) ?? "No response data"
+            print("Email server error for password reset: \(responseString)")
+            
+            // Try to restart the server if it's not responding
+            tryRestartEmailServer()
+            
+            throw NSError(domain: "EmailError", 
+                         code: (response as? HTTPURLResponse)?.statusCode ?? 500,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to send password reset email. Please try again later."])
+        }
+        
+        // Extract the token from the response
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let token = json["token"] as? String else {
+            throw NSError(domain: "EmailError", 
+                         code: 500,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to parse password reset token."])
+        }
+        
+        print("Password reset email sent successfully to \(email)")
+        return token
+    }
+    
+    /// Method to verify a password reset token
+    func verifyPasswordResetToken(token: String) async throws -> String {
+        guard let url = URL(string: "\(serverUrl)/verify-reset-token") else {
+            print("Invalid URL: \(serverUrl)/verify-reset-token")
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = ["token": token]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let errorResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let errorMessage = errorResponse?["error"] as? String ?? "Token verification failed"
+            
+            throw NSError(domain: "EmailError", 
+                         code: (response as? HTTPURLResponse)?.statusCode ?? 400,
+                         userInfo: [NSLocalizedDescriptionKey: errorMessage])
+        }
+        
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let isValid = json["valid"] as? Bool,
+              let email = json["email"] as? String,
+              isValid else {
+            throw NSError(domain: "EmailError", 
+                         code: 400,
+                         userInfo: [NSLocalizedDescriptionKey: "Invalid or expired reset token."])
+        }
+        
+        return email
+    }
 } 

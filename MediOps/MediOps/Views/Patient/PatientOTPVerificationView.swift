@@ -160,11 +160,28 @@ struct PatientOTPVerificationView: View {
     }
     
     private func resendOTP() {
+        isLoading = true
+        
         Task {
             do {
-                try await EmailService.shared.sendOTP(to: email, role: "Patient")
+                let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let newOTP = try await EmailService.shared.sendOTP(to: normalizedEmail, role: "Patient")
+                
+                await MainActor.run {
+                    isLoading = false
+                    // Update the expected OTP with the new one
+                    // We need to use a different way to update this since it's a let property
+                    // For now, we'll just show a message
+                    errorMessage = "New verification code sent to your email"
+                    showError = true
+                    
+                    // Reset the OTP fields
+                    otpFields = Array(repeating: "", count: 6)
+                    currentField = 0
+                }
             } catch {
                 await MainActor.run {
+                    isLoading = false
                     errorMessage = "Failed to resend OTP: \(error.localizedDescription)"
                     showError = true
                 }

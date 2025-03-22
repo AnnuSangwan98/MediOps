@@ -12,50 +12,114 @@ class PatientController {
     
     /// Register a new patient
     func registerPatient(email: String, password: String, name: String, age: Int, gender: String) async throws -> (Patient, String) {
-        // 1. First register the base user
-        let authResponse = try await userController.register(
-            email: email,
-            password: password,
-            username: name,
-            role: .patient
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        print("REGISTRATION: Starting process for \(normalizedEmail)")
+        
+        // Check if user or patient already exists
+        let existingUsers = try await supabase.select(
+            from: "users",
+            where: "email",
+            equals: normalizedEmail
         )
         
-        // 2. Create patient record
-        let patientId = UUID().uuidString
-        let now = Date()
-        let dateFormatter = ISO8601DateFormatter()
-        let createdAt = dateFormatter.string(from: now)
+        if !existingUsers.isEmpty {
+            print("REGISTRATION: User with email \(normalizedEmail) already exists in users table")
+            throw AuthError.emailAlreadyExists
+        }
         
-        // Create a dictionary with String values for insertion
-        var patientData: [String: String] = [
-            "id": patientId,
-            "user_id": authResponse.user.id,
-            "name": name,
-            "age": String(age),
-            "gender": gender,
-            "email": email.lowercased(),
-            "email_verified": "false",
-            "created_at": createdAt,
-            "updated_at": createdAt,
-            "password": password  // Adding plaintext password for testing
-        ]
-        
-        try await supabase.insert(into: "patients", data: patientData)
-        
-        // 3. Return the patient object and token
-        let patient = Patient(
-            id: patientId,
-            userId: authResponse.user.id,
-            name: name,
-            age: age,
-            gender: gender,
-            createdAt: now,
-            updatedAt: now,
-            email: email,
-            emailVerified: false
+        // Check if email exists in patients table too (as a safety check)
+        let existingPatients = try await supabase.select(
+            from: "patients",
+            where: "email",
+            equals: normalizedEmail
         )
         
-        return (patient, authResponse.token)
+        if !existingPatients.isEmpty {
+            print("REGISTRATION: Email \(normalizedEmail) already exists in patients table")
+            throw AuthError.emailAlreadyExists
+        }
+        
+        print("REGISTRATION: No existing user found, proceeding with registration")
+        
+        var userId: String = ""
+        var patientId: String = ""
+        
+        do {
+            // 1. First register the base user
+            let authResponse = try await userController.register(
+                email: normalizedEmail,
+                password: password,
+                username: name,
+                role: .patient
+            )
+            
+            userId = authResponse.user.id
+            print("REGISTRATION: User created with ID: \(userId)")
+            
+            // 2. Create patient record
+            patientId = UUID().uuidString
+            let now = Date()
+            let dateFormatter = ISO8601DateFormatter()
+            let createdAt = dateFormatter.string(from: now)
+            
+            // Create a dictionary with String values for insertion
+            let patientData: [String: String] = [
+                "id": patientId,
+                "user_id": authResponse.user.id,
+                "name": name,
+                "age": String(age),
+                "gender": gender,
+                "email": normalizedEmail,
+                "email_verified": "false", 
+                "created_at": createdAt,
+                "updated_at": createdAt
+            ]
+            
+            try await supabase.insert(into: "patients", data: patientData)
+            print("REGISTRATION: Patient record created with ID: \(patientId)")
+            
+            // 3. Return the patient object and token
+            let patient = Patient(
+                id: patientId,
+                userId: authResponse.user.id,
+                name: name,
+                age: age,
+                gender: gender,
+                createdAt: now,
+                updatedAt: now,
+                email: normalizedEmail,
+                emailVerified: false
+            )
+            
+            print("REGISTRATION: Complete! User and patient records created successfully")
+            return (patient, authResponse.token)
+            
+        } catch let error as AuthError {
+            print("REGISTRATION ERROR: \(error.localizedDescription)")
+            
+            // If we created a user but failed to create the patient, try to rollback the user
+            if !userId.isEmpty {
+                print("REGISTRATION: Rolling back user record due to failed patient creation")
+                await supabase.deleteRollback(from: "users", where: "id", equals: userId)
+            }
+            
+            throw error
+        } catch {
+            print("REGISTRATION ERROR: Unexpected error: \(error.localizedDescription)")
+            
+            // Attempt rollback of any created records
+            if !userId.isEmpty {
+                print("REGISTRATION: Rolling back user record due to error")
+                await supabase.deleteRollback(from: "users", where: "id", equals: userId)
+            }
+            
+            if !patientId.isEmpty {
+                print("REGISTRATION: Rolling back patient record due to error")
+                await supabase.deleteRollback(from: "patients", where: "id", equals: patientId)
+            }
+            
+            throw error
+        }
     }
     
     /// Get patient by ID

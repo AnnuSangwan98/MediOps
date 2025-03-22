@@ -12,9 +12,14 @@ struct PatientForgotPasswordView: View {
     @State private var email: String = ""
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
-    @State private var otpSent: Bool = false
-    @State private var otp: String = ""
-    @State private var otpVerified: Bool = false
+    @State private var isLoading: Bool = false
+    
+    // Reset token handling
+    @State private var resetToken: String = ""
+    @State private var passwordResetRequested: Bool = false
+    @State private var passwordResetSuccess: Bool = false
+    
+    // New password fields
     @State private var newPassword: String = ""
     @State private var confirmPassword: String = ""
     
@@ -44,17 +49,33 @@ struct PatientForgotPasswordView: View {
                         .foregroundColor(.teal)
                         .padding(.top, 50)
                     
-                    if !otpSent {
+                    if !passwordResetRequested {
                         emailSection
-                    } else if !otpVerified {
-                        otpSection
-                    } else {
+                    } else if !passwordResetSuccess {
                         newPasswordSection
+                    } else {
+                        successSection
                     }
                     
                     Spacer()
                 }
                 .padding(.horizontal)
+            }
+            
+            if isLoading {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                
+                VStack {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    
+                    Text("Processing...")
+                        .foregroundColor(.white)
+                        .padding(.top, 10)
+                }
+                .padding(20)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.teal.opacity(0.8)))
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -68,7 +89,7 @@ struct PatientForgotPasswordView: View {
     
     private var emailSection: some View {
         VStack(spacing: 20) {
-            Text("Enter your email address to receive an OTP")
+            Text("Enter your email address to reset your password")
                 .font(.subheadline)
                 .foregroundColor(.gray)
                 .multilineTextAlignment(.center)
@@ -90,8 +111,8 @@ struct PatientForgotPasswordView: View {
                 }
             }
             
-            Button(action: handleSendOTP) {
-                Text("Send OTP")
+            Button(action: handlePasswordResetRequest) {
+                Text("Send Reset Link")
                     .font(.title3)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
@@ -109,54 +130,7 @@ struct PatientForgotPasswordView: View {
                     .cornerRadius(15)
                     .shadow(color: .teal.opacity(0.3), radius: 5, x: 0, y: 5)
             }
-            .disabled(email.isEmpty || !isValidEmail)
-        }
-        .padding(.horizontal)
-    }
-    
-    private var otpSection: some View {
-        VStack(spacing: 20) {
-            Text("Enter the OTP sent to\n\(email)")
-                .font(.subheadline)
-                .foregroundColor(.gray)
-                .multilineTextAlignment(.center)
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("OTP")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                
-                TextField("Enter OTP", text: $otp)
-                    .keyboardType(.numberPad)
-                    .textFieldStyle(CustomTextFieldStyle())
-            }
-            
-            Button(action: handleVerifyOTP) {
-                Text("Verify OTP")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 55)
-                    .background(
-                        !otp.isEmpty ?
-                        LinearGradient(gradient: Gradient(colors: [Color.teal, Color.teal.opacity(0.8)]),
-                                       startPoint: .leading,
-                                       endPoint: .trailing) :
-                            LinearGradient(gradient: Gradient(colors: [Color.gray, Color.gray]),
-                                           startPoint: .leading,
-                                           endPoint: .trailing)
-                    )
-                    .cornerRadius(15)
-                    .shadow(color: .teal.opacity(0.3), radius: 5, x: 0, y: 5)
-            }
-            .disabled(otp.isEmpty)
-            
-            Button(action: handleResendOTP) {
-                Text("Resend OTP")
-                    .foregroundColor(.teal)
-                    .font(.subheadline)
-            }
+            .disabled(email.isEmpty || !isValidEmail || isLoading)
         }
         .padding(.horizontal)
     }
@@ -198,7 +172,7 @@ struct PatientForgotPasswordView: View {
                 }
             }
             
-            Button(action: handleResetPassword) {
+            Button(action: handlePasswordReset) {
                 Text("Reset Password")
                     .font(.title3)
                     .fontWeight(.semibold)
@@ -217,50 +191,151 @@ struct PatientForgotPasswordView: View {
                     .cornerRadius(15)
                     .shadow(color: .teal.opacity(0.3), radius: 5, x: 0, y: 5)
             }
-            .disabled(newPassword.isEmpty || confirmPassword.isEmpty || !isValidPassword || newPassword != confirmPassword)
+            .disabled(newPassword.isEmpty || confirmPassword.isEmpty || !isValidPassword || newPassword != confirmPassword || isLoading)
         }
         .padding(.horizontal)
     }
     
-    private func handleSendOTP() {
-        if !isValidEmail {
-            errorMessage = "Please enter a valid email address"
-            showError = true
-            return
+    private var successSection: some View {
+        VStack(spacing: 25) {
+            Image(systemName: "checkmark.circle.fill")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 100, height: 100)
+                .foregroundColor(.green)
+            
+            Text("Password Reset Successful!")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.teal)
+            
+            Text("Your password has been reset successfully. You can now log in with your new password.")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.gray)
+            
+            Button(action: {
+                dismiss()
+            }) {
+                Text("Back to Login")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 55)
+                    .background(
+                        LinearGradient(gradient: Gradient(colors: [Color.teal, Color.teal.opacity(0.8)]),
+                                       startPoint: .leading,
+                                       endPoint: .trailing)
+                    )
+                    .cornerRadius(15)
+                    .shadow(color: .teal.opacity(0.3), radius: 5, x: 0, y: 5)
+            }
         }
-        
-        otpSent = true
+        .padding(.horizontal)
     }
     
-    private func handleVerifyOTP() {
-        if otp.count != 6 {
-            errorMessage = "Please enter a valid OTP"
-            showError = true
-            return
-        }
+    private func handlePasswordResetRequest() {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        isLoading = true
         
-        otpVerified = true
+        Task {
+            do {
+                // First check if the user exists
+                let userExists = try await AuthService.shared.checkPatientExists(email: normalizedEmail)
+                
+                if !userExists {
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = "No account found with this email address."
+                        showError = true
+                    }
+                    return
+                }
+                
+                // User exists, send password reset email
+                resetToken = try await EmailService.shared.sendPasswordResetEmail(
+                    to: normalizedEmail,
+                    role: "Patient"
+                )
+                
+                await MainActor.run {
+                    isLoading = false
+                    passwordResetRequested = true
+                }
+                
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Failed to send password reset email: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
     }
     
-    private func handleResendOTP() {
-        errorMessage = "New OTP has been sent to your email"
-        showError = true
-    }
-    
-    private func handleResetPassword() {
-        if !isValidPassword {
-            errorMessage = "Password doesn't meet the requirements"
-            showError = true
-            return
-        }
-        
+    private func handlePasswordReset() {
         if newPassword != confirmPassword {
             errorMessage = "Passwords do not match"
             showError = true
             return
         }
         
-        dismiss()
+        if !isValidPassword {
+            errorMessage = "Password does not meet the requirements"
+            showError = true
+            return
+        }
+        
+        isLoading = true
+        
+        Task {
+            do {
+                // Verify the token is valid
+                let emailFromToken = try await EmailService.shared.verifyPasswordResetToken(token: resetToken)
+                
+                // Get the user ID from email
+                let users = try await SupabaseController.shared.select(
+                    from: "users",
+                    where: "email",
+                    equals: emailFromToken
+                )
+                
+                guard let userData = users.first, let userId = userData["id"] as? String else {
+                    throw NSError(domain: "PasswordReset", code: 404, userInfo: [
+                        NSLocalizedDescriptionKey: "User not found"
+                    ])
+                }
+                
+                // Hash the new password
+                let passwordHash = SupabaseController.shared.hashPassword(newPassword)
+                
+                // Update the password in the database
+                let updateData: [String: String] = [
+                    "password_hash": passwordHash,
+                    "updated_at": ISO8601DateFormatter().string(from: Date())
+                ]
+                
+                try await SupabaseController.shared.update(
+                    table: "users",
+                    data: updateData,
+                    where: "id",
+                    equals: userId
+                )
+                
+                await MainActor.run {
+                    isLoading = false
+                    passwordResetSuccess = true
+                }
+                
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Failed to reset password: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
     }
 }
 

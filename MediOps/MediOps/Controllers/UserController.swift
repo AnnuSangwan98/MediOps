@@ -79,15 +79,21 @@ class UserController {
     
     /// Register a new user
     func register(email: String, password: String, username: String, role: UserRole) async throws -> AuthResponse {
-        // 1. Check if user already exists
-        let existingUsers = try await supabase.select(
-            from: "users",
-            where: "email",
-            equals: email.lowercased()
-        )
+        // Normalize email to prevent case sensitivity issues
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         
-        if !existingUsers.isEmpty {
-            throw AuthError.emailAlreadyExists
+        print("USER REGISTER: Attempting to register \(normalizedEmail)")
+        
+        // 1. Check if user already exists - case insensitive check
+        let allUsers = try await supabase.select(from: "users")
+        
+        // Extra safety: loop through all users to check for case-insensitive email match
+        for existingUser in allUsers {
+            if let existingEmail = existingUser["email"] as? String,
+               existingEmail.lowercased() == normalizedEmail {
+                print("USER REGISTER: User with email \(normalizedEmail) already exists (case-insensitive match with \(existingEmail))")
+                throw AuthError.emailAlreadyExists
+            }
         }
         
         // 2. Create user
@@ -100,7 +106,7 @@ class UserController {
         // Create a dictionary for insertion rather than using Any types
         let userData: [String: String] = [
             "id": id,
-            "email": email.lowercased(),
+            "email": normalizedEmail, // Use normalized email for storage
             "role": role.rawValue,
             "username": username,
             "password_hash": passwordHash,
@@ -108,6 +114,7 @@ class UserController {
             "updated_at": createdAt
         ]
         
+        print("USER REGISTER: Creating new user with ID: \(id)")
         try await supabase.insert(into: "users", data: userData)
         
         // 3. Create token and auth response
@@ -115,9 +122,11 @@ class UserController {
         userDefaults.set(token, forKey: "auth_token")
         userDefaults.set(id, forKey: "current_user_id")
         
+        print("USER REGISTER: Successfully registered new user")
+        
         let userObject = User(
             id: id,
-            email: email,
+            email: normalizedEmail,
             role: role,
             username: username,
             createdAt: now,
