@@ -13,7 +13,7 @@ pkill -f "python3 MediOps/MediOps/Services/email_sender.py" || true
 sleep 1
 
 # Try several ports until one works
-for PORT in 8085 8086 8087 8088 8089; do
+for PORT in 9090 8085 8086 8087 8088 8089; do
     echo "Attempting to start server on port $PORT..."
     
     # Update the port in email_sender.py

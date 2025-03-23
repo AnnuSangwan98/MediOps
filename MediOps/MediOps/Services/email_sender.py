@@ -171,7 +171,7 @@ def verify_reset_token():
 if __name__ == '__main__':
     try:
         print("Starting email server on port 8089...")
-        app.run(host='0.0.0.0', port=9090, debug=True)
+        app.run(host='0.0.0.0', port=8089, debug=True)
     except Exception as e:
         print(f"Failed to start server: {str(e)}", file=sys.stderr)
         sys.exit(1)

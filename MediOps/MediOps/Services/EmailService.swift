@@ -16,6 +16,9 @@ class EmailService {
     }
     
     private init() {
+        // Make sure this is set to 8085, not 9090
+        serverUrl = "http://127.0.0.1:8089"
+        
         // Check if a specific port is set in UserDefaults or temp file
         if let savedPort = UserDefaults.standard.string(forKey: "email_server_port") {
             serverUrl = "http://127.0.0.1:\(savedPort)"
@@ -39,7 +42,7 @@ class EmailService {
     func sendOTP(to email: String, role: String) async throws -> String {
         // Generate a random 6-digit OTP
         let otp = String(Int.random(in: 100000...999999))
-        print("Sending OTP: \(otp) to \(email)")
+        print("Attempting to send OTP: \(otp) to \(email) via server at \(serverUrl)")
         
         // In all builds, send the email
         guard let url = URL(string: "\(serverUrl)/send-otp") else {
@@ -59,7 +62,12 @@ class EmailService {
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
+        print("Request details: \(request.httpMethod ?? "NO METHOD") to \(request.url?.absoluteString ?? "NO URL")")
+        print("Request body: \(String(data: request.httpBody ?? Data(), encoding: .utf8) ?? "NO BODY")")
+        
         let (data, response) = try await URLSession.shared.data(for: request)
+        print("Response status: \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+        print("Response data: \(String(data: data, encoding: .utf8) ?? "NO DATA")")
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {

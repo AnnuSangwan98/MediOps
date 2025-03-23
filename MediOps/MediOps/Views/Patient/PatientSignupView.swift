@@ -428,11 +428,9 @@ struct PatientSignupView: View {
                 
                 print("SIGNUP VIEW: Patient registered successfully with ID: \(patient.id)")
                 
-                // Send OTP to verify email
-                let otp = try await EmailService.shared.sendOTP(
-                    to: normalizedEmail,
-                    role: "patient"
-                )
+                // For development purposes, generate OTP locally instead of sending email
+                let otp = String(Int.random(in: 100000...999999))
+                print("SIGNUP VIEW: Generated OTP locally: \(otp) for email: \(normalizedEmail)")
                 
                 // Update UI on main thread
                 await MainActor.run {

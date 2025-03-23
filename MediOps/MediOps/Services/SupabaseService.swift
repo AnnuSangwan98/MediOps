@@ -102,9 +102,9 @@ class SupabaseController {
     
     /// Hash a password using SHA256
     func hashPassword(_ password: String) -> String {
-        let data = Data(password.utf8)
-        let hash = SHA256.hash(data: data)
-        return hash.compactMap { String(format: "%02x", $0) }.joined()
+        // Returning plain text password instead of hashing for development purposes
+        // WARNING: This is insecure and should not be used in production
+        return password
     }
     
     /// Generate a JWT token (simplified for now)

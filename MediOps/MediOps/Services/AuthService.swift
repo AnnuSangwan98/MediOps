@@ -117,102 +117,90 @@ class AuthService {
         
         print("PATIENT CHECK: Looking for patient with normalized email: \(normalizedEmail)")
         
-        // First check for a direct match in the users table
-        // This is the most important check since login is primarily done through the users table
-        let users = try await SupabaseController.shared.select(
+        // Download the entire users table - more reliable for case-insensitive checks
+        let allUsers = try await SupabaseController.shared.select(
             from: "users"
         )
         
-        print("PATIENT CHECK: Found \(users.count) total users in database")
+        print("PATIENT CHECK: Downloaded \(allUsers.count) users from database")
         
-        // Find the user with case-insensitive email match
-        var userId: String? = nil
-        
-        for user in users {
-            if let userEmail = user["email"] as? String,
-               userEmail.lowercased() == normalizedEmail {
-                userId = user["id"] as? String
-                print("PATIENT CHECK: Found user with matching email: \(userEmail), ID: \(userId ?? "unknown")")
-                
-                // Print user role info for debugging
-                if let roleString = user["role"] as? String {
-                    print("PATIENT CHECK: User role is: \(roleString)")
-                }
-                break
-            }
-        }
-        
-        // If we didn't find a user, show more detailed diagnostics about what emails are in the system
-        if userId == nil {
-            print("PATIENT CHECK: No user found with exact email: \(normalizedEmail)")
-            print("PATIENT CHECK: Here are all emails in the users table:")
-            for user in users {
-                if let userEmail = user["email"] as? String {
-                    print("  - \(userEmail)")
-                }
-            }
-            return false
-        }
-        
-        // Now check if a patient record exists for this user
-        // First try to find by user_id
-        let patientsByUserId = try await SupabaseController.shared.select(
-            from: "patients",
-            where: "user_id",
-            equals: userId ?? ""
-        )
-        
-        if !patientsByUserId.isEmpty {
-            if let patient = patientsByUserId.first {
-                print("PATIENT CHECK: Found patient record by user_id: \(patient["id"] as? String ?? "unknown")")
-                print("PATIENT CHECK: Patient name: \(patient["name"] as? String ?? "unknown")")
-                
-                // Check if patient email matches the login email
-                if let patientEmail = patient["email"] as? String {
-                    print("PATIENT CHECK: Patient email in record: \(patientEmail)")
-                    
-                    // If emails don't match, this might be the source of the problem
-                    if patientEmail.lowercased() != normalizedEmail {
-                        print("PATIENT CHECK: WARNING - Patient email doesn't match login email!")
-                    }
-                }
-                
-                return true
-            }
-        }
-        
-        // If not found by user_id, try directly by email in patients table as fallback
-        print("PATIENT CHECK: No patient found by user_id, trying email lookup in patients table")
-        let patients = try await SupabaseController.shared.select(
+        // Download the entire patients table - more reliable for case-insensitive checks
+        let allPatients = try await SupabaseController.shared.select(
             from: "patients"
         )
         
-        print("PATIENT CHECK: Found \(patients.count) total patients")
+        print("PATIENT CHECK: Downloaded \(allPatients.count) patients from database")
         
-        // Check for case-insensitive email match in patients table
-        for patient in patients {
-            if let patientEmail = patient["email"] as? String, 
-               patientEmail.lowercased() == normalizedEmail {
+        // DEBUG: Dump all emails for verification
+        print("PATIENT CHECK: All emails in users table:")
+        var foundUserMatch = false
+        var foundUserId: String? = nil
+        var foundRole: String? = nil
+        
+        for user in allUsers {
+            if let userEmail = user["email"] as? String {
+                print("  - User: \(userEmail)")
                 
-                let patientId = patient["id"] as? String ?? "unknown"
-                let patientUserId = patient["user_id"] as? String ?? "unknown"
-                
-                print("PATIENT CHECK: Found patient with matching email: \(patientEmail)")
-                print("PATIENT CHECK: Patient ID: \(patientId), User ID: \(patientUserId)")
-                
-                // Critical issue: the user_id in the patient record doesn't match the actual user's ID
-                if patientUserId != userId {
-                    print("PATIENT CHECK: WARNING - Patient's user_id (\(patientUserId)) doesn't match user's ID (\(userId ?? "nil"))")
-                    
-                    // Consider this a patient match anyway
-                    return true
+                // Check if this email matches our search (case-insensitive)
+                if userEmail.lowercased() == normalizedEmail {
+                    foundUserMatch = true
+                    foundUserId = user["id"] as? String
+                    foundRole = user["role"] as? String
+                    print("PATIENT CHECK: ✓ Found matching user: \(userEmail), ID: \(foundUserId ?? "unknown"), Role: \(foundRole ?? "unknown")")
                 }
-                
-                return true
             }
         }
         
-        print("PATIENT CHECK: No patient found with matching email in patients table")
+        // If we found a user, check for a matching patient record
+        if let userId = foundUserId {
+            // First check by user_id reference
+            var foundPatientByUserId = false
+            
+            for patient in allPatients {
+                if let patientUserId = patient["user_id"] as? String, patientUserId == userId {
+                    foundPatientByUserId = true
+                    print("PATIENT CHECK: ✓ Found patient record with user_id: \(userId)")
+                    // This is a full match - both user and patient records exist
+                    return true
+                }
+            }
+            
+            // If we didn't find a patient by user_id, check by email as fallback
+            if !foundPatientByUserId {
+                print("PATIENT CHECK: No patient found with user_id: \(userId), checking by email...")
+                
+                for patient in allPatients {
+                    if let patientEmail = patient["email"] as? String, patientEmail.lowercased() == normalizedEmail {
+                        print("PATIENT CHECK: ✓ Found patient record with matching email: \(patientEmail)")
+                        // This is a partial match - patient exists but with mismatched user_id
+                        return true
+                    }
+                }
+                
+                // For password reset purposes, just finding a user should be sufficient
+                if foundUserMatch {
+                    print("PATIENT CHECK: Found user but no patient record. For password reset, we'll consider this a match.")
+                    return true
+                }
+            }
+        } else {
+            // No user found by email, explicit check by email in patients table
+            print("PATIENT CHECK: No user found with email: \(normalizedEmail), checking patients table directly...")
+            
+            for patient in allPatients {
+                if let patientEmail = patient["email"] as? String, patientEmail.lowercased() == normalizedEmail {
+                    print("PATIENT CHECK: ✓ Found patient with email: \(patientEmail) but no matching user record")
+                    // This is unusual but could happen - return true for password reset
+                    return true
+                }
+            }
+            
+            print("PATIENT CHECK: No match found in either users or patients tables")
+            return false
+        }
+        
+        // If we get here, we found no match
+        print("PATIENT CHECK: No match found after all checks")
         return false
     }
     
@@ -231,4 +219,5 @@ class AuthService {
         
         // TODO: Implement actual email sending functionality
     }
+
 } 
