@@ -371,7 +371,7 @@ struct PatientSignupView: View {
     private func sendOTP() {
         currentOTP = generateOTP()
         
-        guard let url = URL(string: "http://172.20.2.50:8082/send-email") else {
+        guard let url = URL(string: "http://localhost:8082/send-email") else {
             errorMessage = "Unable to connect to the server. Please verify your network connection and try again."
             showError = true
             return
@@ -380,6 +380,7 @@ struct PatientSignupView: View {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30 // Set timeout to 30 seconds
         
         let emailData: [String: Any] = [
             "to": email,
@@ -392,10 +393,17 @@ struct PatientSignupView: View {
             
             URLSession.shared.dataTask(with: request) { data, response, error in
                 DispatchQueue.main.async {
-                    if let error = error {
-                        errorMessage = error.localizedDescription.contains("connection") ? 
-                            "Cannot reach the server. Please check your internet connection and try again." :
-                            "Error: \(error.localizedDescription)"
+                    if let error = error as NSError? {
+                        switch error.code {
+                        case NSURLErrorTimedOut:
+                            errorMessage = "Request timed out. Please try again."
+                        case NSURLErrorNotConnectedToInternet:
+                            errorMessage = "No internet connection. Please check your network settings."
+                        case NSURLErrorCannotConnectToHost:
+                            errorMessage = "Cannot connect to server. Please try again later."
+                        default:
+                            errorMessage = "Error: \(error.localizedDescription)"
+                        }
                         showError = true
                         return
                     }

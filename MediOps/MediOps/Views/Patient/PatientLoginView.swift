@@ -163,9 +163,15 @@ struct PatientLoginView: View {
         isLoading = true
         currentOTP = generateOTP()
         
-        // Use your machine's IP address instead of localhost
-        guard let url = URL(string: "http://172.20.2.50:8082/send-email") else {  // Replace X with your IP
-            errorMessage = "Unable to connect to the server. Please verify your network connection and try again."
+        // Configure server URL with timeout and connection handling
+        var urlComponents = URLComponents()
+        urlComponents.scheme = "http"
+        urlComponents.host = "localhost"
+        urlComponents.port = 8082
+        urlComponents.path = "/send-email"
+        
+        guard let url = urlComponents.url else {
+            errorMessage = "Invalid server configuration. Please contact support."
             showError = true
             isLoading = false
             return
@@ -184,7 +190,11 @@ struct PatientLoginView: View {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: emailData)
             
-            URLSession.shared.dataTask(with: request) { data, response, error in
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 30
+            config.timeoutIntervalForResource = 30
+            
+            URLSession(configuration: config).dataTask(with: request) { data, response, error in
                 DispatchQueue.main.async {
                     isLoading = false
                     
