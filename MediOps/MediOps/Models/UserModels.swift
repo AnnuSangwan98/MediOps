@@ -43,6 +43,12 @@ enum Models {
         let updatedAt: Date
         let email: String?
         let emailVerified: Bool?
+        let bloodGroup: String
+        let address: String?
+        let phoneNumber: String
+        let emergencyContactName: String?
+        let emergencyContactNumber: String
+        let emergencyRelationship: String
         
         enum CodingKeys: String, CodingKey {
             case id
@@ -54,6 +60,12 @@ enum Models {
             case updatedAt = "updated_at"
             case email
             case emailVerified = "email_verified"
+            case bloodGroup
+            case address
+            case phoneNumber
+            case emergencyContactName
+            case emergencyContactNumber
+            case emergencyRelationship
         }
     }
 

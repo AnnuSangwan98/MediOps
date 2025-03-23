@@ -24,12 +24,15 @@ class SupabaseController {
         config.timeoutIntervalForResource = 300
         config.waitsForConnectivity = true
         self.session = URLSession(configuration: config)
+        
+        print("SUPABASE: Initialized with URL \(supabaseURL)")
     }
     
     // MARK: - Core Database Methods
     
     /// Generic method to insert data into a table
     func insert<T: Encodable>(into table: String, data: T) async throws {
+        print("SUPABASE: Inserting data into \(table)")
         try await client.database
             .from(table)
             .insert(data)
@@ -53,35 +56,90 @@ class SupabaseController {
     
     /// Generic method to retrieve data from a table
     func select(from table: String, columns: String = "*") async throws -> [[String: Any]] {
-        let response = try await client.database
-            .from(table)
-            .select(columns)
-            .execute()
+        print("SUPABASE: Selecting all data from \(table)")
         
-        guard let data = response.data as? [[String: Any]] else {
-            return []
+        // Use direct URL session with headers if the client approach isn't working
+        let url = URL(string: "\(supabaseURL)/rest/v1/\(table)?select=\(columns)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        
+        do {
+            let (data, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("SUPABASE ERROR: Invalid response type")
+                return []
+            }
+            
+            print("SUPABASE: Response status code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode != 200 {
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("SUPABASE ERROR: \(responseString)")
+                }
+                return []
+            }
+            
+            guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                print("SUPABASE ERROR: Failed to parse JSON data")
+                return []
+            }
+            
+            print("SUPABASE: Successfully retrieved \(jsonArray.count) records from \(table)")
+            return jsonArray
+        } catch {
+            print("SUPABASE ERROR: Failed to fetch data from \(table): \(error.localizedDescription)")
+            throw error
         }
-        
-        return data
     }
     
     /// Generic method to retrieve data with a filter
     func select(from table: String, columns: String = "*", where column: String, equals value: String) async throws -> [[String: Any]] {
-        let response = try await client.database
-            .from(table)
-            .select(columns)
-            .eq(column, value: value)
-            .execute()
+        print("SUPABASE: Selecting from \(table) where \(column) = \(value)")
         
-        guard let data = response.data as? [[String: Any]] else {
-            return []
+        // Use direct URL session with headers
+        let escapedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+        let url = URL(string: "\(supabaseURL)/rest/v1/\(table)?select=\(columns)&\(column)=eq.\(escapedValue)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        
+        do {
+            let (data, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("SUPABASE ERROR: Invalid response type")
+                return []
+            }
+            
+            print("SUPABASE: Response status code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode != 200 {
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("SUPABASE ERROR: \(responseString)")
+                }
+                return []
+            }
+            
+            guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                print("SUPABASE ERROR: Failed to parse JSON data")
+                return []
+            }
+            
+            print("SUPABASE: Successfully retrieved \(jsonArray.count) records from \(table)")
+            return jsonArray
+        } catch {
+            print("SUPABASE ERROR: Failed to fetch data from \(table): \(error.localizedDescription)")
+            throw error
         }
-        
-        return data
     }
     
     /// Generic method to update data in a table
     func update<T: Encodable>(table: String, data: T, where column: String, equals value: String) async throws {
+        print("SUPABASE: Updating \(table) where \(column) = \(value)")
         try await client.database
             .from(table)
             .update(data)
@@ -91,6 +149,7 @@ class SupabaseController {
     
     /// Generic method to delete data from a table
     func delete(from table: String, where column: String, equals value: String) async throws {
+        print("SUPABASE: Deleting from \(table) where \(column) = \(value)")
         try await client.database
             .from(table)
             .delete()

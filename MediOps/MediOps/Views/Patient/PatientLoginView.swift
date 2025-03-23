@@ -11,6 +11,7 @@ struct PatientLoginView: View {
     @State private var isLoading = false
     @State private var currentOTP: String = ""
     @State private var navigationPath = NavigationPath()
+    @State private var isAuthenticated = false
     
     private var isloginButtonEnabled: Bool {
         !email.isEmpty && !password.isEmpty && isValidEmail(email) && password.count >= 8
@@ -132,6 +133,8 @@ struct PatientLoginView: View {
             .navigationDestination(for: String.self) { destination in
                 if destination == "OTPVerification" {
                     PatientOTPVerificationView(email: email, expectedOTP: currentOTP)
+                } else if destination == "PatientHome" {
+                    PatientHomeView()
                 }
             }
             .navigationDestination(isPresented: $navigateToOTP) {
@@ -155,99 +158,63 @@ struct PatientLoginView: View {
     
     private func handleLogin() {
         guard isValidInput() else { return }
+        
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         isLoading = true
         
-        // Normalize email by trimming whitespace and converting to lowercase
-        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        
-        print("LOGIN ATTEMPT: Starting login process with email: \(normalizedEmail)")
+        print("PATIENT LOGIN: Attempting login with normalized email: \(normalizedEmail)")
         
         Task {
             do {
-                // Try to get all users first - this is a quick diagnostic to help troubleshooting
-                print("LOGIN DIAGNOSTIC: Checking database connection")
-                let allPatients = try await SupabaseController.shared.select(from: "patients")
-                print("LOGIN DIAGNOSTIC: Database connection successful, found \(allPatients.count) patients")
+                // Attempt to login with the provided credentials
+                let (patient, token) = try await AuthService.shared.loginPatient(email: normalizedEmail, password: password)
                 
-                // Check if this specific patient exists using enhanced method
-                print("LOGIN DIAGNOSTIC: Checking if patient exists with email: \(normalizedEmail)")
-                let patientExists = try await AuthService.shared.checkPatientExists(email: normalizedEmail)
+                print("PATIENT LOGIN: Successfully authenticated user: \(normalizedEmail)")
+                print("PATIENT LOGIN: Patient ID: \(patient.id), Name: \(patient.name)")
                 
-                if !patientExists {
-                    print("LOGIN DIAGNOSTIC: Patient doesn't exist in database. Suggesting signup.")
-                    throw AuthError.userNotFound
-                }
+                // Store the token securely
+                UserDefaults.standard.set(token, forKey: "auth_token")
+                UserDefaults.standard.set(patient.id, forKey: "current_patient_id")
+                UserDefaults.standard.set(patient.userId, forKey: "current_user_id")
                 
-                print("LOGIN DIAGNOSTIC: Patient found, proceeding with credentials check")
-                
-                // Verify credentials
-                do {
-                    let (patient, _) = try await AuthService.shared.loginPatient(
-                        email: normalizedEmail,
-                        password: password
-                    )
+                await MainActor.run {
+                    isLoading = false
+                    isAuthenticated = true
                     
-                    print("LOGIN DIAGNOSTIC: Login successful for patient: \(patient.id)")
-                    
-                    // Then send OTP
-                    let otp = try await EmailService.shared.sendOTP(
-                        to: normalizedEmail,
-                        role: "patient"
-                    )
-                    
-                    // Update UI on main thread
-                    await MainActor.run {
-                        isLoading = false
-                        currentOTP = otp
-                        
-                        // Navigate to OTP verification
-                        navigationPath.append("OTPVerification")
-                    }
-                } catch let authError as AuthError {
-                    if authError == AuthError.invalidCredentials {
-                        print("LOGIN DIAGNOSTIC: Invalid credentials for existing patient")
-                        throw authError
-                    } else {
-                        throw authError
-                    }
+                    // Navigate to the patient home screen
+                    navigationPath.append("PatientHome")
                 }
             } catch let error as AuthError {
+                // Provide specific error messages based on the error type
                 await MainActor.run {
                     isLoading = false
                     
-                    if error == AuthError.userNotFound {
+                    switch error {
+                    case .userNotFound:
                         errorMessage = "Patient account not found. Please check your email or sign up first."
-                    } else if error == AuthError.invalidCredentials {
-                        errorMessage = "Invalid email or password. Please try again."
-                    } else {
+                        print("PATIENT LOGIN ERROR: User not found for email: \(normalizedEmail)")
+                        
+                    case .invalidCredentials:
+                        errorMessage = "Invalid password. Please try again."
+                        print("PATIENT LOGIN ERROR: Invalid credentials for email: \(normalizedEmail)")
+                        
+                    case .invalidRole:
+                        errorMessage = "This account is not registered as a patient."
+                        print("PATIENT LOGIN ERROR: Invalid role (not a patient) for email: \(normalizedEmail)")
+                        
+                    default:
                         errorMessage = error.localizedDescription
+                        print("PATIENT LOGIN ERROR: \(error.localizedDescription)")
                     }
-                    
-                    // More detailed error for debugging
-                    print("LOGIN ERROR: AuthError: \(error)")
                     
                     showError = true
                 }
-            } catch let error as NSError {
+            } catch {
+                // Handle any other errors
                 await MainActor.run {
                     isLoading = false
-                    
-                    // Provide a more user-friendly error message
-                    if error.domain == "NSURLErrorDomain" {
-                        errorMessage = "Network error: Please check your internet connection"
-                    } else if error.domain == "AuthError" {
-                        errorMessage = error.localizedDescription
-                    } else if error.localizedDescription.contains("violates unique constraint") {
-                        // This shouldn't happen during login, but just in case
-                        errorMessage = "There was an issue with your account. Please contact support."
-                        print("LOGIN ERROR: Unique constraint violation during login - this shouldn't happen!")
-                    } else {
-                        errorMessage = "Login failed: \(error.localizedDescription)"
-                    }
-                    
-                    // More detailed error for debugging
-                    print("LOGIN ERROR: NSError: \(error)")
-                    
+                    errorMessage = "Login failed: \(error.localizedDescription)"
+                    print("PATIENT LOGIN ERROR: Unexpected error: \(error.localizedDescription)")
                     showError = true
                 }
             }
@@ -255,14 +222,28 @@ struct PatientLoginView: View {
     }
     
     private func isValidInput() -> Bool {
-        guard !email.isEmpty, !password.isEmpty else {
-            errorMessage = "Please fill in all fields"
+        // Check email format
+        guard !email.isEmpty else {
+            errorMessage = "Please enter your email address"
             showError = true
             return false
         }
         
-        guard email.contains("@") else {
-            errorMessage = "Please enter a valid email"
+        guard isValidEmail(email) else {
+            errorMessage = "Please enter a valid email address"
+            showError = true
+            return false
+        }
+        
+        // Check password
+        guard !password.isEmpty else {
+            errorMessage = "Please enter your password"
+            showError = true
+            return false
+        }
+        
+        guard password.count >= 8 else {
+            errorMessage = "Password must be at least 8 characters"
             showError = true
             return false
         }

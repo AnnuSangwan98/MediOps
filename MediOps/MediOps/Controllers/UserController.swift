@@ -12,33 +12,104 @@ class UserController {
     
     /// Login user with email and password
     func login(email: String, password: String) async throws -> AuthResponse {
-        // 1. Get user from users table
-        let lowercaseEmail = email.lowercased()
-        print("Attempting to login with email: \(lowercaseEmail)")
+        // Normalize email for case-insensitive matching
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        print("LOGIN: Attempting to login with normalized email: \(normalizedEmail)")
         
-        let users = try await supabase.select(
-            from: "users",
-            where: "email",
-            equals: lowercaseEmail
-        )
+        // Download all users directly for more reliable matching
+        let allUsers = try await supabase.select(from: "users")
+        print("LOGIN: Downloaded \(allUsers.count) users from database")
         
-        guard let user = users.first else {
-            print("User not found for email: \(lowercaseEmail)")
+        // Download all patients for potential direct password check
+        let allPatients = try await supabase.select(from: "patients")
+        print("LOGIN: Downloaded \(allPatients.count) patients from database")
+        
+        // Debug: Print all emails to verify
+        print("LOGIN: Available emails in users table:")
+        var matchedUser: [String: Any]? = nil
+        var matchedPatient: [String: Any]? = nil
+        
+        // First try to find the user in the users table
+        for user in allUsers {
+            if let userEmail = user["email"] as? String {
+                print("  - \(userEmail)")
+                
+                // Case-insensitive matching
+                if userEmail.lowercased() == normalizedEmail {
+                    matchedUser = user
+                    print("LOGIN: ✓ Found matching user: \(userEmail)")
+                    break
+                }
+            }
+        }
+        
+        // If no user found in users table, or we need to check patient data
+        // Look for the patient record as well
+        for patient in allPatients {
+            if let patientEmail = patient["email"] as? String,
+               patientEmail.lowercased() == normalizedEmail {
+                print("LOGIN: ✓ Found matching patient: \(patientEmail)")
+                matchedPatient = patient
+                
+                // If we don't already have a matched user, try to find the corresponding user
+                if matchedUser == nil, let userId = patient["user_id"] as? String {
+                    // Look up the corresponding user
+                    for user in allUsers {
+                        if let id = user["id"] as? String, id == userId {
+                            matchedUser = user
+                            print("LOGIN: ✓ Found linked user with ID: \(id)")
+                            break
+                        }
+                    }
+                }
+                break
+            }
+        }
+        
+        // If we still don't have a matched user, throw an error
+        guard let user = matchedUser else {
+            print("LOGIN: No matching user found for email: \(normalizedEmail)")
             throw AuthError.userNotFound
         }
         
-        print("User found: \(user["id"] as? String ?? "unknown ID")")
+        // Check if this is a patient login
+        let isPatientLogin = matchedPatient != nil
         
-        // 2. Verify password
-        guard let storedPasswordHash = user["password_hash"] as? String else {
-            print("Password hash not found for user")
-            throw AuthError.invalidCredentials
+        // 2. Verify password - check both user record and patient record if available
+        var passwordIsValid = false
+        
+        // Check password in the users table
+        if let storedPasswordHash = user["password_hash"] as? String {
+            let hashedInputPassword = supabase.hashPassword(password)
+            
+            if storedPasswordHash == hashedInputPassword {
+                passwordIsValid = true
+                print("LOGIN: Password verified in users table")
+            }
         }
         
-        let hashedInputPassword = supabase.hashPassword(password)
+        // If password didn't match in users table, check patient table if this is a patient login
+        if !passwordIsValid && isPatientLogin {
+            // Check if the patient record has a direct password (from the schema)
+            if let patientPassword = matchedPatient?["password"] as? String {
+                // For direct password comparison (non-hashed in the patients table)
+                if patientPassword == password {
+                    passwordIsValid = true
+                    print("LOGIN: Password verified in patients table")
+                } else {
+                    // Try hashed comparison with patient table password
+                    let hashedInputPassword = supabase.hashPassword(password)
+                    if patientPassword == hashedInputPassword {
+                        passwordIsValid = true
+                        print("LOGIN: Hashed password verified in patients table")
+                    }
+                }
+            }
+        }
         
-        if storedPasswordHash != hashedInputPassword {
-            print("Password mismatch for user")
+        // If password is still not valid, throw error
+        if !passwordIsValid {
+            print("LOGIN: Password mismatch for user")
             throw AuthError.invalidCredentials
         }
         
@@ -52,6 +123,7 @@ class UserController {
             let updatedAtString = user["updated_at"] as? String,
             let role = UserRole(rawValue: roleString)
         else {
+            print("LOGIN: Invalid user data format")
             throw AuthError.invalidUserData
         }
         
@@ -74,6 +146,7 @@ class UserController {
             passwordHash: nil // Don't expose password hash to client
         )
         
+        print("LOGIN: Successfully authenticated user: \(email), role: \(role.rawValue)")
         return AuthResponse(user: userObject, token: token)
     }
     

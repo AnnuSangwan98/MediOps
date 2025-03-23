@@ -24,24 +24,46 @@ class AuthService {
     // MARK: - Patient Authentication
     
     /// Sign up a new patient
-    func signUpPatient(email: String, password: String, username: String, age: Int, gender: String) async throws -> (Patient, String) {
-        return try await patientController.registerPatient(email: email, password: password, name: username, age: age, gender: gender)
+    func signUpPatient(email: String, password: String, username: String, age: Int, gender: String, bloodGroup: String = "Not Specified", address: String? = nil, phoneNumber: String = "9999999999") async throws -> (Patient, String) {
+        return try await patientController.registerPatient(
+            email: email,
+            password: password,
+            name: username,
+            age: age,
+            gender: gender,
+            bloodGroup: bloodGroup,
+            address: address,
+            phoneNumber: phoneNumber
+        )
     }
     
     /// Login a patient
     func loginPatient(email: String, password: String) async throws -> (Patient, String) {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        print("PATIENT LOGIN: Authenticating \(normalizedEmail) via AuthService")
+        
         // First authenticate the user
-        let authResponse = try await userController.login(email: email, password: password)
+        let authResponse = try await userController.login(email: normalizedEmail, password: password)
         
         // Verify the user is a patient
         guard authResponse.user.role == .patient else {
+            print("PATIENT LOGIN: User \(normalizedEmail) exists but has incorrect role: \(authResponse.user.role.rawValue)")
             throw AuthError.invalidRole
         }
         
         // Get the patient details
-        let patient = try await patientController.getPatientByUserId(userId: authResponse.user.id)
-        
-        return (patient, authResponse.token)
+        do {
+            let patient = try await patientController.getPatientByUserId(userId: authResponse.user.id)
+            print("PATIENT LOGIN: Successfully retrieved patient details for user ID: \(authResponse.user.id)")
+            return (patient, authResponse.token)
+        } catch {
+            print("PATIENT LOGIN: Failed to retrieve patient details for user ID: \(authResponse.user.id)")
+            print("PATIENT LOGIN: Error: \(error.localizedDescription)")
+            
+            // If we authenticated the user but cannot find their patient record,
+            // this suggests a data integrity issue
+            throw AuthError.custom("Your account exists but patient details could not be found. Please contact support.")
+        }
     }
     
     // MARK: - Hospital Admin Management

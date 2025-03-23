@@ -4,7 +4,7 @@ struct PatientSignupView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String = ""
     @State private var age: String = ""
-    @State private var gender: String = "Male"
+    @State private var gender: String = "Not Specified"
     @State private var email: String = ""
     @State private var password: String = ""
     @State private var confirmPassword: String = ""
@@ -14,8 +14,10 @@ struct PatientSignupView: View {
     @State private var suggestedPassword: String? = nil
     @State private var currentOTP: String = ""
     @State private var isLoading = false
+    @State private var bloodGroup: String = "Not Specified"
     
-    let genders = ["Male", "Female", "Other"]
+    let genders = ["Not Specified", "Male", "Female", "Other"]
+    let bloodGroupOptions = ["Not Specified", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
     
     private var isValidName: Bool {
         let nameRegex = "^[A-Za-z\\s]+$"
@@ -241,6 +243,24 @@ struct PatientSignupView: View {
                         .padding(.top, 0)
                         
                         VStack(alignment: .leading, spacing: 8) {
+                            Text("Blood Group")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            Picker("Select Blood Group", selection: $bloodGroup) {
+                                ForEach(bloodGroupOptions, id: \.self) { option in
+                                    Text(option).tag(option)
+                                }
+                            }
+                            .pickerStyle(MenuPickerStyle())
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(10)
+                            .shadow(color: .gray.opacity(0.1), radius: 2)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
                             Text("Password")
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
@@ -417,13 +437,17 @@ struct PatientSignupView: View {
         
         Task {
             do {
-                // Try to register the patient
+                // Try to register the patient with all required fields
                 let (patient, _) = try await AuthService.shared.signUpPatient(
                     email: normalizedEmail,
                     password: password,
                     username: name,
                     age: Int(age) ?? 0,
-                    gender: gender
+                    gender: gender,
+                    bloodGroup: bloodGroup,
+                    // New fields - using default values where not collected from UI
+                    address: nil, // We could add an address field to the UI
+                    phoneNumber: "9999999999" // Default phone number
                 )
                 
                 print("SIGNUP VIEW: Patient registered successfully with ID: \(patient.id)")

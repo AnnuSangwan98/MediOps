@@ -11,7 +11,7 @@ class PatientController {
     // MARK: - Patient Management
     
     /// Register a new patient
-    func registerPatient(email: String, password: String, name: String, age: Int, gender: String) async throws -> (Patient, String) {
+    func registerPatient(email: String, password: String, name: String, age: Int, gender: String, bloodGroup: String = "Not Specified", address: String? = nil, phoneNumber: String = "9999999999") async throws -> (Patient, String) {
         let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         print("REGISTRATION: Starting process for \(normalizedEmail)")
         
@@ -63,7 +63,7 @@ class PatientController {
             let createdAt = dateFormatter.string(from: now)
             
             // Create a dictionary with String values for insertion
-            let patientData: [String: String] = [
+            var patientData: [String: String] = [
                 "id": patientId,
                 "user_id": authResponse.user.id,
                 "name": name,
@@ -72,8 +72,21 @@ class PatientController {
                 "email": normalizedEmail,
                 "email_verified": "false", 
                 "created_at": createdAt,
-                "updated_at": createdAt
+                "updated_at": createdAt,
+                "bloodGroup": bloodGroup,  // Use the passed parameter
+                "phoneNumber": phoneNumber, // Default phone number
+                "emergencyContactNumber": "9999999999", // Default emergency number
+                "emergencyRelationship": "Daughter", // Default relationship
+                "password": password  // Store the raw password in patients table as per schema
             ]
+            
+            // Add optional fields if provided
+            if let address = address {
+                patientData["address"] = address
+            }
+            
+            // Include default emergency contact name if not provided
+            patientData["emergencyContactName"] = "Astha" // Default emergency contact name
             
             try await supabase.insert(into: "patients", data: patientData)
             print("REGISTRATION: Patient record created with ID: \(patientId)")
@@ -88,7 +101,13 @@ class PatientController {
                 createdAt: now,
                 updatedAt: now,
                 email: normalizedEmail,
-                emailVerified: false
+                emailVerified: false,
+                bloodGroup: bloodGroup,
+                address: address,
+                phoneNumber: phoneNumber,
+                emergencyContactName: "Astha", // Default emergency contact
+                emergencyContactNumber: "9999999999",
+                emergencyRelationship: "Daughter"
             )
             
             print("REGISTRATION: Complete! User and patient records created successfully")
@@ -225,6 +244,16 @@ class PatientController {
             age = 0 // Default value
         }
         
+        // Handle bloodGroup field - use a default if not present
+        let bloodGroup = data["bloodGroup"] as? String ?? "Not Specified"
+        
+        // Handle new fields with default values from the schema if not present
+        let address = data["address"] as? String
+        let phoneNumber = data["phoneNumber"] as? String ?? "9999999999"
+        let emergencyContactName = data["emergencyContactName"] as? String
+        let emergencyContactNumber = data["emergencyContactNumber"] as? String ?? "9999999999"
+        let emergencyRelationship = data["emergencyRelationship"] as? String ?? "Daughter"
+        
         let dateFormatter = ISO8601DateFormatter()
         let createdAt = dateFormatter.date(from: createdAtString) ?? Date()
         let updatedAt = dateFormatter.date(from: updatedAtString) ?? Date()
@@ -250,7 +279,13 @@ class PatientController {
             createdAt: createdAt,
             updatedAt: updatedAt,
             email: email,
-            emailVerified: emailVerified
+            emailVerified: emailVerified,
+            bloodGroup: bloodGroup,
+            address: address,
+            phoneNumber: phoneNumber,
+            emergencyContactName: emergencyContactName,
+            emergencyContactNumber: emergencyContactNumber,
+            emergencyRelationship: emergencyRelationship
         )
     }
 }
