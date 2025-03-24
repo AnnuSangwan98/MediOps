@@ -108,6 +108,22 @@ struct PatientOTPVerificationView: View {
         .navigationDestination(isPresented: $navigateToHome) {
             PatientHomeView()
         }
+        .navigationBarBackButtonHidden(true)
+        .navigationBarItems(leading: Button(action: {
+            // Pop to PatientLoginView
+            if let window = UIApplication.shared.windows.first {
+                window.rootViewController = UIHostingController(rootView: PatientLoginView()
+                    .environmentObject(navigationState))
+                window.makeKeyAndVisible()
+            }
+        }) {
+            HStack {
+                Image(systemName: "chevron.left")
+                    .foregroundColor(.teal)
+                Text("Back to Login")
+                    .foregroundColor(.teal)
+            }
+        })
     }
     
     private var isOTPComplete: Bool {

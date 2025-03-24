@@ -25,25 +25,20 @@ struct PatientHomeView: View {
                             }
                             Spacer()
                             
-                            HStack(spacing: 15) {
-                                Button(action: {
-                                    // TODO: Navigate to profile
-                                }) {
-                                    Image(systemName: "person.circle.fill")
-                                        .resizable()
-                                        .frame(width: 24, height: 24)
-                                        .foregroundColor(.teal)
-                                }
-                                
-                                Button(action: {
-                                    navigationState.signOut()
-                                }) {
-                                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                                        .resizable()
-                                        .frame(width: 24, height: 24)
-                                        .foregroundColor(.teal)
-                                }
+                            Button(action: {
+                                // TODO: Navigate to profile
+                            }) {
+                                Image(systemName: "person.circle.fill")
+                                    .resizable()
+                                    .frame(width: 40, height: 40)
+                                    .foregroundColor(.teal)
+                                    .background(Circle().fill(Color.white))
+                                    .shadow(color: .gray.opacity(0.2), radius: 3)
                             }
+                            .padding(.trailing)
+                        }
+                        .padding(.horizontal)
+                        .padding(.top)
                         }
                         .padding(.horizontal)
                         .padding(.top)
@@ -106,7 +101,7 @@ struct PatientHomeView: View {
             .navigationBarBackButtonHidden(true)
         }
     }
-}
+
 
 struct DashboardCard: View {
     let title: String
