@@ -112,7 +112,7 @@ struct PatientForgotPasswordView: View {
             }
             
             Button(action: handlePasswordResetRequest) {
-                Text("Send Reset Link")
+                Text("Proceed")
                     .font(.title3)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
