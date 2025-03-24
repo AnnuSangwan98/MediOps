@@ -144,7 +144,6 @@ struct SuperAdminDashboardView: View {
                         }
                     }
                     .padding()
-                    .navigationBarHidden(true)
                 }
             }
         }
@@ -164,6 +163,9 @@ struct SuperAdminDashboardView: View {
                     onSubmit: addHospital
                 )
                 .navigationTitle("Add Hospital")
+                .navigationBarItems(trailing: Button("Cancel") {
+                    showHospitalForm = false
+                })
             }
         }
         .sheet(isPresented: $showEditForm) {
@@ -346,190 +348,6 @@ struct HospitalListItem: View {
     }
 }
 
-struct AddHospitalForm: View {
-    @Binding var hospitalName: String
-    @Binding var adminName: String
-    @Binding var licenseNumber: String
-    @Binding var street: String
-    @Binding var city: String
-    @Binding var state: String
-    @Binding var zipCode: String
-    @Binding var phone: String
-    @Binding var email: String
-    let onSubmit: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    
-    @State private var showValidationErrors = false
-    @State private var emailError = ""
-    @State private var phoneError = ""
-    @State private var pinCodeError = ""
-    @State private var hospitalIdError = ""
-    
-    private var isFormValid: Bool {
-        !hospitalName.isEmpty && 
-        !adminName.isEmpty && 
-        !licenseNumber.isEmpty && 
-        !street.isEmpty &&
-        !city.isEmpty && 
-        !state.isEmpty && 
-        !zipCode.isEmpty &&
-        !phone.isEmpty && 
-        !email.isEmpty &&
-        emailError.isEmpty &&
-        phoneError.isEmpty &&
-        pinCodeError.isEmpty &&
-        hospitalIdError.isEmpty
-    }
-    
-    private func validateForm() -> Bool {
-        var isValid = true
-        
-        // Reset previous errors
-        emailError = ""
-        phoneError = ""
-        pinCodeError = ""
-        hospitalIdError = ""
-        
-        // Validate Hospital ID format
-        if !licenseNumber.hasPrefix("HOS") || licenseNumber.count != 6 {
-            hospitalIdError = "Hospital ID must start with HOS followed by 3 digits"
-            isValid = false
-        }
-        
-        // Validate email format
-        let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
-        if !NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email) {
-            emailError = "Please enter a valid email address"
-            isValid = false
-        }
-        
-        // Validate phone number
-        if phone.count != 10 || !phone.allSatisfy({ $0.isNumber }) {
-            phoneError = "Please enter a valid 10-digit phone number"
-            isValid = false
-        }
-        
-        // Validate pin code
-        if zipCode.count != 6 || !zipCode.allSatisfy({ $0.isNumber }) {
-            pinCodeError = "Please enter a valid 6-digit pin code"
-            isValid = false
-        }
-        
-        showValidationErrors = !isValid
-        return isValid
-    }
-    
-    var body: some View {
-        Form {
-            Section(header: Text("Hospital Information")) {
-                TextField("Hospital Name", text: $hospitalName)
-                    .onChange(of: hospitalName) { validateForm() }
-                TextField("Admin Name", text: $adminName)
-                    .onChange(of: adminName) { validateForm() }
-                TextField("Hospital ID", text: $licenseNumber)
-                    .placeholder(when: licenseNumber.isEmpty) {
-                        Text("Hospital ID (HOSXXXX)")
-                            .foregroundColor(.gray)
-                    }
-                    .onChange(of: licenseNumber) { validateForm() }
-            }
-            
-            Section(header: Text("Address")) {
-                TextField("Street", text: $street)
-                    .onChange(of: street) { validateForm() }
-                TextField("City", text: $city)
-                    .onChange(of: city) { validateForm() }
-                TextField("State", text: $state)
-                    .onChange(of: state) { validateForm() }
-                TextField("Pin Code", text: $zipCode)
-                    .keyboardType(.numberPad)
-                    .placeholder(when: zipCode.isEmpty) {
-                        Text("Pin Code eg: 123456")
-                            .foregroundColor(.gray)
-                    }
-                    .onChange(of: zipCode) { validateForm() }
-            }
-            
-            Section(header: Text("Contact Information")) {
-                HStack {
-                    Text("+91")
-                        .foregroundColor(.gray)
-                    TextField("Phone Number", text: $phone)
-                        .keyboardType(.numberPad)
-                        .onChange(of: phone) { validateForm() }
-                }
-                
-                TextField("Email", text: $email)
-                    .keyboardType(.emailAddress)
-                    .autocapitalization(.none)
-                    .onChange(of: email) { validateForm() }
-            }
-        }
-        .navigationBarItems(
-            leading: Button("Cancel") {
-                dismiss()
-            },
-            trailing: Button("Save") {
-                if validateForm() {
-                    onSubmit()
-                }
-            }
-            .disabled(!isFormValid)
-            .foregroundColor(isFormValid ? .blue : .gray)
-        )
-    }
-}
-
-struct EditHospitalForm: View {
-    @State private var editedHospital: Hospital
-    let onSave: (Hospital) -> Void
-    
-    init(hospital: Hospital, onSave: @escaping (Hospital) -> Void) {
-        _editedHospital = State(initialValue: hospital)
-        self.onSave = onSave
-    }
-    
-    var body: some View {
-        Form {
-            Section(header: Text("Hospital Information")) {
-                TextField("Hospital Name", text: $editedHospital.name)
-                TextField("Admin Name", text: $editedHospital.adminName)
-                TextField("Hospital ID", text: $editedHospital.licenseNumber)
-                    .placeholder(when: editedHospital.licenseNumber.isEmpty) {
-                        Text("Hospital ID (HOSXXXX)")
-                            .foregroundColor(.gray)
-                    }
-            }
-            
-            Section(header: Text("Address")) {
-                TextField("Street", text: $editedHospital.street)
-                TextField("City", text: $editedHospital.city)
-                TextField("State", text: $editedHospital.state)
-                TextField("Pin Code", text: $editedHospital.zipCode)
-                    .keyboardType(.numberPad)
-                    .placeholder(when: editedHospital.zipCode.isEmpty) {
-                        Text("Pin Code eg: 123456")
-                            .foregroundColor(.gray)
-                    }
-            }
-            
-            Section(header: Text("Contact Information")) {
-                TextField("Phone", text: $editedHospital.phone)
-                TextField("Email", text: $editedHospital.email)
-            }
-            
-            Section {
-                Button("Save Changes") {
-                    editedHospital.lastModified = Date()
-                    editedHospital.lastModifiedBy = "Super Admin"
-                    onSave(editedHospital)
-                }
-                .frame(maxWidth: .infinity)
-                .foregroundColor(.blue)
-            }
-        }
-    }
-}
 
 struct DashboardCards: View {
     let title: String
@@ -578,4 +396,4 @@ extension View {
 
 #Preview {
     SuperAdminDashboardView()
-} 
+}

@@ -445,26 +445,40 @@ struct PatientSignupView: View {
                     age: Int(age) ?? 0,
                     gender: gender,
                     bloodGroup: bloodGroup,
-                    // New fields - using default values where not collected from UI
-                    address: nil, // We could add an address field to the UI
-                    phoneNumber: "9999999999" // Default phone number
+                    address: nil,
+                    phoneNumber: "9999999999"
                 )
                 
                 print("SIGNUP VIEW: Patient registered successfully with ID: \(patient.id)")
                 
-                // For development purposes, generate OTP locally instead of sending email
-                let otp = String(Int.random(in: 100000...999999))
-                print("SIGNUP VIEW: Generated OTP locally: \(otp) for email: \(normalizedEmail)")
-                
-                // Update UI on main thread
-                await MainActor.run {
-                    isLoading = false
-                    currentOTP = otp
+                // Send OTP email to the user for verification
+                do {
+                    let otp = try await EmailService.shared.sendOTP(to: normalizedEmail, role: "Patient")
+                    print("SIGNUP VIEW: OTP sent via email: \(otp) to: \(normalizedEmail)")
                     
-                    // Navigate to OTP verification
-                    navigateToOTP = true
+                    // Update UI on main thread
+                    await MainActor.run {
+                        isLoading = false
+                        currentOTP = otp
+                        
+                        // Navigate to OTP verification
+                        navigateToOTP = true
+                    }
+                } catch {
+                    print("SIGNUP VIEW: Failed to send OTP email: \(error.localizedDescription)")
+                    
+                    // Fallback to local OTP generation for testing purposes
+                    let otp = String(Int.random(in: 100000...999999))
+                    print("SIGNUP VIEW: Fallback to local OTP: \(otp) for email: \(normalizedEmail)")
+                    
+                    await MainActor.run {
+                        isLoading = false
+                        currentOTP = otp
+                        
+                        // Navigate to OTP verification
+                        navigateToOTP = true
+                    }
                 }
-                
             } catch let error as AuthError {
                 await MainActor.run {
                     isLoading = false

@@ -302,18 +302,28 @@ struct PatientForgotPasswordView: View {
                 // If we made it here, we found an account
                 print("PASSWORD RESET: Account verification successful")
                 
-                // Generate a simulated token for development
-                resetToken = UUID().uuidString
-                
-                // In production, we would send a real email with this token
-                print("PASSWORD RESET: Generated token: \(resetToken)")
-                print("PASSWORD RESET: In a real app, an email would be sent to \(normalizedEmail)")
-                
-                await MainActor.run {
-                    isLoading = false
-                    passwordResetRequested = true
+                // Send an actual password reset email with a token
+                do {
+                    let role = foundUserRole ?? "Patient" // Default to Patient if role not found
+                    resetToken = try await EmailService.shared.sendPasswordResetEmail(to: normalizedEmail, role: role)
+                    print("PASSWORD RESET: Reset token email sent successfully: \(resetToken)")
+                    
+                    await MainActor.run {
+                        isLoading = false
+                        passwordResetRequested = true
+                    }
+                } catch {
+                    print("PASSWORD RESET: Failed to send reset email: \(error.localizedDescription)")
+                    
+                    // Fallback to simulated token for development/testing
+                    resetToken = UUID().uuidString
+                    print("PASSWORD RESET: Using fallback token: \(resetToken)")
+                    
+                    await MainActor.run {
+                        isLoading = false
+                        passwordResetRequested = true
+                    }
                 }
-                
             } catch {
                 print("PASSWORD RESET ERROR: \(error.localizedDescription)")
                 

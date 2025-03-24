@@ -90,7 +90,7 @@ class AuthService {
     // MARK: - Doctor Management
     
     /// Create a new doctor
-    func createDoctor(email: String, name: String, specialization: String, hospitalAdminId: String) async throws -> (Doctor, String) {
+    func createDoctor(email: String, name: String, specialization: String, hospitalAdminId: String) async throws -> (Models.Doctor, String) {
         // Generate a secure password
         let password = generateSecurePassword()
         
@@ -112,7 +112,7 @@ class AuthService {
     // MARK: - Lab Admin Management
     
     /// Create a new lab admin
-    func createLabAdmin(email: String, name: String, labName: String, hospitalAdminId: String) async throws -> (LabAdmin, String) {
+    func createLabAdmin(email: String, name: String, labName: String, hospitalAdminId: String) async throws -> (Models.LabAdmin, String) {
         // Generate a secure password
         let password = generateSecurePassword()
         

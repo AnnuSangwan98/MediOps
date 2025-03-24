@@ -83,7 +83,7 @@ class AdminController {
     // MARK: - Doctor Management
     
     /// Register a new doctor
-    func createDoctor(email: String, password: String, name: String, specialization: String, hospitalAdminId: String) async throws -> (Doctor, String) {
+    func createDoctor(email: String, password: String, name: String, specialization: String, hospitalAdminId: String) async throws -> (Models.Doctor, String) {
         // 1. Register the base user
         let authResponse = try await userController.register(
             email: email,
@@ -111,7 +111,7 @@ class AdminController {
         try await supabase.insert(into: "doctors", data: doctorData)
         
         // 3. Return doctor object and token
-        let doctor = Doctor(
+        let doctor = Models.Doctor(
             id: doctorId,
             userId: authResponse.user.id,
             name: name,
@@ -125,7 +125,7 @@ class AdminController {
     }
     
     /// Get doctor by ID
-    func getDoctor(id: String) async throws -> Doctor {
+    func getDoctor(id: String) async throws -> Models.Doctor {
         let doctors = try await supabase.select(
             from: "doctors", 
             where: "id", 
@@ -140,7 +140,7 @@ class AdminController {
     }
     
     /// Get doctors by hospital admin ID
-    func getDoctorsByHospitalAdmin(hospitalAdminId: String) async throws -> [Doctor] {
+    func getDoctorsByHospitalAdmin(hospitalAdminId: String) async throws -> [Models.Doctor] {
         let doctors = try await supabase.select(
             from: "doctors", 
             where: "hospital_admin_id", 
@@ -153,7 +153,7 @@ class AdminController {
     // MARK: - Lab Admin Management
     
     /// Register a new lab admin
-    func createLabAdmin(email: String, password: String, name: String, labName: String, hospitalAdminId: String) async throws -> (LabAdmin, String) {
+    func createLabAdmin(email: String, password: String, name: String, labName: String, hospitalAdminId: String) async throws -> (Models.LabAdmin, String) {
         // 1. Register the base user
         let authResponse = try await userController.register(
             email: email,
@@ -181,7 +181,7 @@ class AdminController {
         try await supabase.insert(into: "lab_admins", data: labAdminData)
         
         // 3. Return lab admin object and token
-        let labAdmin = LabAdmin(
+        let labAdmin = Models.LabAdmin(
             id: labAdminId,
             userId: authResponse.user.id,
             name: name,
@@ -195,7 +195,7 @@ class AdminController {
     }
     
     /// Get lab admin by ID
-    func getLabAdmin(id: String) async throws -> LabAdmin {
+    func getLabAdmin(id: String) async throws -> Models.LabAdmin {
         let labAdmins = try await supabase.select(
             from: "lab_admins", 
             where: "id", 
@@ -210,7 +210,7 @@ class AdminController {
     }
     
     /// Get lab admins by hospital admin ID
-    func getLabAdminsByHospitalAdmin(hospitalAdminId: String) async throws -> [LabAdmin] {
+    func getLabAdminsByHospitalAdmin(hospitalAdminId: String) async throws -> [Models.LabAdmin] {
         let labAdmins = try await supabase.select(
             from: "lab_admins", 
             where: "hospital_admin_id", 
@@ -333,7 +333,7 @@ class AdminController {
         )
     }
     
-    private func parseDoctorData(_ data: [String: Any]) throws -> Doctor {
+    private func parseDoctorData(_ data: [String: Any]) throws -> Models.Doctor {
         guard
             let id = data["id"] as? String,
             let userId = data["user_id"] as? String,
@@ -350,7 +350,7 @@ class AdminController {
         let createdAt = dateFormatter.date(from: createdAtString) ?? Date()
         let updatedAt = dateFormatter.date(from: updatedAtString) ?? Date()
         
-        return Doctor(
+        return Models.Doctor(
             id: id,
             userId: userId,
             name: name,
@@ -361,7 +361,7 @@ class AdminController {
         )
     }
     
-    private func parseLabAdminData(_ data: [String: Any]) throws -> LabAdmin {
+    private func parseLabAdminData(_ data: [String: Any]) throws -> Models.LabAdmin {
         guard
             let id = data["id"] as? String,
             let userId = data["user_id"] as? String,
@@ -378,7 +378,7 @@ class AdminController {
         let createdAt = dateFormatter.date(from: createdAtString) ?? Date()
         let updatedAt = dateFormatter.date(from: updatedAtString) ?? Date()
         
-        return LabAdmin(
+        return Models.LabAdmin(
             id: id,
             userId: userId,
             name: name,

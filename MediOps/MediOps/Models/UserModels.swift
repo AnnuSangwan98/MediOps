@@ -168,7 +168,4 @@ typealias UserRole = Models.UserRole
 typealias User = Models.User
 typealias Patient = Models.Patient
 typealias HospitalAdmin = Models.HospitalAdmin
-typealias Doctor = Models.Doctor
-typealias LabAdmin = Models.LabAdmin
-typealias Activity = Models.Activity
 typealias AuthResponse = Models.AuthResponse 

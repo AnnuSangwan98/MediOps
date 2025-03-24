@@ -166,7 +166,7 @@ struct PatientLoginView: View {
         
         Task {
             do {
-                // Attempt to login with the provided credentials
+                // First authenticate the user
                 let (patient, token) = try await AuthService.shared.loginPatient(email: normalizedEmail, password: password)
                 
                 print("PATIENT LOGIN: Successfully authenticated user: \(normalizedEmail)")
@@ -177,12 +177,34 @@ struct PatientLoginView: View {
                 UserDefaults.standard.set(patient.id, forKey: "current_patient_id")
                 UserDefaults.standard.set(patient.userId, forKey: "current_user_id")
                 
-                await MainActor.run {
-                    isLoading = false
-                    isAuthenticated = true
+                // Send OTP via email service
+                do {
+                    let sentOTP = try await EmailService.shared.sendOTP(to: normalizedEmail, role: "Patient")
+                    self.currentOTP = sentOTP
+                    print("PATIENT LOGIN: OTP sent successfully via email: \(sentOTP)")
                     
-                    // Navigate to the patient home screen
-                    navigationPath.append("PatientHome")
+                    await MainActor.run {
+                        isLoading = false
+                        isAuthenticated = true
+                        
+                        // Navigate to OTP verification screen
+                        navigationPath.append("OTPVerification")
+                    }
+                } catch {
+                    print("PATIENT LOGIN: Failed to send OTP email: \(error.localizedDescription)")
+                    
+                    // Fallback to local OTP generation for testing
+                    let generatedOTP = String(Int.random(in: 100000...999999))
+                    self.currentOTP = generatedOTP
+                    print("PATIENT LOGIN: Using fallback local OTP: \(generatedOTP)")
+                    
+                    await MainActor.run {
+                        isLoading = false
+                        isAuthenticated = true
+                        
+                        // Navigate to OTP verification screen with locally generated OTP
+                        navigationPath.append("OTPVerification")
+                    }
                 }
             } catch let error as AuthError {
                 // Provide specific error messages based on the error type
