@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RoleSelectionView: View {
     @State private var selectedRole: Role = .none
+    @EnvironmentObject private var navigationState: AppNavigationState
     
     enum Role {
         case superAdmin, admin, doctor, lab, patient, none
@@ -53,6 +54,7 @@ struct RoleSelectionView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded {
                         selectedRole = .superAdmin
+                        navigationState.selectRole(.superAdmin)
                     })
                     // Administrator Button
                     NavigationLink(destination: AdminLoginView()) {
@@ -64,6 +66,7 @@ struct RoleSelectionView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded {
                         selectedRole = .admin
+                        navigationState.selectRole(.hospitalAdmin)
                     })
                     
                     // Doctor Button
@@ -76,6 +79,7 @@ struct RoleSelectionView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded {
                         selectedRole = .doctor
+                        navigationState.selectRole(.doctor)
                     })
                     
                     // Lab Button
@@ -88,6 +92,7 @@ struct RoleSelectionView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded {
                         selectedRole = .lab
+                        navigationState.selectRole(.labAdmin)
                     })
                     
                     // Patient Button
@@ -100,6 +105,7 @@ struct RoleSelectionView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded {
                         selectedRole = .patient
+                        navigationState.selectRole(.patient)
                     })
                 }
                 .padding(.horizontal, 20)

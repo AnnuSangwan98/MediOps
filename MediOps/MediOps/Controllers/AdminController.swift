@@ -305,6 +305,76 @@ class AdminController {
         return try parseActivityData(activityData)
     }
     
+    // MARK: - Hospital Management
+    
+    /// Create a new hospital
+    func createHospital(name: String, adminName: String, licenseNumber: String, 
+                       street: String, city: String, state: String, zipCode: String,
+                       phone: String, email: String) async throws -> Models.Hospital {
+        let now = Date()
+        let createdAt = ISO8601DateFormatter().string(from: now)
+        
+        // Generate a unique hospital ID 
+        let hospitalId = "HOS\(UUID().uuidString.prefix(8))"
+        
+        let hospitalData: [String: String] = [
+            "id": hospitalId,
+            "name": name,
+            "admin_name": adminName,
+            "license_number": licenseNumber,
+            "street": street,
+            "city": city,
+            "state": state,
+            "zip_code": zipCode,
+            "phone": phone,
+            "email": email,
+            "status": "active",
+            "registration_date": createdAt,
+            "last_modified": createdAt,
+            "last_modified_by": "system" // This should ideally be the current admin's name
+        ]
+        
+        try await supabase.insert(into: "hospitals", data: hospitalData)
+        
+        return Models.Hospital(
+            id: hospitalId,
+            name: name,
+            adminName: adminName,
+            licenseNumber: licenseNumber,
+            street: street,
+            city: city,
+            state: state,
+            zipCode: zipCode, 
+            phone: phone,
+            email: email,
+            status: "active",
+            registrationDate: now,
+            lastModified: now,
+            lastModifiedBy: "system"
+        )
+    }
+    
+    /// Get hospital by ID
+    func getHospital(id: String) async throws -> Models.Hospital {
+        let hospitals = try await supabase.select(
+            from: "hospitals", 
+            where: "id", 
+            equals: id
+        )
+        
+        guard let hospitalData = hospitals.first else {
+            throw AdminError.hospitalNotFound
+        }
+        
+        return try parseHospitalData(hospitalData)
+    }
+    
+    /// Get all hospitals
+    func getAllHospitals() async throws -> [Models.Hospital] {
+        let hospitals = try await supabase.select(from: "hospitals")
+        return try hospitals.map { try parseHospitalData($0) }
+    }
+    
     // MARK: - Helper Methods
     
     private func parseHospitalAdminData(_ data: [String: Any]) throws -> HospitalAdmin {
@@ -416,6 +486,52 @@ class AdminController {
             labAdminId: labAdminId
         )
     }
+    
+    private func parseHospitalData(_ data: [String: Any]) throws -> Models.Hospital {
+        guard 
+            let id = data["id"] as? String,
+            let name = data["name"] as? String,
+            let adminName = data["admin_name"] as? String,
+            let licenseNumber = data["license_number"] as? String,
+            let street = data["street"] as? String,
+            let city = data["city"] as? String,
+            let state = data["state"] as? String,
+            let zipCode = data["zip_code"] as? String,
+            let phone = data["phone"] as? String,
+            let email = data["email"] as? String,
+            let status = data["status"] as? String
+        else {
+            throw AdminError.invalidData
+        }
+        
+        // Parse dates
+        let dateFormatter = ISO8601DateFormatter()
+        
+        let registrationDateString = data["registration_date"] as? String ?? ""
+        let registrationDate = dateFormatter.date(from: registrationDateString) ?? Date()
+        
+        let lastModifiedString = data["last_modified"] as? String ?? ""
+        let lastModified = dateFormatter.date(from: lastModifiedString) ?? Date()
+        
+        let lastModifiedBy = data["last_modified_by"] as? String ?? "unknown"
+        
+        return Models.Hospital(
+            id: id,
+            name: name,
+            adminName: adminName,
+            licenseNumber: licenseNumber,
+            street: street,
+            city: city,
+            state: state,
+            zipCode: zipCode,
+            phone: phone,
+            email: email,
+            status: status,
+            registrationDate: registrationDate,
+            lastModified: lastModified,
+            lastModifiedBy: lastModifiedBy
+        )
+    }
 }
 
 // MARK: - Admin Errors
@@ -428,6 +544,8 @@ enum AdminError: Error, LocalizedError {
     case invalidDoctorData
     case invalidLabAdminData
     case invalidActivityData
+    case hospitalNotFound
+    case invalidData
     
     var errorDescription: String? {
         switch self {
@@ -447,6 +565,10 @@ enum AdminError: Error, LocalizedError {
             return "Invalid lab admin data"
         case .invalidActivityData:
             return "Invalid activity data"
+        case .hospitalNotFound:
+            return "Hospital not found"
+        case .invalidData:
+            return "Invalid data"
         }
     }
 } 

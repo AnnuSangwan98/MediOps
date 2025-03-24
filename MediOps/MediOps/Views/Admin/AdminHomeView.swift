@@ -49,10 +49,12 @@ struct UIActivity: Identifiable {
     var status: ActivityStatus
     var doctorDetails: UIDoctor?  // Updated to use UIDoctor
     var labAdminDetails: UILabAdmin?  // Updated to use UILabAdmin
+    var hospitalDetails: UIHospital? // Added hospital details
     
     enum ActivityType {
         case doctorAdded
         case labAdminAdded
+        case hospitalAdded // Added new activity type
     }
     
     enum ActivityStatus {
@@ -93,15 +95,18 @@ struct AdminDashboardCard: View {
 struct AdminHomeView: View {
     @State private var showAddDoctor = false
     @State private var showAddLabAdmin = false
+    @State private var showAddHospital = false // Added new state
     @State private var showProfile = false
     @State private var recentActivities: [UIActivity] = []
     @State private var doctorCount = 0
     @State private var labAdminCount = 0
+    @State private var hospitalCount = 0 // Added hospital count
     
     private func updateStatistics() {
         // Update counts based on activities
         doctorCount = recentActivities.filter { $0.type == .doctorAdded && $0.status != .rejected }.count
         labAdminCount = recentActivities.filter { $0.type == .labAdminAdded && $0.status != .rejected }.count
+        hospitalCount = recentActivities.filter { $0.type == .hospitalAdded && $0.status != .rejected }.count
     }
     
     var body: some View {
@@ -139,6 +144,7 @@ struct AdminHomeView: View {
                     ], spacing: 15) {
                         AdminStatCard(title: "Doctors", value: "\(doctorCount)", icon: "stethoscope")
                         AdminStatCard(title: "Lab Admins", value: "\(labAdminCount)", icon: "flask.fill")
+                        AdminStatCard(title: "Hospitals", value: "\(hospitalCount)", icon: "building.2.fill")
                     }
                     .padding(.horizontal)
                     
@@ -146,7 +152,7 @@ struct AdminHomeView: View {
                     LazyVGrid(columns: [
                         GridItem(.flexible()),
                         GridItem(.flexible())
-                    ], spacing: 20) {
+                    ], spacing: 15) {
                         // Add Doctor
                         AdminDashboardCard(
                             title: "Add Doctor",
@@ -161,6 +167,14 @@ struct AdminHomeView: View {
                             icon: "flask.fill",
                             color: .green,
                             action: { showAddLabAdmin = true }
+                        )
+                        
+                        // Add Hospital
+                        AdminDashboardCard(
+                            title: "Add Hospital", 
+                            icon: "building.2.fill",
+                            color: .purple,
+                            action: { showAddHospital = true }
                         )
                     }
                     .padding()
@@ -213,6 +227,12 @@ struct AdminHomeView: View {
                     updateStatistics()
                 }
             }
+            .sheet(isPresented: $showAddHospital) {
+                AddHospitalView { activity in
+                    recentActivities.insert(activity, at: 0)
+                    updateStatistics()
+                }
+            }
             .sheet(isPresented: $showProfile) {
                 AdminProfileView()
             }
@@ -249,6 +269,7 @@ struct ActivityRow: View {
     let activity: UIActivity
     let onEdit: (UIActivity) -> Void
     let onDelete: (UIActivity) -> Void
+    @State private var showDetail = false
     
     var body: some View {
         HStack {
@@ -263,19 +284,26 @@ struct ActivityRow: View {
             Spacer()
             
             // Status indicator
-            Text(activity.status == .pending ? "Pending" : "")
+            Text(statusText)
                 .font(.caption)
-                .foregroundColor(.orange)
+                .foregroundColor(statusColor)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.orange.opacity(0.1))
+                .background(statusColor.opacity(0.1))
                 .cornerRadius(8)
             
             // Three dots menu
             Menu {
+                Button(action: { 
+                    showDetail = true
+                }) {
+                    Label("View Details", systemImage: "eye")
+                }
+                
                 Button(action: { onEdit(activity) }) {
                     Label("Edit", systemImage: "pencil")
                 }
+                
                 Button(role: .destructive, action: { onDelete(activity) }) {
                     Label("Delete", systemImage: "trash")
                 }
@@ -289,6 +317,35 @@ struct ActivityRow: View {
         .background(Color.white)
         .cornerRadius(10)
         .shadow(color: .gray.opacity(0.1), radius: 5)
+        .sheet(isPresented: $showDetail) {
+            ActivityDetailView(activity: activity)
+        }
+    }
+    
+    private var statusText: String {
+        switch activity.status {
+        case .pending:
+            return "Pending"
+        case .approved:
+            return "Approved"
+        case .rejected:
+            return "Rejected"
+        case .completed:
+            return "Completed"
+        }
+    }
+    
+    private var statusColor: Color {
+        switch activity.status {
+        case .pending:
+            return .orange
+        case .approved:
+            return .green
+        case .rejected:
+            return .red
+        case .completed:
+            return .blue
+        }
     }
 }
 

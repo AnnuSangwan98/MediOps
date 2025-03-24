@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PatientLoginView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigationState: AppNavigationState
     @State private var email: String = ""
     @State private var password: String = ""
     @State private var showError: Bool = false
@@ -153,6 +154,11 @@ struct PatientLoginView: View {
         }
         .onAppear {
             print("PatientLoginView appeared")
+        }
+        .onChange(of: isAuthenticated) { newValue in
+            if newValue {
+                navigationState.signIn(as: .patient)
+            }
         }
     }
     

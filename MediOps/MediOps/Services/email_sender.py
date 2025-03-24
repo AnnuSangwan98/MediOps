@@ -6,6 +6,8 @@ import os
 from datetime import datetime, timedelta
 import random
 import string
+import time
+import sys
 
 app = Flask(__name__)
 
@@ -49,6 +51,7 @@ def generate_secure_password():
     return ''.join(random.sample(password, len(password)))  # Shuffle to randomize
 
 def send_email(to_email, subject, html_content):
+    print(f"Attempting to send email to {to_email}")
     try:
         msg = MIMEMultipart('mixed')
         msg['From'] = SENDER_EMAIL
@@ -63,18 +66,22 @@ def send_email(to_email, subject, html_content):
 
         while retry_count > 0:
             try:
+                print(f"Connecting to SMTP server (attempt {4-retry_count}/3)")
                 with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
                     server.ehlo()
+                    print("Starting TLS connection...")
                     server.starttls()
                     server.ehlo()
+                    print("Logging into SMTP server...")
                     server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                    print("Sending email message...")
                     server.send_message(msg)
                     print(f"Email sent successfully to {to_email}")
                 return True
             except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError) as e:
                 retry_count -= 1
                 if retry_count > 0:
-                    print(f"Connection error, retrying in {retry_delay} seconds...")
+                    print(f"Connection error: {str(e)}, retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                 else:
@@ -95,30 +102,43 @@ def handle_send_email():
         data = request.json
         to_email = data.get('to')
         otp = str(data.get('otp')).zfill(6)
+        role = data.get('role', 'user')
+
+        print(f"Received request to send OTP to {to_email} with role {role}")
 
         # Prevent spam within 5 seconds window
         current_time = datetime.now()
         if to_email in last_email_sent:
             time_diff = current_time - last_email_sent[to_email]
             if time_diff.total_seconds() < 5:
+                print(f"Rate limiting email to {to_email} - too soon since last email")
                 return jsonify({"status": "success", "message": "Email already sent recently"}), 200
 
         # Load OTP template
         template_path = os.path.join(os.path.dirname(__file__), 'templates/email_template.html')
-        with open(template_path, 'r') as file:
-            html_content = file.read()
+        try:
+            with open(template_path, 'r') as file:
+                html_content = file.read()
+            print(f"Successfully loaded template from {template_path}")
+        except Exception as e:
+            print(f"Error loading template: {e}")
+            return jsonify({"status": "error", "message": f"Template error: {str(e)}"}), 500
         
         # Fill OTP placeholders {1} to {6}
         for idx, digit in enumerate(otp, start=1):
             html_content = html_content.replace(f'{{{idx}}}', digit)
 
+        print(f"Sending OTP email to {to_email}")
         if send_email(to_email, "MediOps - Your OTP Verification Code", html_content):
             last_email_sent[to_email] = current_time
+            print(f"Successfully sent OTP email to {to_email}")
             return jsonify({"status": "success"}), 200
         else:
+            print(f"Failed to send OTP email to {to_email}")
             return jsonify({"status": "error", "message": "Failed to send OTP email"}), 500
 
     except Exception as e:
+        print(f"Error in handle_send_email: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 def generate_lab_admin_id():
@@ -227,11 +247,18 @@ def handle_send_credentials():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(
-        host='0.0.0.0',
-        port=8082,
-        debug=True,
-        threaded=True,
-        use_reloader=True,
-        ssl_context=None  # Disable SSL for development
-    )
+    # Always use port 8082 for consistency with Swift code
+    port = 8082
+    print(f"Starting email server on port {port}")
+    
+    try:
+        app.run(
+            host='0.0.0.0',
+            port=port,
+            debug=True,
+            threaded=True,
+            use_reloader=True
+        )
+    except Exception as e:
+        print(f"Failed to start server: {str(e)}", file=sys.stderr)
+        sys.exit(1)

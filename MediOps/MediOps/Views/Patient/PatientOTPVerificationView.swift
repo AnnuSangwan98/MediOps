@@ -10,6 +10,7 @@ import SwiftUI
 struct PatientOTPVerificationView: View {
     let email: String
     @State private var currentOTP: String
+    @EnvironmentObject private var navigationState: AppNavigationState
     
     @State private var otpFields: [String] = Array(repeating: "", count: 6)
     @State private var currentField: Int = 0
@@ -151,9 +152,17 @@ struct PatientOTPVerificationView: View {
                         self.successMessage = "Verification successful! Redirecting to dashboard..."
                         self.showSuccess = true
                         
-                        // Delay for a moment to show the success message
+                        // Update the navigation state to sign in the user
+                        self.navigationState.signIn(as: .patient)
+                        
+                        // Delay for a moment to show the success message, then navigate
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            self.navigateToHome = true
+                            // Clear navigation stack and set root to home view
+                            if let window = UIApplication.shared.windows.first {
+                                window.rootViewController = UIHostingController(rootView: PatientHomeView()
+                                    .environmentObject(self.navigationState))
+                                window.makeKeyAndVisible()
+                            }
                         }
                     }
                 } catch {

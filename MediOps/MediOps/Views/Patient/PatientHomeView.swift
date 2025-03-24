@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct PatientHomeView: View {
+    @EnvironmentObject private var navigationState: AppNavigationState
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -23,13 +25,24 @@ struct PatientHomeView: View {
                             }
                             Spacer()
                             
-                            Button(action: {
-                                // TODO: Implement profile action
-                            }) {
-                                Image(systemName: "person.circle.fill")
-                                    .resizable()
-                                    .frame(width: 40, height: 40)
-                                    .foregroundColor(.teal)
+                            HStack(spacing: 15) {
+                                Button(action: {
+                                    // TODO: Navigate to profile
+                                }) {
+                                    Image(systemName: "person.circle.fill")
+                                        .resizable()
+                                        .frame(width: 24, height: 24)
+                                        .foregroundColor(.teal)
+                                }
+                                
+                                Button(action: {
+                                    navigationState.signOut()
+                                }) {
+                                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                                        .resizable()
+                                        .frame(width: 24, height: 24)
+                                        .foregroundColor(.teal)
+                                }
                             }
                         }
                         .padding(.horizontal)
@@ -90,7 +103,7 @@ struct PatientHomeView: View {
                     }
                 }
             }
-            .navigationBarHidden(true)
+            .navigationBarBackButtonHidden(true)
         }
     }
 }
@@ -123,4 +136,4 @@ struct DashboardCard: View {
 
 #Preview {
     PatientHomeView()
-} 
+}
