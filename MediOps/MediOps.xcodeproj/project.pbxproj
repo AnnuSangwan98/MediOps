@@ -7,36 +7,21 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		BCC57A912D8D807E00F57337 /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = BCC57A902D8D807E00F57337 /* Functions */; };
-		BCC57A932D8D807E00F57337 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = BCC57A922D8D807E00F57337 /* PostgREST */; };
-		BCC57A952D8D807E00F57337 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = BCC57A942D8D807E00F57337 /* Realtime */; };
-		BCC57A972D8D807E00F57337 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = BCC57A962D8D807E00F57337 /* Storage */; };
-		BCC57A992D8D807E00F57337 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = BCC57A982D8D807E00F57337 /* Supabase */; };
+		6F8FA9792D92AAD3006EA4CD /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 6F8FA9782D92AAD3006EA4CD /* Auth */; };
+		6F8FA97B2D92AAD3006EA4CD /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = 6F8FA97A2D92AAD3006EA4CD /* Functions */; };
+		6F8FA97D2D92AAD3006EA4CD /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = 6F8FA97C2D92AAD3006EA4CD /* PostgREST */; };
+		6F8FA97F2D92AAD3006EA4CD /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = 6F8FA97E2D92AAD3006EA4CD /* Realtime */; };
+		6F8FA9812D92AAD3006EA4CD /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 6F8FA9802D92AAD3006EA4CD /* Storage */; };
+		6F8FA9842D92AAF8006EA4CD /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 6F8FA9832D92AAF8006EA4CD /* Supabase */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		EFC466352D830B7A001C272D /* MediOps.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MediOps.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		BCC5641C2D8D51DA00F57337 /* Exceptions for "MediOps" folder in "MediOps" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Assets/Assets.xcassets,
-				Services/email_sender.py,
-				Services/email_server.sh,
-				Views/otp_verification_template.html,
-			);
-			target = EFC466342D830B79001C272D /* MediOps */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EFC466372D830B7A001C272D /* MediOps */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				BCC5641C2D8D51DA00F57337 /* Exceptions for "MediOps" folder in "MediOps" target */,
-			);
 			path = MediOps;
 			sourceTree = "<group>";
 		};
@@ -47,21 +32,30 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BCC57A932D8D807E00F57337 /* PostgREST in Frameworks */,
-				BCC57A912D8D807E00F57337 /* Functions in Frameworks */,
-				BCC57A992D8D807E00F57337 /* Supabase in Frameworks */,
-				BCC57A972D8D807E00F57337 /* Storage in Frameworks */,
-				BCC57A952D8D807E00F57337 /* Realtime in Frameworks */,
+				6F8FA97D2D92AAD3006EA4CD /* PostgREST in Frameworks */,
+				6F8FA97B2D92AAD3006EA4CD /* Functions in Frameworks */,
+				6F8FA9842D92AAF8006EA4CD /* Supabase in Frameworks */,
+				6F8FA9792D92AAD3006EA4CD /* Auth in Frameworks */,
+				6F8FA9812D92AAD3006EA4CD /* Storage in Frameworks */,
+				6F8FA97F2D92AAD3006EA4CD /* Realtime in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		6F8FA9822D92AAF8006EA4CD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		EFC4662C2D830B79001C272D = {
 			isa = PBXGroup;
 			children = (
 				EFC466372D830B7A001C272D /* MediOps */,
+				6F8FA9822D92AAF8006EA4CD /* Frameworks */,
 				EFC466362D830B7A001C272D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -94,11 +88,12 @@
 			);
 			name = MediOps;
 			packageProductDependencies = (
-				BCC57A902D8D807E00F57337 /* Functions */,
-				BCC57A922D8D807E00F57337 /* PostgREST */,
-				BCC57A942D8D807E00F57337 /* Realtime */,
-				BCC57A962D8D807E00F57337 /* Storage */,
-				BCC57A982D8D807E00F57337 /* Supabase */,
+				6F8FA9782D92AAD3006EA4CD /* Auth */,
+				6F8FA97A2D92AAD3006EA4CD /* Functions */,
+				6F8FA97C2D92AAD3006EA4CD /* PostgREST */,
+				6F8FA97E2D92AAD3006EA4CD /* Realtime */,
+				6F8FA9802D92AAD3006EA4CD /* Storage */,
+				6F8FA9832D92AAF8006EA4CD /* Supabase */,
 			);
 			productName = MediOps;
 			productReference = EFC466352D830B7A001C272D /* MediOps.app */;
@@ -129,7 +124,7 @@
 			mainGroup = EFC4662C2D830B79001C272D;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				BCC57A8D2D8D807E00F57337 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				6F8FA9772D92AAD3006EA4CD /* XCRemoteSwiftPackageReference "supabase-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EFC466362D830B7A001C272D /* Products */;
@@ -289,7 +284,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = YCQSMY42RK;
+				DEVELOPMENT_TEAM = 9557NJ769W;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -302,7 +297,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.infosys.MediOps.MediOps1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.infosys.MediOps.MediOps;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -318,7 +313,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = YCQSMY42RK;
+				DEVELOPMENT_TEAM = 9557NJ769W;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -331,7 +326,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.infosys.MediOps.MediOps1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.infosys.MediOps.MediOps;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -363,9 +358,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		BCC57A8D2D8D807E00F57337 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+		6F8FA9772D92AAD3006EA4CD /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			repositoryURL = "https://github.com/supabase/supabase-swift";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.5.1;
@@ -374,29 +369,34 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		BCC57A902D8D807E00F57337 /* Functions */ = {
+		6F8FA9782D92AAD3006EA4CD /* Auth */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = BCC57A8D2D8D807E00F57337 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			package = 6F8FA9772D92AAD3006EA4CD /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		6F8FA97A2D92AAD3006EA4CD /* Functions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6F8FA9772D92AAD3006EA4CD /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Functions;
 		};
-		BCC57A922D8D807E00F57337 /* PostgREST */ = {
+		6F8FA97C2D92AAD3006EA4CD /* PostgREST */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = BCC57A8D2D8D807E00F57337 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			package = 6F8FA9772D92AAD3006EA4CD /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = PostgREST;
 		};
-		BCC57A942D8D807E00F57337 /* Realtime */ = {
+		6F8FA97E2D92AAD3006EA4CD /* Realtime */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = BCC57A8D2D8D807E00F57337 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			package = 6F8FA9772D92AAD3006EA4CD /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Realtime;
 		};
-		BCC57A962D8D807E00F57337 /* Storage */ = {
+		6F8FA9802D92AAD3006EA4CD /* Storage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = BCC57A8D2D8D807E00F57337 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			package = 6F8FA9772D92AAD3006EA4CD /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Storage;
 		};
-		BCC57A982D8D807E00F57337 /* Supabase */ = {
+		6F8FA9832D92AAF8006EA4CD /* Supabase */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = BCC57A8D2D8D807E00F57337 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			package = 6F8FA9772D92AAD3006EA4CD /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
 		};
 /* End XCSwiftPackageProductDependency section */

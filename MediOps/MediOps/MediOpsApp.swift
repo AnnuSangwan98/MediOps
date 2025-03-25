@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppIntents
 
 @main
 struct MediOpsApp: App {
@@ -13,5 +14,12 @@ struct MediOpsApp: App {
         WindowGroup {
             ContentView()
         }
+    }
+}
+
+// Implement app shortcuts at the module level
+struct MediOpsShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        [emergencyShortcut]
     }
 }
