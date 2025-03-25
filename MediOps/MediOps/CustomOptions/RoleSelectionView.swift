@@ -66,7 +66,6 @@ struct RoleSelectionView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded {
                         selectedRole = .admin
-                        navigationState.selectRole(.hospitalAdmin)
                     })
                     
                     // Doctor Button

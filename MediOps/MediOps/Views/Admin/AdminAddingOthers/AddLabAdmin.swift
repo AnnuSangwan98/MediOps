@@ -168,7 +168,7 @@ struct AddLabAdminView: View {
         
         let emailData: [String: Any] = [
             "to": email,
-            "accountType": "lab_admin",
+            "accountType": "lab",
             "details": [
                 "fullName": fullName,
                 "email": email,

@@ -102,7 +102,7 @@ struct DoctorLoginView: View {
                             }
                         }
                         
-                        Text("Must contain at least 8 characters, one uppercase letter, one number, and one special character")
+                        Text("Must be at least 8 characters with exactly one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)")
                             .font(.caption)
                             .foregroundColor(.gray)
                             .padding(.top, 4)
@@ -161,25 +161,86 @@ struct DoctorLoginView: View {
     }
     
     private func handleLogin() {
-        // All validation is now handled by the isValidLoginInput computed property
-        // Show change password sheet
-        showChangePasswordSheet = true
+        guard let url = URL(string: "http://localhost:8082/validate-doctor") else {
+            errorMessage = "Invalid server configuration"
+            showError = true
+            return
+        }
+        
+        let credentials: [String: Any] = [
+            "doctorId": doctorId, 
+            "password": password
+        ]
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: credentials)
+            
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self.errorMessage = "Network error: \(error.localizedDescription)"
+                        self.showError = true
+                        return
+                    }
+                    
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        self.errorMessage = "Invalid server response"
+                        self.showError = true
+                        return
+                    }
+                    
+                    guard let data = data else {
+                        self.errorMessage = "No data received"
+                        self.showError = true
+                        return
+                    }
+                    
+                    do {
+                        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let status = json["status"] as? String,
+                           let valid = json["valid"] as? Bool {
+                            
+                            if status == "success" {
+                                if valid {
+                                    self.isLoggedIn = true
+                                } else {
+                                    self.errorMessage = "Invalid credentials"
+                                    self.showError = true
+                                }
+                            } else {
+                                self.errorMessage = "Server error: Invalid response format"
+                                self.showError = true
+                            }
+                        } else {
+                            self.errorMessage = "Invalid response format"
+                            self.showError = true
+                        }
+                    } catch {
+                        self.errorMessage = "Failed to parse server response"
+                        self.showError = true
+                    }
+                }
+            }.resume()
+        } catch {
+            self.errorMessage = "Failed to prepare request"
+            self.showError = true
+        }
     }
     
     private func handlePasswordChange() {
-        // All validation is now handled by the isValidPasswordChange computed property
-        // Close the sheet and proceed to login
         showChangePasswordSheet = false
         isLoggedIn = true
     }
     
-    // Validates that the admin ID is in format HOS followed by numbers
     private func isValidAdminId(_ id: String) -> Bool {
         let adminIdRegex = #"^DOC\d+$"#
         return NSPredicate(format: "SELF MATCHES %@", adminIdRegex).evaluate(with: id)
     }
     
-    // Validates password complexity
     private func isValidPassword(_ password: String) -> Bool {
         // At least 8 characters
         guard password.count >= 8 else { return false }
@@ -253,7 +314,6 @@ struct ChangePasswordSheets: View {
                         .padding(.top, 4)
                 }
                 
-                // Confirm Password field with toggle
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Confirm Password")
                         .font(.subheadline)

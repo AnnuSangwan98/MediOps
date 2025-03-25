@@ -12,8 +12,7 @@ struct PatientOTPVerificationView: View {
     @State private var currentOTP: String
     @EnvironmentObject private var navigationState: AppNavigationState
     
-    @State private var otpFields: [String] = Array(repeating: "", count: 6)
-    @State private var currentField: Int = 0
+    @State private var otpInput: String = ""
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var isLoading = false
@@ -51,24 +50,34 @@ struct PatientOTPVerificationView: View {
             }
             .padding(.top, 50)
             
-            // OTP Fields
-            HStack(spacing: 10) {
-                ForEach(0..<6) { index in
-                    OTPTextField(text: $otpFields[index], isFocused: currentField == index) { newValue in
-                        handleOTPInput(index: index, newValue: newValue)
+            // Single OTP TextField
+            TextField("Enter 6-digit OTP", text: $otpInput)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.center)
+                .font(.system(size: 24, weight: .bold))
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(10)
+                .onChange(of: otpInput) { newValue in
+                    // Limit to 6 digits
+                    if newValue.count > 6 {
+                        otpInput = String(newValue.prefix(6))
                     }
+                    // Only allow digits
+                    otpInput = newValue.filter { "0123456789".contains($0) }
                 }
-            }
-            .padding(.horizontal)
+                .padding(.horizontal)
             
-            // Verify Button
             Button(action: verifyOTP) {
-                if isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                } else {
-                    Text("Verify OTP")
-                        .fontWeight(.semibold)
+                HStack{
+                    if isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Verify OTP")
+                            .fontWeight(.semibold)
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -77,9 +86,8 @@ struct PatientOTPVerificationView: View {
             .foregroundColor(.white)
             .cornerRadius(10)
             .padding(.horizontal)
-            .disabled(isLoading || !isOTPComplete)
+            .disabled(isLoading || otpInput.count != 6)
             
-            // Resend OTP
             Button(action: resendOTP) {
                 if isResending {
                     ProgressView()
@@ -126,27 +134,15 @@ struct PatientOTPVerificationView: View {
         })
     }
     
-    private var isOTPComplete: Bool {
-        otpFields.allSatisfy { !$0.isEmpty }
-    }
-    
-    private func handleOTPInput(index: Int, newValue: String) {
-        // Move to next field if current field is filled
-        if !newValue.isEmpty && index < 5 {
-            currentField = index + 1
-        }
-        // Move to previous field if current field is emptied
-        else if newValue.isEmpty && index > 0 {
-            currentField = index - 1
-        }
-    }
-    
     private func verifyOTP() {
-        // Get the complete OTP from the fields
-        let enteredOTP = otpFields.joined()
+        guard otpInput.count == 6 else {
+            errorMessage = "Please enter a 6-digit OTP"
+            showError = true
+            return
+        }
         
         // Check if the entered OTP matches the expected OTP
-        if enteredOTP == currentOTP {
+        if otpInput == currentOTP {
             isLoading = true
             
             print("OTP VERIFICATION: OTP matches for email: \(email)")
@@ -154,7 +150,7 @@ struct PatientOTPVerificationView: View {
             Task {
                 do {
                     // Verify OTP with the email service
-                    let isValid = EmailService.shared.verifyOTP(email: email, otp: enteredOTP)
+                    let isValid = EmailService.shared.verifyOTP(email: email, otp: otpInput)
                     
                     if isValid {
                         print("OTP VERIFICATION: Verification successful via EmailService")
@@ -216,9 +212,8 @@ struct PatientOTPVerificationView: View {
                     self.successMessage = "A new verification code has been sent to your email"
                     self.showSuccess = true
                     
-                    // Reset OTP fields
-                    self.otpFields = Array(repeating: "", count: 6)
-                    self.currentField = 0
+                    // Reset OTP input
+                    self.otpInput = ""
                     
                     print("RESEND OTP: New OTP sent: \(newOTP)")
                 }
@@ -232,40 +227,14 @@ struct PatientOTPVerificationView: View {
                     self.successMessage = "A new verification code has been generated"
                     self.showSuccess = true
                     
-                    // Reset OTP fields
-                    self.otpFields = Array(repeating: "", count: 6)
-                    self.currentField = 0
+                    // Reset OTP input
+                    self.otpInput = ""
                     
                     print("RESEND OTP: Failed to send via email, using fallback OTP: \(fallbackOTP)")
                     print("RESEND OTP Error: \(error.localizedDescription)")
                 }
             }
         }
-    }
-}
-
-// Custom OTP TextField
-struct OTPTextField: View {
-    @Binding var text: String
-    let isFocused: Bool
-    let onInput: (String) -> Void
-    
-    var body: some View {
-        TextField("", text: $text)
-            .keyboardType(.numberPad)
-            .multilineTextAlignment(.center)
-            .frame(width: 45, height: 45)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isFocused ? Color.teal : Color.gray, lineWidth: 1)
-            )
-            .onChange(of: text) { newValue in
-                // Limit to single digit
-                if newValue.count > 1 {
-                    text = String(newValue.prefix(1))
-                }
-                onInput(text)
-            }
     }
 }
 

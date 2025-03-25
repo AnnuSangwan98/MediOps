@@ -14,10 +14,8 @@ struct PatientSignupView: View {
     @State private var suggestedPassword: String? = nil
     @State private var currentOTP: String = ""
     @State private var isLoading = false
-    @State private var bloodGroup: String = "Not Specified"
     
     let genders = ["Not Specified", "Male", "Female", "Other"]
-    let bloodGroupOptions = ["Not Specified", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
     
     private var isValidName: Bool {
         let nameRegex = "^[A-Za-z\\s]+$"
@@ -243,24 +241,6 @@ struct PatientSignupView: View {
                         .padding(.top, 0)
                         
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Blood Group")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                            
-                            Picker("Select Blood Group", selection: $bloodGroup) {
-                                ForEach(bloodGroupOptions, id: \.self) { option in
-                                    Text(option).tag(option)
-                                }
-                            }
-                            .pickerStyle(MenuPickerStyle())
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.white)
-                            .cornerRadius(10)
-                            .shadow(color: .gray.opacity(0.1), radius: 2)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 8) {
                             Text("Password")
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
@@ -443,10 +423,7 @@ struct PatientSignupView: View {
                     password: password,
                     username: name,
                     age: Int(age) ?? 0,
-                    gender: gender,
-                    bloodGroup: bloodGroup,
-                    address: nil,
-                    phoneNumber: "9999999999"
+                    gender: gender
                 )
                 
                 print("SIGNUP VIEW: Patient registered successfully with ID: \(patient.id)")

@@ -95,18 +95,15 @@ struct AdminDashboardCard: View {
 struct AdminHomeView: View {
     @State private var showAddDoctor = false
     @State private var showAddLabAdmin = false
-    @State private var showAddHospital = false // Added new state
     @State private var showProfile = false
     @State private var recentActivities: [UIActivity] = []
     @State private var doctorCount = 0
     @State private var labAdminCount = 0
-    @State private var hospitalCount = 0 // Added hospital count
     
     private func updateStatistics() {
         // Update counts based on activities
         doctorCount = recentActivities.filter { $0.type == .doctorAdded && $0.status != .rejected }.count
         labAdminCount = recentActivities.filter { $0.type == .labAdminAdded && $0.status != .rejected }.count
-        hospitalCount = recentActivities.filter { $0.type == .hospitalAdded && $0.status != .rejected }.count
     }
     
     var body: some View {
@@ -144,7 +141,6 @@ struct AdminHomeView: View {
                     ], spacing: 15) {
                         AdminStatCard(title: "Doctors", value: "\(doctorCount)", icon: "stethoscope")
                         AdminStatCard(title: "Lab Admins", value: "\(labAdminCount)", icon: "flask.fill")
-                        AdminStatCard(title: "Hospitals", value: "\(hospitalCount)", icon: "building.2.fill")
                     }
                     .padding(.horizontal)
                     
@@ -167,14 +163,6 @@ struct AdminHomeView: View {
                             icon: "flask.fill",
                             color: .green,
                             action: { showAddLabAdmin = true }
-                        )
-                        
-                        // Add Hospital
-                        AdminDashboardCard(
-                            title: "Add Hospital", 
-                            icon: "building.2.fill",
-                            color: .purple,
-                            action: { showAddHospital = true }
                         )
                     }
                     .padding()
@@ -223,12 +211,6 @@ struct AdminHomeView: View {
             }
             .sheet(isPresented: $showAddLabAdmin) {
                 AddLabAdminView { activity in
-                    recentActivities.insert(activity, at: 0)
-                    updateStatistics()
-                }
-            }
-            .sheet(isPresented: $showAddHospital) {
-                AddHospitalView { activity in
                     recentActivities.insert(activity, at: 0)
                     updateStatistics()
                 }

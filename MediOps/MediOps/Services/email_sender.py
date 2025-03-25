@@ -6,8 +6,38 @@ import os
 from datetime import datetime, timedelta
 import random
 import string
-import time
-import sys
+from threading import Lock
+from typing import Dict, Tuple
+
+# Secure in-memory storage for doctor credentials
+class CredentialStore:
+    def __init__(self):
+        self._store: Dict[str, Tuple[str, datetime]] = {}
+        self._lock = Lock()
+        self._expiry_time = timedelta(hours=1)
+    
+    def store_credentials(self, doctor_id: str, password: str) -> None:
+        with self._lock:
+            self._store[doctor_id] = (password, datetime.now())
+            self._cleanup_expired()
+    
+    def validate_credentials(self, doctor_id: str, password: str) -> bool:
+        with self._lock:
+            self._cleanup_expired()
+            if doctor_id not in self._store:
+                return False
+            stored_password, _ = self._store[doctor_id]
+            return stored_password == password
+    
+    def _cleanup_expired(self) -> None:
+        current_time = datetime.now()
+        expired = [doc_id for doc_id, (_, timestamp) in self._store.items()
+                  if current_time - timestamp > self._expiry_time]
+        for doc_id in expired:
+            del self._store[doc_id]
+
+# Initialize credential store
+credential_store = CredentialStore()
 
 app = Flask(__name__)
 
@@ -51,7 +81,6 @@ def generate_secure_password():
     return ''.join(random.sample(password, len(password)))  # Shuffle to randomize
 
 def send_email(to_email, subject, html_content):
-    print(f"Attempting to send email to {to_email}")
     try:
         msg = MIMEMultipart('mixed')
         msg['From'] = SENDER_EMAIL
@@ -66,22 +95,18 @@ def send_email(to_email, subject, html_content):
 
         while retry_count > 0:
             try:
-                print(f"Connecting to SMTP server (attempt {4-retry_count}/3)")
                 with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
                     server.ehlo()
-                    print("Starting TLS connection...")
                     server.starttls()
                     server.ehlo()
-                    print("Logging into SMTP server...")
                     server.login(SENDER_EMAIL, SENDER_PASSWORD)
-                    print("Sending email message...")
                     server.send_message(msg)
                     print(f"Email sent successfully to {to_email}")
                 return True
             except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError) as e:
                 retry_count -= 1
                 if retry_count > 0:
-                    print(f"Connection error: {str(e)}, retrying in {retry_delay} seconds...")
+                    print(f"Connection error, retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                 else:
@@ -102,43 +127,32 @@ def handle_send_email():
         data = request.json
         to_email = data.get('to')
         otp = str(data.get('otp')).zfill(6)
-        role = data.get('role', 'user')
-
-        print(f"Received request to send OTP to {to_email} with role {role}")
 
         # Prevent spam within 5 seconds window
         current_time = datetime.now()
         if to_email in last_email_sent:
             time_diff = current_time - last_email_sent[to_email]
             if time_diff.total_seconds() < 5:
-                print(f"Rate limiting email to {to_email} - too soon since last email")
                 return jsonify({"status": "success", "message": "Email already sent recently"}), 200
 
         # Load OTP template
-        template_path = os.path.join(os.path.dirname(__file__), 'templates/email_template.html')
-        try:
-            with open(template_path, 'r') as file:
-                html_content = file.read()
-            print(f"Successfully loaded template from {template_path}")
-        except Exception as e:
-            print(f"Error loading template: {e}")
-            return jsonify({"status": "error", "message": f"Template error: {str(e)}"}), 500
+        template_path = os.path.join(os.path.dirname(__file__), '../templates/email_template.html')
+        print(f"Loading template from {os.path.abspath(template_path)}")
+        with open(template_path, 'r') as file:
+            html_content = file.read()
+        print("Successfully loaded template")
         
         # Fill OTP placeholders {1} to {6}
         for idx, digit in enumerate(otp, start=1):
             html_content = html_content.replace(f'{{{idx}}}', digit)
 
-        print(f"Sending OTP email to {to_email}")
         if send_email(to_email, "MediOps - Your OTP Verification Code", html_content):
             last_email_sent[to_email] = current_time
-            print(f"Successfully sent OTP email to {to_email}")
             return jsonify({"status": "success"}), 200
         else:
-            print(f"Failed to send OTP email to {to_email}")
             return jsonify({"status": "error", "message": "Failed to send OTP email"}), 500
 
     except Exception as e:
-        print(f"Error in handle_send_email: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 def generate_lab_admin_id():
@@ -153,11 +167,23 @@ def generate_hospital_admin_id():
 def handle_send_credentials():
     try:
         data = request.json
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+            
         to_email = data.get('to')
+        if not to_email:
+            return jsonify({"status": "error", "message": "Email address is required"}), 400
+            
         details = data.get('details', {})
         account_type = data.get('accountType')
+        if not account_type:
+            return jsonify({"status": "error", "message": "Account type is required"}), 400
+            
         full_name = details.get('fullName')
         phone = details.get('phone')
+        
+        if not full_name:
+            return jsonify({"status": "error", "message": "Full name is required"}), 400
 
         # Generate ID and password
         password = generate_secure_password()
@@ -166,7 +192,8 @@ def handle_send_credentials():
             doctor_id = generate_doctor_id()
             specialization = details.get('specialization')
             license_num = details.get('license')
-            template_path = os.path.join(os.path.dirname(__file__), 'templates/doctor_credentials.html')
+            template_path = os.path.join(os.path.dirname(__file__), '../templates/doctor_credentials.html')
+            print(f"Loading template from {os.path.abspath(template_path)}")
             subject = "MediOps - Your Doctor Account Credentials"
             placeholders = {
                 '{{fullName}}': full_name,
@@ -187,7 +214,8 @@ def handle_send_credentials():
             state = details.get('state')
             zip_code = details.get('zipCode')
             license_number = details.get('licenseNumber')
-            template_path = os.path.join(os.path.dirname(__file__), 'templates/hospital_admin.html')
+            template_path = os.path.join(os.path.dirname(__file__), '../templates/hospital_admin.html')
+            print(f"Loading template from {os.path.abspath(template_path)}")
             subject = "MediOps - Your Hospital Admin Account Credentials"
             placeholders = {
                 '{{fullName}}': full_name,
@@ -207,7 +235,8 @@ def handle_send_credentials():
             admin_id = generate_lab_admin_id()
             lab_name = details.get('labName', 'Main Laboratory')
             lab_id = details.get('labId', 'LAB001')
-            template_path = os.path.join(os.path.dirname(__file__), 'templates/lab_admin.html')
+            template_path = os.path.join(os.path.dirname(__file__), '../templates/lab_admin.html')
+            print(f"Loading template from {os.path.abspath(template_path)}")
             subject = "MediOps - Your Lab Admin Account Credentials"
             placeholders = {
                 '{{fullName}}': full_name,
@@ -228,13 +257,29 @@ def handle_send_credentials():
                 return jsonify({"status": "success", "message": "Email already sent recently"}), 200
 
         # Load template and send email
-        with open(template_path, 'r') as file:
-            html_content = file.read()
+        try:
+            with open(template_path, 'r') as file:
+                html_content = file.read()
+        except FileNotFoundError:
+            print(f"Template not found: {template_path}")
+            return jsonify({"status": "error", "message": "Email template not found"}), 500
+        except Exception as e:
+            print(f"Error reading template: {str(e)}")
+            return jsonify({"status": "error", "message": "Error reading email template"}), 500
         
-        for key, value in placeholders.items():
-            html_content = html_content.replace(key, str(value))
+        try:
+            for key, value in placeholders.items():
+                if value is None:
+                    value = ''
+                html_content = html_content.replace(key, str(value))
+        except Exception as e:
+            print(f"Error replacing placeholders: {str(e)}")
+            return jsonify({"status": "error", "message": "Error processing email template"}), 500
 
         if send_email(to_email, subject, html_content):
+            # Store credentials if it's a doctor account
+            if account_type == 'doctor':
+                credential_store.store_credentials(generated_id, password)
             return jsonify({
                 "status": "success",
                 "id": generated_id,
@@ -246,19 +291,36 @@ def handle_send_credentials():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-if __name__ == '__main__':
-    # Always use port 8082 for consistency with Swift code
-    port = 8082
-    print(f"Starting email server on port {port}")
-    
+@app.route('/validate-doctor', methods=['POST'])
+def validate_doctor_credentials():
     try:
-        app.run(
-            host='0.0.0.0',
-            port=port,
-            debug=True,
-            threaded=True,
-            use_reloader=True
-        )
+        data = request.json
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+            
+        doctor_id = data.get('doctorId')
+        password = data.get('password')
+        
+        if not doctor_id or not password:
+            return jsonify({"status": "error", "message": "Doctor ID and password are required"}), 400
+            
+        is_valid = credential_store.validate_credentials(doctor_id, password)
+        
+        return jsonify({
+            "status": "success",
+            "valid": is_valid
+        }), 200
+            
     except Exception as e:
-        print(f"Failed to start server: {str(e)}", file=sys.stderr)
-        sys.exit(1)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(
+        host='0.0.0.0',
+        port=8082,
+        debug=True,
+        threaded=True,
+        use_reloader=True,
+        ssl_context=None  # Disable SSL for development
+    )
+
