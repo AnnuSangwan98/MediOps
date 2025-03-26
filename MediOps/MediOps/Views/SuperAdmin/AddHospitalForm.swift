@@ -9,6 +9,65 @@ import SwiftUI
 import PhotosUI
 
 struct AddHospitalForm: View {
+    // Add Supabase controller
+    private let supabase = SupabaseController.shared
+    
+    // Add Encodable structures for data
+    private struct HospitalData: Encodable {
+        let id: String
+        let hospital_name: String
+        let hospital_address: String
+        let hospital_state: String
+        let hospital_city: String
+        let area_pincode: String
+        let email: String
+        let contact_number: String
+        let emergency_contact_number: String
+        let licence: String
+        let hospital_accreditation: String
+        let type: String
+        let departments: [String]
+        let status: String
+        let hospital_profile_image: String
+        let description: String
+    }
+    
+    private struct AdminData: Encodable {
+        let hospital_id: String
+        let admin_name: String
+        let email: String
+        let contact_number: String
+        let id: String
+        let password: String
+        let role: String
+        let status: String
+    }
+    
+    private struct EmailDetails: Encodable {
+        let fullName: String
+        let hospitalName: String
+        let hospitalId: String
+        let licenseNumber: String
+        let accreditation: String
+        let emergencyContact: String
+        let street: String
+        let city: String
+        let state: String
+        let zipCode: String
+        let adminLocality: String
+        let adminCity: String
+        let adminState: String
+        let adminPinCode: String
+        let adminPhone: String
+        let password: String
+    }
+    
+    private struct EmailPayload: Encodable {
+        let to: String
+        let accountType: String
+        let details: EmailDetails
+    }
+    
     // Hospital Information
     @State private var hospitalImage: UIImage?
     @State private var imageSelection: PhotosPickerItem?
@@ -61,8 +120,8 @@ struct AddHospitalForm: View {
     ]
     
     private var isFormValid: Bool {
+        // Updated validation to match schema requirements
         !hospitalName.isEmpty && 
-        !hospitalID.isEmpty && 
         !licenseNumber.isEmpty && 
         !city.isEmpty &&
         !state.isEmpty && 
@@ -70,10 +129,8 @@ struct AddHospitalForm: View {
         !adminName.isEmpty && 
         !phone.isEmpty &&
         !email.isEmpty &&
-        !adminLocality.isEmpty &&
-        !adminCity.isEmpty &&
-        !adminPinCode.isEmpty &&
-        !emergencyContact.isEmpty
+        !emergencyContact.isEmpty &&
+        selectedAccreditation != "Other" // Must be one of the allowed values
     }
     
     private func validateForm() -> Bool {
@@ -84,34 +141,25 @@ struct AddHospitalForm: View {
         phoneError = ""
         hospitalPinCodeError = ""
         adminPinCodeError = ""
-        hospitalIdError = ""
         hospitalLicenseError = ""
         emergencyContactError = ""
+        hospitalIdError = ""
         
-        // Validate Hospital ID
-        if !hospitalID.hasPrefix("HOS") || hospitalID.count != 6 {
-            hospitalIdError = "Hospital ID must start with HOS followed by 3 digits"
+        // Validate Hospital ID format (HOSXXX where X is a digit)
+        let hospitalIdRegex = "^HOS\\d{3}$"
+        if !NSPredicate(format: "SELF MATCHES %@", hospitalIdRegex).evaluate(with: hospitalID) {
+            hospitalIdError = "Hospital ID must be 'HOS' followed by 3 digits (e.g., HOS123)"
             isValid = false
         }
         
-        // Validate Hospital License Number
-        let licenseRegex = "^[A-Z]{2}\\d{4}$"
-        if licenseNumber.isEmpty {
-            hospitalLicenseError = "License number is required"
-            isValid = false
-        } else if !NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: licenseNumber) {
-            hospitalLicenseError = "License number must be 2 capital letters followed by 4 digits (e.g., UP1234)"
-            isValid = false
-        }
-        
-        // Validate Email
+        // Validate Email (must be unique due to constraint)
         let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
         if !NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email) {
             emailError = "Please enter a valid email address"
             isValid = false
         }
         
-        // Validate Phone Numbers
+        // Validate Phone Numbers (20 chars max per schema)
         if phone.count != 10 || !phone.allSatisfy({ $0.isNumber }) {
             phoneError = "Please enter a valid 10-digit phone number"
             isValid = false
@@ -123,7 +171,7 @@ struct AddHospitalForm: View {
             isValid = false
         }
         
-        // Validate Pin Codes
+        // Validate Pin Codes (10 chars max per schema)
         if zipCode.count != 6 || !zipCode.allSatisfy({ $0.isNumber }) {
             hospitalPinCodeError = "Please enter a valid 6-digit pin code"
             isValid = false
@@ -134,6 +182,18 @@ struct AddHospitalForm: View {
             isValid = false
         }
         
+        // Validate Hospital License Number
+        let licenseRegex = "^[A-Z]{2}\\d{4}$"
+        if !NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: licenseNumber) {
+            hospitalLicenseError = "License number must be 2 capital letters followed by 4 digits (e.g., UP1234)"
+            isValid = false
+        }
+        
+        // Validate Accreditation (must match check constraint)
+        if !["NABH", "JCI", "NABL", "ISO"].contains(selectedAccreditation) {
+            isValid = false
+        }
+        
         showValidationErrors = !isValid
         return isValid
     }
@@ -141,47 +201,104 @@ struct AddHospitalForm: View {
     private func handleSubmit() {
         guard !hasSubmitted && validateForm() else { return }
         
+        hasSubmitted = true
         isEmailSending = true
+        
         Task {
             do {
+                // Convert hospital image to base64 if available
+                let imageBase64: String = {
+                    if let hospitalImage = hospitalImage,
+                       let imageData = hospitalImage.jpegData(compressionQuality: 0.5) {
+                        return imageData.base64EncodedString()
+                    }
+                    return ""
+                }()
+                
+                // Create hospital data with the provided hospitalID
+                let hospitalData = HospitalData(
+                    id: hospitalID,
+                    hospital_name: hospitalName,
+                    hospital_address: street,
+                    hospital_state: state,
+                    hospital_city: city,
+                    area_pincode: zipCode,
+                    email: email,
+                    contact_number: phone,
+                    emergency_contact_number: emergencyContact,
+                    licence: licenseNumber,
+                    hospital_accreditation: selectedAccreditation,
+                    type: "General",
+                    departments: ["General"],
+                    status: "active",
+                    hospital_profile_image: imageBase64,
+                    description: "Hospital created by Super Admin"
+                )
+                
+                print("Inserting hospital with data:", hospitalData)
+                
+                // Insert hospital
+                try await supabase.insert(into: "hospitals", data: hospitalData)
+                
+                // Default password for admin
+                let defaultPassword = "Pass@123"
+                
+                // Create admin data using the same hospitalID
+                let adminData = AdminData(
+                    hospital_id: hospitalID,
+                    admin_name: adminName,
+                    email: email,
+                    contact_number: phone,
+                    id: hospitalID,
+                    password: defaultPassword,
+                    role: "HOSPITAL_ADMIN",
+                    status: "active"
+                )
+                
+                print("Inserting admin with data:", adminData)
+                
+                // Insert admin data
+                try await supabase.insert(into: "hospital_admins", data: adminData)
+                
+                // Send email with credentials
                 let url = URL(string: "http://localhost:8082/send-credentials")!
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 
-                let details: [String: Any] = [
-                    "fullName": adminName,
-                    "hospitalName": hospitalName,
-                    "hospitalId": hospitalID,
-                    "licenseNumber": licenseNumber,
-                    "accreditation": selectedAccreditation,
-                    "emergencyContact": emergencyContact,
-                    "street": street,
-                    "city": city,
-                    "state": state,
-                    "zipCode": zipCode,
-                    "adminLocality": adminLocality,
-                    "adminCity": adminCity,
-                    "adminState": selectedAdminState,
-                    "adminPinCode": adminPinCode,
-                    "adminPhone": phone
-                ]
+                let emailDetails = EmailDetails(
+                    fullName: adminName,
+                    hospitalName: hospitalName,
+                    hospitalId: hospitalID,
+                    licenseNumber: licenseNumber,
+                    accreditation: selectedAccreditation,
+                    emergencyContact: emergencyContact,
+                    street: street,
+                    city: city,
+                    state: state,
+                    zipCode: zipCode,
+                    adminLocality: adminLocality,
+                    adminCity: adminCity,
+                    adminState: selectedAdminState,
+                    adminPinCode: adminPinCode,
+                    adminPhone: phone,
+                    password: defaultPassword  // Use the same password that was stored
+                )
                 
-                let payload: [String: Any] = [
-                    "to": email,
-                    "accountType": "hospital",
-                    "details": details
-                ]
+                let emailPayload = EmailPayload(
+                    to: email,
+                    accountType: "hospital",
+                    details: emailDetails
+                )
                 
-                let jsonData = try JSONSerialization.data(withJSONObject: payload)
+                let jsonData = try JSONEncoder().encode(emailPayload)
                 request.httpBody = jsonData
                 
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (_, response) = try await URLSession.shared.data(for: request)
                 
                 if let httpResponse = response as? HTTPURLResponse {
                     if httpResponse.statusCode == 200 {
                         await MainActor.run {
-                            hasSubmitted = true
                             onSubmit()
                             isEmailSending = false
                             dismiss()
@@ -191,10 +308,19 @@ struct AddHospitalForm: View {
                     }
                 }
             } catch {
+                print("Error submitting form:", error)
                 await MainActor.run {
                     emailSendingError = error.localizedDescription
                     showEmailError = true
                     isEmailSending = false
+                    hasSubmitted = false
+                    
+                    // If admin creation fails, attempt to rollback hospital creation
+                    if error.localizedDescription.contains("hospital_admins") {
+                        Task {
+                            try? await supabase.delete(from: "hospitals", where: "id", equals: hospitalID)
+                        }
+                    }
                 }
             }
         }
@@ -363,7 +489,7 @@ struct AddHospitalForm: View {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle())
                     } else {
-                        Text("Save")
+                        Text(hasSubmitted ? "Saved" : "Save")
                     }
                 }
                 .disabled(!isFormValid || hasSubmitted || isEmailSending)
@@ -375,6 +501,7 @@ struct AddHospitalForm: View {
         } message: {
             Text(emailSendingError)
         }
+        .interactiveDismissDisabled(isEmailSending) // Prevent dismissal while sending email
     }
 }
 
