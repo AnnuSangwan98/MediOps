@@ -27,6 +27,13 @@ struct PatientOTPVerificationView: View {
     
     @Environment(\.dismiss) private var dismiss
     
+    // Create a default profile controller
+    private let profileController = PatientProfileController()
+    
+    @StateObject private var viewModel = HospitalViewModel()
+    
+    @State private var selectedDate: Date = Date()
+    
     init(email: String, expectedOTP: String) {
         self.email = email
         self._currentOTP = State(initialValue: expectedOTP)
@@ -130,16 +137,12 @@ struct PatientOTPVerificationView: View {
         }
         .navigationBarBackButtonHidden(true)
         .navigationBarItems(leading: Button(action: {
-            if let window = UIApplication.shared.windows.first {
-                window.rootViewController = UIHostingController(rootView: PatientLoginView()
-                    .environmentObject(navigationState))
-                window.makeKeyAndVisible()
-            }
+            dismiss()
         }) {
             HStack {
                 Image(systemName: "chevron.left")
                     .foregroundColor(.teal)
-                Text("Back to Login")
+                Text("Back")
                     .foregroundColor(.teal)
             }
         })
@@ -149,7 +152,15 @@ struct PatientOTPVerificationView: View {
             Text(errorMessage)
         }
         .alert("Success", isPresented: $showSuccess) {
-            Button("OK", role: .cancel) {}
+            Button("OK", role: .cancel) {
+                if isVerified {
+                    // Set root view to HomeTabView
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = windowScene.windows.first {
+                        window.rootViewController = UIHostingController(rootView: HomeTabView())
+                    }
+                }
+            }
         } message: {
             Text(successMessage)
         }
@@ -158,9 +169,6 @@ struct PatientOTPVerificationView: View {
         }
         .onDisappear {
             timer?.invalidate()
-        }
-        .navigationDestination(isPresented: $navigateToHome) {
-            PatientHomeView()
         }
     }
     
@@ -180,17 +188,9 @@ struct PatientOTPVerificationView: View {
                     await MainActor.run {
                         isLoading = false
                         isVerified = true
-                        successMessage = "Verification successful! Redirecting..."
+                        successMessage = "Verification successful!"
                         showSuccess = true
                         navigationState.signIn(as: .patient)
-                        
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            if let window = UIApplication.shared.windows.first {
-                                window.rootViewController = UIHostingController(rootView: PatientHomeView()
-                                    .environmentObject(navigationState))
-                                window.makeKeyAndVisible()
-                            }
-                        }
                     }
                 } catch {
                     await MainActor.run {
@@ -206,35 +206,6 @@ struct PatientOTPVerificationView: View {
         }
     }
     
-    private func resendOTP() {
-        isResending = true
-        
-        Task {
-            do {
-                let newOTP = try await EmailService.shared.sendOTP(to: email, role: "Patient")
-                
-                await MainActor.run {
-                    currentOTP = newOTP
-                    successMessage = "OTP resent successfully"
-                    showSuccess = true
-                    isResending = false
-                    otpInput = ""
-                    startTimer()
-                }
-            } catch {
-                let fallbackOTP = String(Int.random(in: 100000...999999))
-                await MainActor.run {
-                    currentOTP = fallbackOTP
-                    successMessage = "Fallback OTP generated"
-                    showSuccess = true
-                    isResending = false
-                    otpInput = ""
-                    startTimer()
-                }
-            }
-        }
-    }
-    
     private func startTimer() {
         timeRemaining = 30
         timer?.invalidate()
@@ -243,6 +214,30 @@ struct PatientOTPVerificationView: View {
                 timeRemaining -= 1
             } else {
                 timer?.invalidate()
+            }
+        }
+    }
+    
+    private func resendOTP() {
+        isResending = true
+        startTimer()
+        
+        Task {
+            do {
+                let newOTP = try await EmailService.shared.sendOTP(to: email, role: "Patient")
+                await MainActor.run {
+                    currentOTP = newOTP
+                    successMessage = "OTP resent successfully"
+                    showSuccess = true
+                    isResending = false
+                    otpInput = ""
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to resend OTP: \(error.localizedDescription)"
+                    showError = true
+                    isResending = false
+                }
             }
         }
     }

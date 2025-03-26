@@ -1,35 +1,38 @@
 import SwiftUI
 
 struct AppointmentView: View {
-    let doctor: DoctorDetail
+    let doctor: Doctor
     var existingAppointment: Appointment? = nil
     var onUpdateAppointment: ((Appointment) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDate = Date()
-    @State private var selectedTime: Date?
+    @State private var selectedTime: Date? = nil
     @State private var showReviewAndPay = false
     
-    init(doctor: DoctorDetail, existingAppointment: Appointment? = nil, onUpdateAppointment: ((Appointment) -> Void)? = nil) {
-        self.doctor = doctor
-        self.existingAppointment = existingAppointment
-        self.onUpdateAppointment = onUpdateAppointment
-        _selectedDate = State(initialValue: existingAppointment?.date ?? Date())
-        _selectedTime = State(initialValue: existingAppointment?.time)
-    }
-    
-    private let timeSlots = stride(from: 6, through: 22, by: 0.5).map { hour in
-        Calendar.current.date(bySettingHour: Int(hour), minute: Int((hour.truncatingRemainder(dividingBy: 1) * 60)), second: 0, of: Date())!
-    }
+    private let timeSlots: [Date] = {
+        var slots: [Date] = []
+        let calendar = Calendar.current
+        let startTime = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: Date())!
+        
+        for hour in 0..<8 {
+            for minute in stride(from: 0, to: 60, by: 30) {
+                if let time = calendar.date(byAdding: .minute, value: hour * 60 + minute, to: startTime) {
+                    slots.append(time)
+                }
+            }
+        }
+        return slots
+    }()
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // Doctor Info
+                    // Doctor info
                     HStack(spacing: 15) {
                         Circle()
                             .fill(Color.teal)
-                            .frame(width: 80, height: 80)
+                            .frame(width: 60, height: 60)
                             .overlay(
                                 Image(systemName: "person.fill")
                                     .foregroundColor(.white)
@@ -37,22 +40,19 @@ struct AppointmentView: View {
                         
                         VStack(alignment: .leading, spacing: 5) {
                             Text(doctor.name)
-                                .font(.title2)
+                                .font(.title3)
                             Text(doctor.specialization)
-                                .foregroundColor(.gray)
-                            Text(doctor.qualification)
-                                .font(.caption)
                                 .foregroundColor(.gray)
                         }
                     }
                     .padding()
                     
-                    // Stats
+                    // Doctor stats
                     HStack(spacing: 30) {
                         VStack(spacing: 5) {
                             HStack {
                                 Image(systemName: "briefcase.fill")
-                                Text("Total Experience")
+                                Text("Experience")
                             }
                             Text("\(doctor.experience)+ Years")
                                 .font(.headline)
@@ -60,19 +60,19 @@ struct AppointmentView: View {
                         
                         VStack(spacing: 5) {
                             HStack {
-                                Image(systemName: "star.fill")
-                                Text("Rating")
+                                Image(systemName: "stethoscope")
+                                Text("Specialization")
                             }
-                            Text(String(format: "%.1f", doctor.rating))
+                            Text(doctor.specialization)
                                 .font(.headline)
                         }
                         
                         VStack(spacing: 5) {
                             HStack {
-                                Image(systemName: "dollarsign.circle.fill")
-                                Text("Fee")
+                                Image(systemName: "doc.text.fill")
+                                Text("License")
                             }
-                            Text("Rs.\(Int(doctor.consultationFee))")
+                            Text(doctor.licenseNo)
                                 .font(.headline)
                         }
                     }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ReviewAndPayView: View {
-    let doctor: DoctorDetail
+    let doctor: Doctor
     let appointmentDate: Date
     let appointmentTime: Date
     
@@ -11,6 +11,7 @@ struct ReviewAndPayView: View {
     @State private var showPaymentConfirmation = false
     
     private let bookingFee = 10.0
+    private let consultationFee = 500.0 // Default consultation fee
     
     var body: some View {
         NavigationStack {
@@ -87,27 +88,15 @@ struct ReviewAndPayView: View {
                     .padding()
                     
                     // Payment details
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Payment")
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("Payment Details")
                             .font(.headline)
-                        
-//                        HStack {
-//                            TextField("Promo Code", text: $promoCode)
-//                                .textFieldStyle(RoundedBorderTextFieldStyle())
-//                            
-//                            Button("Apply") {}
-//                                .foregroundColor(.white)
-//                                .padding(.horizontal)
-//                                .padding(.vertical, 8)
-//                                .background(Color.teal)
-//                                .cornerRadius(8)
-//                        }
                         
                         VStack(spacing: 10) {
                             HStack {
                                 Text("Consultation fees:")
                                 Spacer()
-                                Text("Rs.\(Int(doctor.consultationFee))")
+                                Text("Rs.\(Int(consultationFee))")
                             }
                             
                             HStack {
@@ -122,7 +111,7 @@ struct ReviewAndPayView: View {
                                 Text("Total Pay")
                                     .fontWeight(.bold)
                                 Spacer()
-                                Text("Rs.\(Int(doctor.consultationFee + bookingFee))")
+                                Text("Rs.\(Int(consultationFee + bookingFee))")
                                     .fontWeight(.bold)
                             }
                         }
@@ -142,7 +131,7 @@ struct ReviewAndPayView: View {
             Button(action: { showConfirmation.toggle() }) {
                 HStack {
                     Text("Pay")
-                    Text("Rs.\(Int(doctor.consultationFee + bookingFee))")
+                    Text("Rs.\(Int(consultationFee + bookingFee))")
                         .padding(.horizontal, 8)
                         .background(Color.teal.opacity(0.2))
                         .cornerRadius(4)

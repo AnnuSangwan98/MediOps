@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct BookingSuccessView: View {
-    let doctor: DoctorDetail
+    let doctor: Doctor
     let appointmentDate: Date
     let appointmentTime: Date
     
@@ -87,7 +87,7 @@ struct BookingSuccessView: View {
                         doctor: doctor,
                         date: appointmentDate,
                         time: appointmentTime,
-                        status: .upcoming
+                        status: Appointment.AppointmentStatus.upcoming
                     )
                     appointmentManager.addAppointment(appointment)
                     

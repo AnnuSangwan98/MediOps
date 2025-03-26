@@ -1,121 +1,64 @@
 import SwiftUI
 
 struct DoctorListView: View {
-    let hospitalName: String
-    let hospital: Hospitals
-    @StateObject private var doctorVM = DoctorViewModel()
-    @State private var searchText = ""
+    let hospital: HospitalModel
+    @StateObject private var viewModel = HospitalViewModel()
+    @State private var selectedSpecialization: String?
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 15) {
-                searchBar
-                titleSection
-                doctorList
+        VStack {
+            // Specialization picker
+            if !hospital.departments.isEmpty {
+                Picker("Select Specialization", selection: $selectedSpecialization) {
+                    Text("All Specializations").tag(nil as String?)
+                    ForEach(hospital.departments, id: \.self) { specialization in
+                        Text(specialization).tag(specialization as String?)
+                    }
+                }
+                .pickerStyle(.menu)
+                .padding()
             }
-            .padding(.vertical)
+            
+            // Doctor list
+            List(viewModel.doctors) { doctor in
+                DoctorRow(doctor: doctor)
+                    .onTapGesture {
+                        viewModel.selectedDoctor = doctor
+                    }
+            }
         }
-        .navigationTitle(hospitalName)
-        .navigationBarTitleDisplayMode(.inline)
-        .background(Color.gray.opacity(0.1))
-        .onAppear {
-            doctorVM.loadDoctors(for: hospital)
+        .navigationTitle("Doctors")
+        .task {
+            viewModel.selectedHospital = hospital
+            viewModel.selectedSpecialization = selectedSpecialization
+            await viewModel.fetchDoctors()
         }
-    }
-    
-    private var searchBar: some View {
-        HStack {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.gray)
-            TextField("Search by doctor's name", text: $searchText)
-        }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(10)
-        .padding(.horizontal)
-    }
-    
-    private var titleSection: some View {
-        Text("Doctors")
-            .font(.headline)
-            .foregroundColor(.black)
-            .padding(.horizontal)
-    }
-    
-    private var doctorList: some View {
-        LazyVStack(spacing: 15) {
-            ForEach(doctorVM.doctors) { doctor in
-                DoctorCard(doctor: doctor)
-                    .padding(.horizontal)
+        .onChange(of: selectedSpecialization) { newValue in
+            viewModel.selectedSpecialization = newValue
+            Task {
+                await viewModel.fetchDoctors()
             }
         }
     }
 }
 
-struct DoctorCard: View {
-    let doctor: DoctorDetail
-    @State private var showAppointment = false
+struct DoctorRow: View {
+    let doctor: Doctor
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            doctorHeader
-            doctorFooter
-        }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
-        .sheet(isPresented: $showAppointment) {
-            AppointmentView(doctor: doctor)
-        }
-    }
-    
-    private var doctorHeader: some View {
-        HStack(spacing: 15) {
-            Circle()
-                .fill(Color.teal)
-                .frame(width: 60, height: 60)
-                .overlay(
-                    Image(systemName: "person.fill")
-                        .foregroundColor(.white)
-                )
-            
-            VStack(alignment: .leading, spacing: 5) {
-                Text(doctor.name)
-                    .font(.headline)
-                Text("\(doctor.specialization)(\(doctor.experience)years Exp)")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-            }
-            
-            Spacer()
-            
-            HStack {
-                Image(systemName: "star.fill")
-                    .foregroundColor(.yellow)
-                Text(String(format: "%.1f", doctor.rating))
-            }
-        }
-    }
-    
-    private var doctorFooter: some View {
-        HStack {
-            Text("Rs.\(Int(doctor.consultationFee))")
+        VStack(alignment: .leading, spacing: 8) {
+            Text(doctor.name)
                 .font(.headline)
-            Text("Consultation Fee")
+            Text(doctor.specialization)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Text("\(doctor.experience) years experience")
                 .font(.caption)
-                .foregroundColor(.gray)
-            
-            Spacer()
-            
-            Button(action: { showAppointment.toggle() }) {
-                Text("Book Appointment")
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(Color.teal)
-                    .cornerRadius(8)
-            }
+                .foregroundColor(.secondary)
+            Text(doctor.qualifications.joined(separator: ", "))
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
+        .padding(.vertical, 8)
     }
 }

@@ -1,197 +1,380 @@
 import Foundation
+import SwiftUI
 
-struct Hospitals: Identifiable {
-    let id = UUID()
-    let name: String
-    let city: String
-    let address: String
-    let specialties: [String]
-    let rating: Double
+// MARK: - Models
+struct HospitalModel: Identifiable, Codable, Hashable {
+    let id: String
+    let hospitalName: String
+    let hospitalAddress: String
+    let hospitalState: String
+    let hospitalCity: String
+    let areaPincode: String
+    let email: String
+    let contactNumber: String
+    let emergencyContactNumber: String
+    let licence: String
+    let hospitalAccreditation: String
+    let type: String
+    let hospitalProfileImage: String?
+    let coverImage: String?
+    let status: String
+    let departments: [String]
     let numberOfDoctors: Int
-    let doctors: [DoctorDetail]
-}
-
-class HospitalViewModel: ObservableObject {
-    @Published var hospitals: [Hospitals] = [
-        Hospitals(
-            name: "City General Hospital",
-            city: "New York",
-            address: "123 Medical Ave",
-            specialties: ["Cardiology", "Neurology"],
-            rating: 4.5,
-            numberOfDoctors: 50,
-            doctors: [
-                DoctorDetail(
-                    name: "Dr. John Smith",
-                    specialization: "Cardiologist",
-                    qualification: "MD, FACC",
-                    experience: 15,
-                    rating: 4.8,
-                    numberOfRatings: 300,
-                    consultationFee: 250.0,
-                    isAvailableNow: true,
-                    availableSlots: []
-                ),
-                DoctorDetail(
-                    name: "Dr. Sarah Johnson",
-                    specialization: "Neurologist",
-                    qualification: "MD, PhD",
-                    experience: 12,
-                    rating: 4.7,
-                    numberOfRatings: 250,
-                    consultationFee: 220.0,
-                    isAvailableNow: false,
-                    availableSlots: []
-                )
-            ]
-        ),
-        Hospitals(
-            name: "Central Medical Center",
-            city: "Los Angeles",
-            address: "456 Health St",
-            specialties: ["Oncology", "Pediatrics"],
-            rating: 4.3,
-            numberOfDoctors: 40,
-            doctors: [
-                DoctorDetail(
-                    name: "Dr. Michael Chen",
-                    specialization: "Oncologist",
-                    qualification: "MD, PhD",
-                    experience: 18,
-                    rating: 4.9,
-                    numberOfRatings: 400,
-                    consultationFee: 280.0,
-                    isAvailableNow: true,
-                    availableSlots: []
-                ),
-                DoctorDetail(
-                    name: "Dr. Emily Brown",
-                    specialization: "Pediatrician",
-                    qualification: "MD, FAAP",
-                    experience: 10,
-                    rating: 4.6,
-                    numberOfRatings: 350,
-                    consultationFee: 180.0,
-                    isAvailableNow: true,
-                    availableSlots: []
-                )
-            ]
-        ),
-        Hospitals(
-            name: "Apollo Hospital",
-            city: "Mumbai",
-            address: "789 Wellness Rd",
-            specialties: ["Orthopedics", "Gynecology"],
-            rating: 4.7,
-            numberOfDoctors: 60,
-            doctors: [
-                DoctorDetail(
-                    name: "Dr. Rajesh Kumar",
-                    specialization: "Orthopedic Surgeon",
-                    qualification: "MS (Ortho), DNB",
-                    experience: 20,
-                    rating: 4.8,
-                    numberOfRatings: 450,
-                    consultationFee: 200.0,
-                    isAvailableNow: true,
-                    availableSlots: []
-                ),
-                DoctorDetail(
-                    name: "Dr. Priya Sharma",
-                    specialization: "Gynecologist",
-                    qualification: "MD, DGO",
-                    experience: 15,
-                    rating: 4.7,
-                    numberOfRatings: 380,
-                    consultationFee: 180.0,
-                    isAvailableNow: false,
-                    availableSlots: []
-                )
-            ]
-        ),
-        Hospitals(
-            name: "Kaira Hospital",
-            city: "Pune",
-            address: "101 Wellness Rd",
-            specialties: ["Cardiology", "Orthopedics"],
-            rating: 4.6,
-            numberOfDoctors: 55,
-            doctors: [
-                DoctorDetail(
-                    name: "Dr. Amit Patel",
-                    specialization: "Cardiologist",
-                    qualification: "DM (Cardiology)",
-                    experience: 16,
-                    rating: 4.8,
-                    numberOfRatings: 320,
-                    consultationFee: 220.0,
-                    isAvailableNow: true,
-                    availableSlots: []
-                ),
-                DoctorDetail(
-                    name: "Dr. Neha Gupta",
-                    specialization: "Orthopedic Surgeon",
-                    qualification: "MS (Ortho)",
-                    experience: 12,
-                    rating: 4.6,
-                    numberOfRatings: 280,
-                    consultationFee: 190.0,
-                    isAvailableNow: true,
-                    availableSlots: []
-                )
-            ]
-        ),
-        Hospitals(
-            name: "Kailash Hospital",
-            city: "Pune",
-            address: "102 Wellness Rd",
-            specialties: ["Cardiology", "Orthopedics"],
-            rating: 4.6,
-            numberOfDoctors: 55,
-            doctors: [
-                DoctorDetail(
-                    name: "Dr. Vikram Singh",
-                    specialization: "Cardiologist",
-                    qualification: "DM (Cardiology)",
-                    experience: 14,
-                    rating: 4.7,
-                    numberOfRatings: 290,
-                    consultationFee: 210.0,
-                    isAvailableNow: false,
-                    availableSlots: []
-                ),
-                DoctorDetail(
-                    name: "Dr. Anjali Desai",
-                    specialization: "Orthopedic Surgeon",
-                    qualification: "MS (Ortho)",
-                    experience: 11,
-                    rating: 4.5,
-                    numberOfRatings: 260,
-                    consultationFee: 180.0,
-                    isAvailableNow: true,
-                    availableSlots: []
-                )
-            ]
-        )
-    ]
+    let numberOfAppointments: Int
+    let description: String?
     
-    @Published var searchText = ""
-    @Published var selectedCity: String? = nil
-    
-    var filteredHospitals: [Hospitals] {
-        // Only filter hospitals if there's a search query
-        guard !searchText.isEmpty else { return [] }
-        
-        var result = hospitals.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
-        
-        if let selectedCity = selectedCity {
-            result = result.filter { $0.city == selectedCity }
-        }
-        
-        return result
+    // Implement Hashable
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
     
-    var availableCities: [String] {
-        Array(Set(hospitals.map { $0.city })).sorted()
+    static func == (lhs: HospitalModel, rhs: HospitalModel) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+struct Doctor: Identifiable, Codable, Hashable {
+    let id: String
+    let hospitalId: String
+    let name: String
+    let specialization: String
+    let qualifications: [String]
+    let licenseNo: String
+    let experience: Int
+    let email: String
+    let contactNumber: String?
+    let doctorStatus: String
+    
+    // Implement Hashable
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+    
+    static func == (lhs: Doctor, rhs: Doctor) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+struct DoctorAvailability: Identifiable, Codable, Hashable {
+    let id: Int
+    let doctorId: String
+    let date: Date
+    let slotTime: Date
+    let slotEndTime: Date
+    let maxNormalPatients: Int
+    let maxPremiumPatients: Int
+    let totalBookings: Int
+    
+    // Implement Hashable
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+    
+    static func == (lhs: DoctorAvailability, rhs: DoctorAvailability) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+@MainActor
+class HospitalViewModel: ObservableObject {
+    @Published var hospitals: [HospitalModel] = []
+    @Published var searchText = ""
+    @Published var selectedCity: String? = nil
+    @Published var selectedHospital: HospitalModel? = nil
+    @Published var selectedSpecialization: String? = nil
+    @Published var doctors: [Doctor] = []
+    @Published var selectedDoctor: Doctor? = nil
+    @Published var availableSlots: [DoctorAvailability] = []
+    @Published var isLoading = false
+    @Published var error: Error? = nil
+    
+    private let supabase = SupabaseController.shared
+    
+    // MARK: - Hospital Methods
+    
+    /// Fetch hospitals based on search text and selected city
+    func fetchHospitals() async {
+        isLoading = true
+        error = nil
+        
+        do {
+            // Construct the SQL query with proper escaping
+            var conditions = ["status = 'active'"]
+            
+            if !searchText.isEmpty {
+                let escapedSearch = searchText.replacingOccurrences(of: "'", with: "''")
+                conditions.append("hospital_name ilike '%\(escapedSearch)%'")
+            }
+            
+            if let city = selectedCity {
+                let escapedCity = city.replacingOccurrences(of: "'", with: "''")
+                conditions.append("hospital_city = '\(escapedCity)'")
+            }
+            
+            let query = "select * from hospitals where \(conditions.joined(separator: " and "))"
+            print("SUPABASE QUERY: \(query)") // Debug log
+            
+            let results = try await supabase.select(from: "hospitals")
+            print("SUPABASE RESULTS: \(results.count) hospitals found") // Debug log
+            
+            self.hospitals = results.compactMap { data in
+                guard let id = data["id"] as? String,
+                      let name = data["hospital_name"] as? String,
+                      let address = data["hospital_address"] as? String,
+                      let state = data["hospital_state"] as? String,
+                      let city = data["hospital_city"] as? String,
+                      let pincode = data["area_pincode"] as? String,
+                      let email = data["email"] as? String,
+                      let contact = data["contact_number"] as? String,
+                      let emergency = data["emergency_contact_number"] as? String,
+                      let licence = data["licence"] as? String,
+                      let accreditation = data["hospital_accreditation"] as? String,
+                      let type = data["type"] as? String,
+                      let status = data["status"] as? String,
+                      let departments = data["departments"] as? [String],
+                      let numDoctors = data["number_of_doctors"] as? Int,
+                      let numAppointments = data["number_of_appointments"] as? Int
+                else { 
+                    print("Failed to parse hospital data: \(data)") // Debug log
+                    return nil 
+                }
+                
+                return HospitalModel(
+                    id: id,
+                    hospitalName: name,
+                    hospitalAddress: address,
+                    hospitalState: state,
+                    hospitalCity: city,
+                    areaPincode: pincode,
+                    email: email,
+                    contactNumber: contact,
+                    emergencyContactNumber: emergency,
+                    licence: licence,
+                    hospitalAccreditation: accreditation,
+                    type: type,
+                    hospitalProfileImage: data["hospital_profile_image"] as? String,
+                    coverImage: data["cover_image"] as? String,
+                    status: status,
+                    departments: departments,
+                    numberOfDoctors: numDoctors,
+                    numberOfAppointments: numAppointments,
+                    description: data["description"] as? String
+                )
+            }
+            
+            print("VIEWMODEL: Parsed \(self.hospitals.count) hospitals") // Debug log
+            isLoading = false
+        } catch {
+            self.error = error
+            isLoading = false
+            print("Error fetching hospitals: \(error)")
+        }
+    }
+    
+    /// Fetch available cities from hospitals
+    func fetchAvailableCities() async {
+        do {
+            let results = try await supabase.select(from: "hospitals", columns: "DISTINCT hospital_city")
+            self.availableCities = results.compactMap { $0["hospital_city"] as? String }.sorted()
+        } catch {
+            print("Error fetching cities: \(error)")
+        }
+    }
+    
+    // MARK: - Doctor Methods
+    
+    /// Fetch doctors for selected hospital and specialization
+    func fetchDoctors() async {
+        guard let hospital = selectedHospital else { return }
+        
+        isLoading = true
+        error = nil
+        
+        do {
+            let results = try await supabase.select(
+                from: "doctors",
+                where: "hospital_id",
+                equals: hospital.id
+            )
+            
+            self.doctors = results.compactMap { data in
+                guard let id = data["id"] as? String,
+                      let hospitalId = data["hospital_id"] as? String,
+                      let name = data["name"] as? String,
+                      let specialization = data["specialization"] as? String,
+                      let qualifications = data["qualifications"] as? [String],
+                      let licenseNo = data["license_no"] as? String,
+                      let experience = data["experience"] as? Int,
+                      let email = data["email"] as? String,
+                      let status = data["doctor_status"] as? String
+                else { return nil }
+                
+                return Doctor(
+                    id: id,
+                    hospitalId: hospitalId,
+                    name: name,
+                    specialization: specialization,
+                    qualifications: qualifications,
+                    licenseNo: licenseNo,
+                    experience: experience,
+                    email: email,
+                    contactNumber: data["contact_number"] as? String,
+                    doctorStatus: status
+                )
+            }
+            isLoading = false
+        } catch {
+            self.error = error
+            isLoading = false
+            print("Error fetching doctors: \(error)")
+        }
+    }
+    
+    /// Fetch available slots for selected doctor
+    func fetchAvailableSlots(for date: Date) async {
+        guard let doctor = selectedDoctor else { return }
+        
+        isLoading = true
+        error = nil
+        
+        do {
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let dateString = dateFormatter.string(from: date)
+            
+            let results = try await supabase.select(
+                from: "doctor_availability",
+                where: "doctor_id",
+                equals: doctor.id
+            )
+            
+            self.availableSlots = results.compactMap { data in
+                guard let id = data["id"] as? Int,
+                      let doctorId = data["doctor_id"] as? String,
+                      let date = dateFormatter.date(from: data["date"] as? String ?? ""),
+                      let slotTime = data["slot_time"] as? Date,
+                      let slotEndTime = data["slot_end_time"] as? Date,
+                      let maxNormal = data["max_normal_patients"] as? Int,
+                      let maxPremium = data["max_premium_patients"] as? Int,
+                      let totalBookings = data["total_bookings"] as? Int
+                else { return nil }
+                
+                return DoctorAvailability(
+                    id: id,
+                    doctorId: doctorId,
+                    date: date,
+                    slotTime: slotTime,
+                    slotEndTime: slotEndTime,
+                    maxNormalPatients: maxNormal,
+                    maxPremiumPatients: maxPremium,
+                    totalBookings: totalBookings
+                )
+            }
+            isLoading = false
+        } catch {
+            self.error = error
+            isLoading = false
+            print("Error fetching available slots: \(error)")
+        }
+    }
+    
+    // MARK: - Appointment Methods
+    
+    /// Book an appointment
+    func bookAppointment(patientId: String, slotId: Int, date: Date, time: Date) async throws {
+        guard let doctor = selectedDoctor,
+              let hospital = selectedHospital else { return }
+        
+        let appointmentId = UUID().uuidString
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        
+        let appointmentData: [String: Any] = [
+            "id": appointmentId,
+            "patient_id": patientId,
+            "doctor_id": doctor.id,
+            "hospital_id": hospital.id,
+            "availability_slot_id": String(slotId),
+            "appointment_date": dateFormatter.string(from: date),
+            "appointment_time": time.formatted(date: .omitted, time: .shortened),
+            "status": "upcoming",
+            "doctor_name": doctor.name,
+            "doctor_specialization": doctor.specialization,
+            "hospital_name": hospital.hospitalName
+        ]
+        
+        try await supabase.insert(into: "appointments", data: appointmentData)
+    }
+    
+    /// Fetch appointments for a patient
+    func fetchAppointments(for patientId: String) async throws {
+        do {
+            let results = try await supabase.select(
+                from: "appointments",
+                where: "patient_id",
+                equals: patientId
+            )
+            
+            let appointments = results.compactMap { data -> Appointment? in
+                guard let id = data["id"] as? String,
+                      let doctorId = data["doctor_id"] as? String,
+                      let doctorName = data["doctor_name"] as? String,
+                      let doctorSpecialization = data["doctor_specialization"] as? String,
+                      let dateString = data["appointment_date"] as? String,
+                      let timeString = data["appointment_time"] as? String,
+                      let status = data["status"] as? String else {
+                    return nil
+                }
+                
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                
+                guard let date = dateFormatter.date(from: dateString) else { return nil }
+                
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateFormat = "h:mm a"
+                guard let time = timeFormatter.date(from: timeString) else { return nil }
+                
+                let doctor = Doctor(
+                    id: doctorId,
+                    hospitalId: data["hospital_id"] as? String ?? "",
+                    name: doctorName,
+                    specialization: doctorSpecialization,
+                    qualifications: [],
+                    licenseNo: "",
+                    experience: 0,
+                    email: "",
+                    contactNumber: nil,
+                    doctorStatus: "active"
+                )
+                
+                return Appointment(
+                    doctor: doctor,
+                    date: date,
+                    time: time,
+                    status: Appointment.AppointmentStatus(rawValue: status) ?? .upcoming
+                )
+            }
+            
+            await MainActor.run {
+                AppointmentManager.shared.appointments = appointments
+            }
+        } catch {
+            print("Error fetching appointments: \(error)")
+            throw error
+        }
+    }
+    
+    var availableCities: [String] = []
+    
+    var filteredHospitals: [HospitalModel] {
+        if searchText.isEmpty {
+            return hospitals
+        }
+        return hospitals.filter { hospital in
+            let nameMatch = hospital.hospitalName.localizedCaseInsensitiveContains(searchText)
+            let cityMatch = selectedCity == nil || hospital.hospitalCity == selectedCity
+            return nameMatch && cityMatch
+        }
     }
 }

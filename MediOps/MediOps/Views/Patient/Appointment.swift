@@ -2,7 +2,7 @@ import Foundation
 
 struct Appointment: Identifiable {
     let id = UUID()
-    let doctor: DoctorDetail
+    let doctor: Doctor
     var date: Date
     var time: Date
     let status: AppointmentStatus

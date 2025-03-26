@@ -26,39 +26,62 @@ struct HomeTabView: View {
                     VStack(spacing: 10) {
                         headerSection
                         searchAndFilterSection
-
-                        if !hospitalVM.searchText.isEmpty {
-                            if hospitalVM.filteredHospitals.isEmpty {
-                                Text("No hospitals found")
-                                    .foregroundColor(.gray)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                    .padding()
-                            } else {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Text("Search Results")
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                        .padding(.horizontal)
-
-                                    ForEach(hospitalVM.filteredHospitals) { hospital in
-                                        NavigationLink(destination: DoctorListView(hospitalName: hospital.name, hospital: hospital)) {
-                                            HospitalCard(hospital: hospital)
-                                                .padding(.horizontal)
-                                        }
-                                    }
-                                }
-                                .background(Color.white.opacity(0.9))
-                                .cornerRadius(12)
-                                .padding()
-                            }
-                        } else {
-                            upcomingAppointmentsSection
-                        }
+                        mainContentSection
                     }
                 }
             }
             .navigationBarHidden(true)
+            .task {
+                // Fetch hospitals when view appears
+                await hospitalVM.fetchHospitals()
+                await hospitalVM.fetchAvailableCities()
+            }
         }
+    }
+    
+    private var mainContentSection: some View {
+        VStack {
+            if hospitalVM.isLoading {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .scaleEffect(1.5)
+                    .padding()
+            } else if let error = hospitalVM.error {
+                Text("Error: \(error.localizedDescription)")
+                    .foregroundColor(.red)
+                    .padding()
+            } else if !hospitalVM.filteredHospitals.isEmpty {
+                searchResultsSection
+            } else {
+                Text("No hospitals found")
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            }
+        }
+    }
+    
+    private var searchResultsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !hospitalVM.searchText.isEmpty {
+                Text("Search Results")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .padding(.horizontal)
+            }
+
+            ForEach(hospitalVM.filteredHospitals) { hospital in
+                NavigationLink {
+                    DoctorListView(hospital: hospital)
+                } label: {
+                    HospitalCard(hospital: hospital)
+                        .padding(.horizontal)
+                }
+            }
+        }
+        .background(Color.white.opacity(0.9))
+        .cornerRadius(12)
+        .padding()
     }
 
     private var headerSection: some View {

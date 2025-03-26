@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PaymentConfirmationView: View {
-    let doctor: DoctorDetail
+    let doctor: Doctor
     let appointmentDate: Date
     let appointmentTime: Date
     
@@ -12,6 +12,8 @@ struct PaymentConfirmationView: View {
     @State private var sliderWidth: CGFloat = 0
     
     private let maxSliderOffset: CGFloat = 300 // Adjust this value based on your needs
+    private let consultationFee = 500.0 // Default consultation fee
+    private let bookingFee = 10.0
     
     var body: some View {
         NavigationStack {
@@ -40,13 +42,13 @@ struct PaymentConfirmationView: View {
                         HStack {
                             Text("Consultation fees:")
                             Spacer()
-                            Text("Rs.\(Int(doctor.consultationFee))")
+                            Text("Rs.\(Int(consultationFee))")
                         }
                         
                         HStack {
                             Text("Booking fee")
                             Spacer()
-                            Text("Rs.10")
+                            Text("Rs.\(Int(bookingFee))")
                         }
                         
                         if showSuccess {
@@ -73,7 +75,7 @@ struct PaymentConfirmationView: View {
                             .font(.caption)
                             .foregroundColor(.gray)
                         Spacer()
-                        Text("Rs.207")
+                        Text("Rs.\(Int(consultationFee + bookingFee))")
                             .font(.headline)
                     }
                 }
