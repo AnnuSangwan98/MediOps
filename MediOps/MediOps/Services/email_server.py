@@ -78,7 +78,7 @@ def generate_secure_password():
     special = random.choice("!@#$%^&*()")
     rest = ''.join(random.choices(string.ascii_letters + string.digits + "!@#$%^&*()", k=4))
     password = upper + lower + digit + special + rest
-    return ''.join(random.sample(password, len(password)))  # Shuffle to randomize
+    return ''.join(random.sample(password, len(password)))
 
 def send_email(to_email, subject, html_content):
     try:

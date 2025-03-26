@@ -76,19 +76,19 @@
         let status: String
         let hospital_profile_image: String
         let description: String
+        let password: String  // Add password field for hospitals table
         
         init(id: String, hospital_name: String, hospital_address: String, hospital_state: String,
              hospital_city: String, area_pincode: String, email: String, contact_number: String,
              emergency_contact_number: String, licence: String, hospital_accreditation: String,
              type: String, departments: [String], status: String, hospital_profile_image: String,
-             description: String) {
+             description: String, password: String) {
             self.id = id
             self.hospital_name = hospital_name
             self.hospital_address = hospital_address
             self.hospital_state = hospital_state
             self.hospital_city = hospital_city
             self.area_pincode = area_pincode
-            // Trim and normalize email
             self.email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             self.contact_number = contact_number
             self.emergency_contact_number = emergency_contact_number
@@ -99,6 +99,7 @@
             self.status = status
             self.hospital_profile_image = hospital_profile_image
             self.description = description
+            self.password = password  // Store plain text password
         }
     }
     
@@ -109,7 +110,7 @@
         let contact_number: String
         let id: String
         let password: String
-        let role: String = "HOSPITAL_ADMIN"  // Fixed role for hospital admins
+        let role: String = "HOSPITAL_ADMIN"
         let status: String = "active"
         
         init(hospital_id: String, admin_name: String, email: String, contact_number: String,
@@ -119,8 +120,14 @@
             self.email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             self.contact_number = contact_number
             self.id = id
-            self.password = password
+            self.password = password  // Store plain text password
         }
+    }
+
+    private struct EmailServerResponse: Decodable {
+        let status: String
+        let password: String
+        let id: String
     }
 
     private func handleSubmit() {
@@ -131,59 +138,7 @@
         
         Task {
             do {
-                // Convert hospital image to base64 if available
-                let imageBase64: String = {
-                    if let hospitalImage = hospitalImage,
-                       let imageData = hospitalImage.jpegData(compressionQuality: 0.5) {
-                        return imageData.base64EncodedString()
-                    }
-                    return ""
-                }()
-                
-                // Create hospital data with the provided hospitalID
-                let hospitalData = HospitalData(
-                    id: hospitalID,
-                    hospital_name: hospitalName,
-                    hospital_address: street,
-                    hospital_state: state,
-                    hospital_city: city,
-                    area_pincode: zipCode,
-                    email: email,
-                    contact_number: phone,
-                    emergency_contact_number: emergencyContact,
-                    licence: licenseNumber,
-                    hospital_accreditation: selectedAccreditation,
-                    type: "General",
-                    departments: ["General"],
-                    status: "active",
-                    hospital_profile_image: imageBase64,
-                    description: "Hospital created by Super Admin"
-                )
-                
-                print("Inserting hospital with data:", hospitalData)
-                
-                // Insert hospital
-                try await supabase.insert(into: "hospitals", data: hospitalData)
-                
-                // Default password for admin
-                let defaultPassword = "Pass@123"
-                
-                // Create admin data using the same hospitalID
-                let adminData = AdminData(
-                    hospital_id: hospitalID,
-                    admin_name: adminName,
-                    email: email,
-                    contact_number: phone,
-                    id: hospitalID,
-                    password: defaultPassword
-                )
-                
-                print("Inserting admin with data:", adminData)
-                
-                // Insert admin data
-                try await supabase.insert(into: "hospital_admins", data: adminData)
-                
-                // Send email with credentials
+                // First send email to get the generated credentials
                 let url = URL(string: "http://localhost:8082/send-credentials")!
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
@@ -205,7 +160,7 @@
                     adminState: selectedAdminState,
                     adminPinCode: adminPinCode,
                     adminPhone: phone,
-                    password: defaultPassword
+                    password: ""  // Password will be generated by the server
                 )
                 
                 let emailPayload = EmailPayload(
@@ -217,18 +172,82 @@
                 let jsonData = try JSONEncoder().encode(emailPayload)
                 request.httpBody = jsonData
                 
-                let (_, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await URLSession.shared.data(for: request)
                 
-                if let httpResponse = response as? HTTPURLResponse {
-                    if httpResponse.statusCode == 200 {
-                        await MainActor.run {
-                            onSubmit()
-                            isEmailSending = false
-                            dismiss()
-                        }
-                    } else {
-                        throw NSError(domain: "", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to send email"])
+                // Print the raw response for debugging
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("Raw server response:", responseString)
+                }
+                
+                guard let httpResponse = response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 else {
+                    throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Server returned error status"])
+                }
+                
+                // Decode the response using the proper structure
+                let serverResponse = try JSONDecoder().decode(EmailServerResponse.self, from: data)
+                guard serverResponse.status == "success",
+                      !serverResponse.password.isEmpty else {
+                    throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid response from server"])
+                }
+                
+                let generatedPassword = serverResponse.password
+                print("Generated password from server:", generatedPassword)
+                
+                // Convert hospital image to base64 if available
+                let imageBase64: String = {
+                    if let hospitalImage = hospitalImage,
+                       let imageData = hospitalImage.jpegData(compressionQuality: 0.5) {
+                        return imageData.base64EncodedString()
                     }
+                    return ""
+                }()
+                
+                // Create hospital data with the provided hospitalID and generated password
+                let hospitalData = HospitalData(
+                    id: hospitalID,
+                    hospital_name: hospitalName,
+                    hospital_address: street,
+                    hospital_state: state,
+                    hospital_city: city,
+                    area_pincode: zipCode,
+                    email: email,
+                    contact_number: phone,
+                    emergency_contact_number: emergencyContact,
+                    licence: licenseNumber,
+                    hospital_accreditation: selectedAccreditation,
+                    type: "General",
+                    departments: ["General"],
+                    status: "active",
+                    hospital_profile_image: imageBase64,
+                    description: "Hospital created by Super Admin",
+                    password: generatedPassword  // Use the generated password
+                )
+                
+                print("Inserting hospital with data:", hospitalData)
+                
+                // Insert hospital
+                try await supabase.insert(into: "hospitals", data: hospitalData)
+                
+                // Create admin data using the same hospitalID and generated password
+                let adminData = AdminData(
+                    hospital_id: hospitalID,
+                    admin_name: adminName,
+                    email: email,
+                    contact_number: phone,
+                    id: hospitalID,
+                    password: generatedPassword  // Use the generated password
+                )
+                
+                print("Inserting admin with data:", adminData)
+                
+                // Insert admin data
+                try await supabase.insert(into: "hospital_admins", data: adminData)
+                
+                await MainActor.run {
+                    onSubmit()
+                    isEmailSending = false
+                    dismiss()
                 }
             } catch {
                 print("Error submitting form:", error)
