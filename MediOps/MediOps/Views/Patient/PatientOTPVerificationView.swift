@@ -30,7 +30,7 @@ struct PatientOTPVerificationView: View {
     // Create a default profile controller
     private let profileController = PatientProfileController()
     
-    @StateObject private var viewModel = HospitalViewModel()
+    @ObservedObject private var viewModel = HospitalViewModel.shared
     
     @State private var selectedDate: Date = Date()
     

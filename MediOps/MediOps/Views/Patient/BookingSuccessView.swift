@@ -91,10 +91,29 @@ struct BookingSuccessView: View {
                     )
                     appointmentManager.addAppointment(appointment)
                     
-                    // Set root view to PatientHomeView
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let window = windowScene.windows.first {
-                        window.rootViewController = UIHostingController(rootView: PatientHomeView())
+                    // Store in Supabase and navigate to HomeTabView
+                    Task {
+                        do {
+                            try await HospitalViewModel.shared.bookAppointment(
+                                patientId: UserDefaults.standard.string(forKey: "userId") ?? "",
+                                slotId: 1, // TODO: Use actual slot ID
+                                date: appointmentDate,
+                                time: appointmentTime
+                            )
+                            
+                            // Fetch updated appointments
+                            try await HospitalViewModel.shared.fetchAppointments(
+                                for: UserDefaults.standard.string(forKey: "userId") ?? ""
+                            )
+                            
+                            // Navigate to HomeTabView
+                            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                               let window = windowScene.windows.first {
+                                window.rootViewController = UIHostingController(rootView: HomeTabView())
+                            }
+                        } catch {
+                            print("Error booking appointment: \(error)")
+                        }
                     }
                 }) {
                     Text("Done")

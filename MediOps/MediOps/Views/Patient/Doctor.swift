@@ -6,7 +6,7 @@ class DoctorViewModel: ObservableObject {
     @Published var doctors: [Doctor] = []
     
     func loadDoctors(for hospital: HospitalModel) async {
-        let hospitalViewModel = HospitalViewModel()
+        let hospitalViewModel = HospitalViewModel.shared
         await MainActor.run {
             hospitalViewModel.selectedHospital = hospital
         }

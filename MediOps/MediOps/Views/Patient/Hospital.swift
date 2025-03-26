@@ -22,6 +22,7 @@ struct HospitalModel: Identifiable, Codable, Hashable {
     let numberOfDoctors: Int
     let numberOfAppointments: Int
     let description: String?
+    let rating: Double
     
     // Implement Hashable
     func hash(into hasher: inout Hasher) {
@@ -44,6 +45,8 @@ struct Doctor: Identifiable, Codable, Hashable {
     let email: String
     let contactNumber: String?
     let doctorStatus: String
+    let rating: Double
+    let consultationFee: Double
     
     // Implement Hashable
     func hash(into hasher: inout Hasher) {
@@ -75,8 +78,39 @@ struct DoctorAvailability: Identifiable, Codable, Hashable {
     }
 }
 
+// Add this new struct for appointment data
+struct AppointmentData: Codable {
+    let id: String
+    let patientId: String
+    let doctorId: String
+    let hospitalId: String
+    let availabilitySlotId: String
+    let appointmentDate: String
+    let appointmentTime: String
+    let status: String
+    let doctorName: String
+    let doctorSpecialization: String
+    let hospitalName: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case patientId = "patient_id"
+        case doctorId = "doctor_id"
+        case hospitalId = "hospital_id"
+        case availabilitySlotId = "availability_slot_id"
+        case appointmentDate = "appointment_date"
+        case appointmentTime = "appointment_time"
+        case status
+        case doctorName = "doctor_name"
+        case doctorSpecialization = "doctor_specialization"
+        case hospitalName = "hospital_name"
+    }
+}
+
 @MainActor
 class HospitalViewModel: ObservableObject {
+    static let shared = HospitalViewModel()
+    
     @Published var hospitals: [HospitalModel] = []
     @Published var searchText = ""
     @Published var selectedCity: String? = nil
@@ -89,6 +123,8 @@ class HospitalViewModel: ObservableObject {
     @Published var error: Error? = nil
     
     private let supabase = SupabaseController.shared
+    
+    private init() {} // Make initializer private for singleton
     
     // MARK: - Hospital Methods
     
@@ -158,7 +194,8 @@ class HospitalViewModel: ObservableObject {
                     departments: departments,
                     numberOfDoctors: numDoctors,
                     numberOfAppointments: numAppointments,
-                    description: data["description"] as? String
+                    description: data["description"] as? String,
+                    rating: data["rating"] as? Double ?? 0.0
                 )
             }
             
@@ -206,7 +243,9 @@ class HospitalViewModel: ObservableObject {
                       let licenseNo = data["license_no"] as? String,
                       let experience = data["experience"] as? Int,
                       let email = data["email"] as? String,
-                      let status = data["doctor_status"] as? String
+                      let status = data["doctor_status"] as? String,
+                      let rating = data["rating"] as? Double,
+                      let consultationFee = data["consultation_fee"] as? Double
                 else { return nil }
                 
                 return Doctor(
@@ -219,7 +258,9 @@ class HospitalViewModel: ObservableObject {
                     experience: experience,
                     email: email,
                     contactNumber: data["contact_number"] as? String,
-                    doctorStatus: status
+                    doctorStatus: status,
+                    rating: rating,
+                    consultationFee: consultationFee
                 )
             }
             isLoading = false
@@ -283,37 +324,55 @@ class HospitalViewModel: ObservableObject {
     /// Book an appointment
     func bookAppointment(patientId: String, slotId: Int, date: Date, time: Date) async throws {
         guard let doctor = selectedDoctor,
-              let hospital = selectedHospital else { return }
+              let hospital = selectedHospital else { 
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "No doctor or hospital selected"])
+        }
         
         let appointmentId = UUID().uuidString
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         
-        let appointmentData: [String: Any] = [
-            "id": appointmentId,
-            "patient_id": patientId,
-            "doctor_id": doctor.id,
-            "hospital_id": hospital.id,
-            "availability_slot_id": String(slotId),
-            "appointment_date": dateFormatter.string(from: date),
-            "appointment_time": time.formatted(date: .omitted, time: .shortened),
-            "status": "upcoming",
-            "doctor_name": doctor.name,
-            "doctor_specialization": doctor.specialization,
-            "hospital_name": hospital.hospitalName
-        ]
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "h:mm a"
         
-        try await supabase.insert(into: "appointments", data: appointmentData)
+        let appointmentData = AppointmentData(
+            id: appointmentId,
+            patientId: patientId,
+            doctorId: doctor.id,
+            hospitalId: hospital.id,
+            availabilitySlotId: String(slotId),
+            appointmentDate: dateFormatter.string(from: date),
+            appointmentTime: timeFormatter.string(from: time),
+            status: "upcoming",
+            doctorName: doctor.name,
+            doctorSpecialization: doctor.specialization,
+            hospitalName: hospital.hospitalName
+        )
+        
+        do {
+            try await supabase.insert(into: "appointments", data: appointmentData)
+            print("Successfully booked appointment with ID: \(appointmentId)")
+            
+            // Update the appointments list after booking
+            if let userId = UserDefaults.standard.string(forKey: "userId") {
+                try await fetchAppointments(for: userId)
+            }
+        } catch {
+            print("Error booking appointment: \(error)")
+            throw error
+        }
     }
     
     /// Fetch appointments for a patient
     func fetchAppointments(for patientId: String) async throws {
         do {
+            print("Fetching appointments for patient: \(patientId)")
             let results = try await supabase.select(
                 from: "appointments",
                 where: "patient_id",
                 equals: patientId
             )
+            print("Found \(results.count) appointments")
             
             let appointments = results.compactMap { data -> Appointment? in
                 guard let id = data["id"] as? String,
@@ -323,17 +382,24 @@ class HospitalViewModel: ObservableObject {
                       let dateString = data["appointment_date"] as? String,
                       let timeString = data["appointment_time"] as? String,
                       let status = data["status"] as? String else {
+                    print("Failed to parse appointment data: \(data)")
                     return nil
                 }
                 
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd"
                 
-                guard let date = dateFormatter.date(from: dateString) else { return nil }
+                guard let date = dateFormatter.date(from: dateString) else {
+                    print("Failed to parse date: \(dateString)")
+                    return nil 
+                }
                 
                 let timeFormatter = DateFormatter()
                 timeFormatter.dateFormat = "h:mm a"
-                guard let time = timeFormatter.date(from: timeString) else { return nil }
+                guard let time = timeFormatter.date(from: timeString) else {
+                    print("Failed to parse time: \(timeString)")
+                    return nil 
+                }
                 
                 let doctor = Doctor(
                     id: doctorId,
@@ -345,7 +411,9 @@ class HospitalViewModel: ObservableObject {
                     experience: 0,
                     email: "",
                     contactNumber: nil,
-                    doctorStatus: "active"
+                    doctorStatus: "active",
+                    rating: 0.0,
+                    consultationFee: 0.0
                 )
                 
                 return Appointment(
