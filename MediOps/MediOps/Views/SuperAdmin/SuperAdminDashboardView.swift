@@ -1,61 +1,32 @@
 import SwiftUI
 
-enum HospitalStatus: String {
-    case pending = "Pending"
-    case active = "Active"
-    case inactive = "Inactive"
-}
-
-struct Hospital: Identifiable {
-    let id: String
-    var name: String
-    var adminName: String
-    var licenseNumber: String
-    var street: String
-    var city: String
-    var state: String
-    var zipCode: String
-    var phone: String
-    var email: String
-    var status: HospitalStatus
-    var registrationDate: Date
-    var lastModified: Date
-    var lastModifiedBy: String
-    
-    static private var lastUsedNumber = 0
-    
-    static func generateUniqueID() -> String {
-        lastUsedNumber += 1
-        return String(format: "HOS%03d", lastUsedNumber)
-    }
-    
-    // Helper function to reset counter (for testing purposes)
-    static func resetIDCounter() {
-        lastUsedNumber = 0
-    }
-}
-
 struct SuperAdminDashboardView: View {
+    @StateObject private var viewModel = SuperAdminDashboardViewModel()
+    
+    // Form States
     @State private var showHospitalForm = false
     @State private var hospitalName = ""
     @State private var adminName = ""
+    @State private var hospitalID = ""
     @State private var licenseNumber = ""
+    @State private var phone = ""
+    @State private var email = ""
     @State private var street = ""
     @State private var city = ""
     @State private var state = ""
     @State private var zipCode = ""
-    @State private var phone = ""
-    @State private var email = ""
+    @State private var emergencyContact = ""
+    
+    // Alert States
     @State private var showSuccessAlert = false
     @State private var showDeleteConfirmation = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    
+    // Selected Hospital States
     @State private var hospitalToDelete: Hospital?
     @State private var showEditForm = false
     @State private var selectedHospital: Hospital?
-    @State private var errorMessage = ""
-    @State private var showError = false
-    
-    // Sample data - Replace with actual data source
-    @State private var hospitals: [Hospital] = []
     
     private func isValidEmail(_ email: String) -> Bool {
         let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
@@ -70,78 +41,132 @@ struct SuperAdminDashboardView: View {
         return pinCode.count == 6 && pinCode.allSatisfy { $0.isNumber }
     }
     
+    // MARK: - View Components
+    @ViewBuilder
+    private var headerView: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Welcome")
+                    .font(.title)
+                    .fontWeight(.bold)
+               
+            }
+            Spacer()
+            
+            VStack(alignment: .trailing) {
+                Text("\(viewModel.totalHospitals)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.teal)
+                Text("Total Hospitals")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top)
+    }
+    
+    @ViewBuilder
+    private var searchAndFilterView: some View {
+        VStack(spacing: 15) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.gray)
+                TextField("Search hospitals...", text: $viewModel.searchText)
+                    .textFieldStyle(PlainTextFieldStyle())
+            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(10)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    FilterChip(title: "All Cities", 
+                             isSelected: viewModel.selectedCity == nil) {
+                        viewModel.selectedCity = nil
+                    }
+                    
+                    ForEach(viewModel.uniqueCities, id: \.self) { city in
+                        FilterChip(title: city, 
+                                 isSelected: viewModel.selectedCity == city) {
+                            viewModel.selectedCity = city
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+        .padding(.horizontal)
+    }
+    
     var body: some View {
         ZStack {
-            LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                         startPoint: .topLeading,
-                         endPoint: .bottomTrailing)
-                .ignoresSafeArea()
+            LinearGradient(
+                gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
             
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Header
-                    HStack {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Welcome, Super Admin")
-                                .font(.title)
-                                .fontWeight(.bold)
-                            Text("Hospital Management Dashboard")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                        }
-                        Spacer()
-                        
-                       
-                    }
-                    .padding(.horizontal)
-                    .padding(.top)
+            VStack(spacing: 20) {
+                headerView
+                searchAndFilterView
+                
+                // Hospitals section with title outside scroll view
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Hospitals")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .padding(.horizontal)
                     
-                    // Quick Actions Grid
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 20) {
-                        // Hospital Management
-                        DashboardCards(
-                            title: "Add Hospital",
-                            icon: "building.2.fill",
-                            color: .blue
-                        ) {
-                            showHospitalForm = true
-                        }
-                        
-                        // Admin Management
-                      
-                        
-                        // Analytics
-                        
-                        // Settings
-                       
-                    }
-                    .padding()
-                    
-                    // Hospital List
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Hospitals")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .padding(.horizontal)
-                        
-                        if hospitals.isEmpty {
-                            Text("No hospitals registered yet")
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(10)
-                                .shadow(color: .gray.opacity(0.1), radius: 5)
-                        } else {
-                            ForEach(hospitals) { hospital in
-                                HospitalListItem(hospital: hospital,
-                                               onEdit: { selectedHospital = hospital; showEditForm = true },
-                                               onDelete: { hospitalToDelete = hospital; showDeleteConfirmation = true })
+                    // Only the hospital list is scrollable
+                    ScrollView {
+                        VStack(spacing: 15) {
+                            if viewModel.filteredHospitals.isEmpty {
+                                Text("No hospitals found")
+                                    .foregroundColor(.gray)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.white)
+                                    .cornerRadius(10)
+                                    .shadow(color: .gray.opacity(0.1), radius: 5)
+                            } else {
+                                ForEach(viewModel.filteredHospitals) { hospital in
+                                    HospitalListItem(
+                                        hospital: hospital,
+                                        onEdit: {
+                                            selectedHospital = hospital
+                                            showEditForm = true
+                                        },
+                                        onDelete: {
+                                            hospitalToDelete = hospital
+                                            showDeleteConfirmation = true
+                                        }
+                                    )
+                                }
                             }
                         }
+                        .padding()
+                    }
+                }
+                .padding(.top)
+            }
+            
+            // Floating Action Button
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button(action: { showHospitalForm = true }) {
+                        Image(systemName: "plus")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .frame(width: 60, height: 60)
+                            .background(Color.teal)
+                            .clipShape(Circle())
+                            .shadow(color: .gray.opacity(0.3), radius: 5)
                     }
                     .padding()
                 }
@@ -152,21 +177,20 @@ struct SuperAdminDashboardView: View {
             NavigationView {
                 AddHospitalForm(
                     hospitalName: $hospitalName,
-                    adminName: $adminName,
+                    hospitalID: $hospitalID,
                     licenseNumber: $licenseNumber,
+                    emergencyContact: $emergencyContact,
                     street: $street,
                     city: $city,
                     state: $state,
                     zipCode: $zipCode,
+                    adminName: $adminName,
                     phone: $phone,
                     email: $email,
                     onSubmit: addHospital
                 )
                 .navigationTitle("Add Hospital")
-                .navigationBarItems(trailing: Button("Cancel") {
-                    showHospitalForm = false
-                })
-            }
+                            }
         }
         .sheet(isPresented: $showEditForm) {
             if let hospital = selectedHospital {
@@ -201,13 +225,14 @@ struct SuperAdminDashboardView: View {
         }
     }
     
+    // MARK: - Actions
     private func addHospital() {
-        // Create new hospital
         let newHospital = Hospital(
-            id: Hospital.generateUniqueID(),
+            id: hospitalID,
             name: hospitalName,
             adminName: adminName,
             licenseNumber: licenseNumber,
+            hospitalPhone: emergencyContact,
             street: street,
             city: city,
             state: state,
@@ -217,47 +242,41 @@ struct SuperAdminDashboardView: View {
             status: .pending,
             registrationDate: Date(),
             lastModified: Date(),
-            lastModifiedBy: "Super Admin"
+            lastModifiedBy: "Super Admin",
+            imageData: nil
         )
         
-        hospitals.append(newHospital)
+        viewModel.addHospital(newHospital)
         showSuccessAlert = true
         showHospitalForm = false
-        clearForm() // Only clear form after successful submission
+        clearForm()
     }
     
     private func updateHospital(_ hospital: Hospital) {
-        if let index = hospitals.firstIndex(where: { $0.id == hospital.id }) {
-            hospitals[index] = hospital
-            showEditForm = false
-            showSuccessAlert = true
-        }
+        viewModel.updateHospital(hospital)
+        showEditForm = false
+        showSuccessAlert = true
     }
     
     private func deleteHospital(_ hospital: Hospital) {
-        if let index = hospitals.firstIndex(where: { $0.id == hospital.id }) {
-            // Remove the hospital from the list
-            hospitals.remove(at: index)
-            
-            // Clear the hospital to delete
-            hospitalToDelete = nil
-            
-            // Show success message
-            errorMessage = "Hospital deleted successfully"
-            showError = true
-        }
+        viewModel.deleteHospital(hospital)
+        hospitalToDelete = nil
+        errorMessage = "Hospital deleted successfully"
+        showError = true
     }
     
     private func clearForm() {
         hospitalName = ""
         adminName = ""
+        hospitalID = ""
         licenseNumber = ""
+        phone = ""
+        email = ""
         street = ""
         city = ""
         state = ""
         zipCode = ""
-        phone = ""
-        email = ""
+        emergencyContact = ""
     }
 }
 
@@ -268,67 +287,93 @@ struct HospitalListItem: View {
     @State private var showMenu = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(hospital.name)
-                        .font(.headline)
-                    Text(hospital.id)
-                        .font(.caption)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 15) {
+                // Hospital Image
+                if let imageData = hospital.imageData, let uiImage = UIImage(data: imageData) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 80, height: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                } else {
+                    Image(systemName: "building.2.fill")
+                        .font(.system(size: 40))
                         .foregroundColor(.gray)
+                        .frame(width: 80, height: 80)
+                        .background(Color.gray.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
-                Spacer()
-                // Status indicator
-                Text(hospital.status.rawValue)
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(statusColor)
-                            .opacity(0.2)
-                    )
-                    .foregroundColor(statusColor)
-//                Menu {
-//                    Button(action: onEdit) {
-//                        Label("Edit", systemImage: "pencil")
-//                  }
-////                    Button(role: .destructive, action: onDelete) {
-////                        Label("Delete", systemImage: "trash")
-////                    }
-//                } label: {
-//                    Image(systemName: "ellipsis")
-//                        .font(.system(size: 20))
-//                        .foregroundColor(.gray)
-//                        .padding(8)
-//                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    // Hospital Name and Status
+                    HStack {
+                        Text(hospital.name)
+                            .font(.headline)
+                            .foregroundColor(.black)
+                        Spacer()
+                        Text(hospital.status.rawValue)
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(statusColor)
+                                    .opacity(0.2)
+                            )
+                            .foregroundColor(statusColor)
+                    }
+                    
+                    // IDs
+                    HStack(spacing: 15) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Hospital ID")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            Text(hospital.id)
+                                .font(.caption)
+                                .foregroundColor(.teal)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("License")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            Text(hospital.licenseNumber)
+                                .font(.caption)
+                                .foregroundColor(.teal)
+                        }
+                    }
+                    
+                    // Address
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Address")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                        Text("\(hospital.street), \(hospital.city), \(hospital.state) - \(hospital.zipCode)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .lineLimit(2)
+                    }
+                    
+                    Divider()
+                        .padding(.vertical, 4)
+                    
+                    // Contact Information (Hospital Emergency Contact)
+                    HStack(spacing: 4) {
+                        Image(systemName: "phone.fill")
+                            .font(.caption)
+                            .foregroundColor(.teal)
+                        Text(hospital.hospitalPhone)
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
             }
-            
-            Text("\(hospital.street), \(hospital.city)")
-                .font(.subheadline)
-                .foregroundColor(.gray)
-            
-            HStack {
-                Image(systemName: "phone.fill")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                Text(hospital.phone)
-                    .font(.caption)
-                Spacer()
-                Image(systemName: "envelope.fill")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                Text(hospital.email)
-                    .font(.caption)
-            }
-            
-            Text("License: \(hospital.licenseNumber)")
-                .font(.caption)
-                .foregroundColor(.gray)
         }
         .padding()
         .background(Color.white)
-        .cornerRadius(10)
+        .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -390,6 +435,25 @@ extension View {
         ZStack(alignment: alignment) {
             placeholder().opacity(shouldShow ? 1 : 0)
             self
+        }
+    }
+}
+
+// New FilterChip View
+struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(isSelected ? Color.teal : Color.gray.opacity(0.1))
+                .foregroundColor(isSelected ? .white : .gray)
+                .cornerRadius(20)
         }
     }
 }

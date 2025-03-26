@@ -23,7 +23,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets/Assets.xcassets,
-				Services/email_sender.py,
 				Services/email_server.sh,
 				Views/otp_verification_template.html,
 			);

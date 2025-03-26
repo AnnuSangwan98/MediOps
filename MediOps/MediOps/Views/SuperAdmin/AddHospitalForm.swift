@@ -6,59 +6,131 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 struct AddHospitalForm: View {
+    // Hospital Information
+    @State private var hospitalImage: UIImage?
+    @State private var imageSelection: PhotosPickerItem?
     @Binding var hospitalName: String
-    @Binding var adminName: String
+    @Binding var hospitalID: String
     @Binding var licenseNumber: String
+    @State private var selectedAccreditation: String = "NABH"
+    @Binding var emergencyContact: String
+    
+    // Hospital Address
     @Binding var street: String
     @Binding var city: String
     @Binding var state: String
     @Binding var zipCode: String
+    
+    // Admin Information
+    @Binding var adminName: String
     @Binding var phone: String
     @Binding var email: String
-    let onSubmit: () -> Void
+    @State private var adminLocality: String = ""
+    @State private var adminCity: String = ""
+    @State private var selectedAdminState: String = "Delhi"
+    @State private var adminPinCode: String = ""
     
+    let onSubmit: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    // Validation States
     @State private var showValidationErrors = false
     @State private var emailError = ""
     @State private var phoneError = ""
-    @State private var pinCodeError = ""
+    @State private var hospitalPinCodeError = ""
+    @State private var adminPinCodeError = ""
     @State private var hospitalIdError = ""
+    @State private var hospitalLicenseError = ""
+    @State private var emergencyContactError = ""
     @State private var isEmailSending = false
     @State private var showEmailError = false
     @State private var emailSendingError = ""
+    @State private var hasSubmitted = false
+    
+    // Constants
+    let accreditationTypes = ["NABH", "JCI", "ACHSI", "COHSASA", "Other"]
+    let indianStates = [
+        "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi",
+        "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+        "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+        "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+        "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
+    ]
+    
+    private var isFormValid: Bool {
+        !hospitalName.isEmpty && 
+        !hospitalID.isEmpty && 
+        !licenseNumber.isEmpty && 
+        !city.isEmpty &&
+        !state.isEmpty && 
+        !zipCode.isEmpty && 
+        !adminName.isEmpty && 
+        !phone.isEmpty &&
+        !email.isEmpty &&
+        !adminLocality.isEmpty &&
+        !adminCity.isEmpty &&
+        !adminPinCode.isEmpty &&
+        !emergencyContact.isEmpty
+    }
     
     private func validateForm() -> Bool {
         var isValid = true
         
-        // Reset previous errors
+        // Reset errors
         emailError = ""
         phoneError = ""
-        pinCodeError = ""
+        hospitalPinCodeError = ""
+        adminPinCodeError = ""
         hospitalIdError = ""
+        hospitalLicenseError = ""
+        emergencyContactError = ""
         
-        // Validate Hospital ID format
-        if !licenseNumber.hasPrefix("HOS") || licenseNumber.count != 6 {
+        // Validate Hospital ID
+        if !hospitalID.hasPrefix("HOS") || hospitalID.count != 6 {
             hospitalIdError = "Hospital ID must start with HOS followed by 3 digits"
             isValid = false
         }
         
-        // Validate email format
+        // Validate Hospital License Number
+        let licenseRegex = "^[A-Z]{2}\\d{4}$"
+        if licenseNumber.isEmpty {
+            hospitalLicenseError = "License number is required"
+            isValid = false
+        } else if !NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: licenseNumber) {
+            hospitalLicenseError = "License number must be 2 capital letters followed by 4 digits (e.g., UP1234)"
+            isValid = false
+        }
+        
+        // Validate Email
         let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
         if !NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email) {
             emailError = "Please enter a valid email address"
             isValid = false
         }
         
-        // Validate phone number
+        // Validate Phone Numbers
         if phone.count != 10 || !phone.allSatisfy({ $0.isNumber }) {
             phoneError = "Please enter a valid 10-digit phone number"
             isValid = false
         }
         
-        // Validate pin code
+        // Validate Emergency Contact
+        if emergencyContact.count != 10 || !emergencyContact.allSatisfy({ $0.isNumber }) {
+            emergencyContactError = "Please enter a valid 10-digit emergency number"
+            isValid = false
+        }
+        
+        // Validate Pin Codes
         if zipCode.count != 6 || !zipCode.allSatisfy({ $0.isNumber }) {
-            pinCodeError = "Please enter a valid 6-digit pin code"
+            hospitalPinCodeError = "Please enter a valid 6-digit pin code"
+            isValid = false
+        }
+        
+        if adminPinCode.count != 6 || !adminPinCode.allSatisfy({ $0.isNumber }) {
+            adminPinCodeError = "Please enter a valid 6-digit pin code"
             isValid = false
         }
         
@@ -66,13 +138,107 @@ struct AddHospitalForm: View {
         return isValid
     }
     
+    private func handleSubmit() {
+        guard !hasSubmitted && validateForm() else { return }
+        
+        isEmailSending = true
+        Task {
+            do {
+                let url = URL(string: "http://localhost:8082/send-credentials")!
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                
+                let details: [String: Any] = [
+                    "fullName": adminName,
+                    "hospitalName": hospitalName,
+                    "hospitalId": hospitalID,
+                    "licenseNumber": licenseNumber,
+                    "accreditation": selectedAccreditation,
+                    "emergencyContact": emergencyContact,
+                    "street": street,
+                    "city": city,
+                    "state": state,
+                    "zipCode": zipCode,
+                    "adminLocality": adminLocality,
+                    "adminCity": adminCity,
+                    "adminState": selectedAdminState,
+                    "adminPinCode": adminPinCode,
+                    "adminPhone": phone
+                ]
+                
+                let payload: [String: Any] = [
+                    "to": email,
+                    "accountType": "hospital",
+                    "details": details
+                ]
+                
+                let jsonData = try JSONSerialization.data(withJSONObject: payload)
+                request.httpBody = jsonData
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                if let httpResponse = response as? HTTPURLResponse {
+                    if httpResponse.statusCode == 200 {
+                        await MainActor.run {
+                            hasSubmitted = true
+                            onSubmit()
+                            isEmailSending = false
+                            dismiss()
+                        }
+                    } else {
+                        throw NSError(domain: "", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to send email"])
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    emailSendingError = error.localizedDescription
+                    showEmailError = true
+                    isEmailSending = false
+                }
+            }
+        }
+    }
+    
     var body: some View {
         Form {
-            Section(header: Text("Hospital Information")) {
+            // Hospital Information Section
+            Section(header: Text("Hospital Information").foregroundColor(.teal)) {
+                // Hospital Image
+                HStack {
+                    Text("Hospital Image")
+                    Spacer()
+                    PhotosPicker(selection: $imageSelection, matching: .images) {
+                        if let hospitalImage {
+                            Image(uiImage: hospitalImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 80, height: 80)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        } else {
+                            Image(systemName: "building.2.fill")
+                                .font(.system(size: 40))
+                                .foregroundColor(.gray)
+                                .frame(width: 80, height: 80)
+                                .background(Color.gray.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+                .onChange(of: imageSelection) { newValue in
+                    Task {
+                        if let data = try? await newValue?.loadTransferable(type: Data.self) {
+                            if let image = UIImage(data: data) {
+                                hospitalImage = image
+                            }
+                        }
+                    }
+                }
+                
                 TextField("Hospital Name", text: $hospitalName)
-                TextField("Admin Name", text: $adminName)
-                TextField("Hospital ID", text: $licenseNumber)
-                    .placeholder(when: licenseNumber.isEmpty) {
+                
+                TextField("Hospital ID", text: $hospitalID)
+                    .placeholder(when: hospitalID.isEmpty) {
                         Text("Hospital ID (HOSXXX)")
                             .foregroundColor(.gray)
                     }
@@ -81,30 +247,66 @@ struct AddHospitalForm: View {
                         .font(.caption)
                         .foregroundColor(.red)
                 }
-            }
-            
-            Section(header: Text("Address")) {
-                TextField("Street", text: $street)
-                TextField("City", text: $city)
-                TextField("State", text: $state)
-                TextField("Pin Code", text: $zipCode)
-                    .keyboardType(.numberPad)
-                    .placeholder(when: zipCode.isEmpty) {
-                        Text("Pin Code eg: 123456")
+                
+                TextField("License Number", text: $licenseNumber)
+                    .placeholder(when: licenseNumber.isEmpty) {
+                        Text("License Number (xx1234)")
                             .foregroundColor(.gray)
                     }
-                if !pinCodeError.isEmpty {
-                    Text(pinCodeError)
+                    .textCase(.uppercase)
+                if !hospitalLicenseError.isEmpty {
+                    Text(hospitalLicenseError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+                
+                Picker("Accreditation", selection: $selectedAccreditation) {
+                    ForEach(accreditationTypes, id: \.self) { type in
+                        Text(type).tag(type)
+                    }
+                }
+                
+                HStack {
+                    Text("+91")
+                        .foregroundColor(.gray)
+                    TextField("Emergency Contact", text: $emergencyContact)
+                        .keyboardType(.numberPad)
+                }
+                if !emergencyContactError.isEmpty {
+                    Text(emergencyContactError)
                         .font(.caption)
                         .foregroundColor(.red)
                 }
             }
             
-            Section(header: Text("Contact Information")) {
+            // Hospital Address Section
+            Section(header: Text("Hospital Address").foregroundColor(.teal)) {
+                TextField("Street/Locality", text: $street)
+                TextField("City", text: $city)
+                
+                Picker("State", selection: $state) {
+                    ForEach(indianStates, id: \.self) { state in
+                        Text(state).tag(state)
+                    }
+                }
+                
+                TextField("Pin Code", text: $zipCode)
+                    .keyboardType(.numberPad)
+                if !hospitalPinCodeError.isEmpty {
+                    Text(hospitalPinCodeError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+            
+            // Admin Information Section
+            Section(header: Text("Admin Information").foregroundColor(.teal)) {
+                TextField("Admin Name", text: $adminName)
+                
                 HStack {
                     Text("+91")
                         .foregroundColor(.gray)
-                    TextField("Phone Number", text: $phone)
+                    TextField("Contact Number", text: $phone)
                         .keyboardType(.numberPad)
                 }
                 if !phoneError.isEmpty {
@@ -123,68 +325,55 @@ struct AddHospitalForm: View {
                 }
             }
             
-            if !hospitalName.isEmpty && !adminName.isEmpty && !licenseNumber.isEmpty && !street.isEmpty &&
-               !city.isEmpty && !state.isEmpty && !zipCode.isEmpty &&
-               !phone.isEmpty && !email.isEmpty {
-                Section {
-                    Button("Submit") {
-                        if validateForm() {
-                            isEmailSending = true
-                            // Send credentials email
-                            Task {
-                                do {
-                                    let url = URL(string: "http://localhost:8082/send-credentials")!
-                                    var request = URLRequest(url: url)
-                                    request.httpMethod = "POST"
-                                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                                    
-                                    let details: [String: Any] = [
-                                        "fullName": adminName,
-                                        "hospitalName": hospitalName,
-                                        "hospitalId": licenseNumber,
-                                        "licenseNumber": licenseNumber,
-                                        "street": street,
-                                        "city": city,
-                                        "state": state,
-                                        "zipCode": zipCode,
-                                        "phone": phone
-                                    ]
-                                    
-                                    let payload: [String: Any] = [
-                                        "to": email,
-                                        "accountType": "hospital",
-                                        "details": details
-                                    ]
-                                    
-                                    let jsonData = try JSONSerialization.data(withJSONObject: payload)
-                                    request.httpBody = jsonData
-                                    
-                                    let (data, response) = try await URLSession.shared.data(for: request)
-                                    
-                                    if let httpResponse = response as? HTTPURLResponse {
-                                        if httpResponse.statusCode == 200 {
-                                            await MainActor.run {
-                                                onSubmit()
-                                                isEmailSending = false
-                                            }
-                                        } else {
-                                            throw NSError(domain: "", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to send email"])
-                                        }
-                                    }
-                                } catch {
-                                    await MainActor.run {
-                                        emailSendingError = error.localizedDescription
-                                        showEmailError = true
-                                        isEmailSending = false
-                                    }
-                                }
-                            }
-                        }
+            // Admin Address Section
+            Section(header: Text("Admin Address").foregroundColor(.teal)) {
+                TextField("Locality", text: $adminLocality)
+                TextField("City", text: $adminCity)
+                
+                Picker("State", selection: $selectedAdminState) {
+                    ForEach(indianStates, id: \.self) { state in
+                        Text(state).tag(state)
                     }
-                    .frame(maxWidth: .infinity)
-                    .foregroundColor(.blue)
+                }
+                
+                TextField("Pin Code", text: $adminPinCode)
+                    .keyboardType(.numberPad)
+                if !adminPinCodeError.isEmpty {
+                    Text(adminPinCodeError)
+                        .font(.caption)
+                        .foregroundColor(.red)
                 }
             }
+            
+        }
+        .navigationBarBackButtonHidden(true)
+        .navigationTitle("Add Hospital")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Cancel") {
+                    dismiss()
+                }
+                .foregroundColor(.teal)
+            }
+            
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: handleSubmit) {
+                    if isEmailSending {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                    } else {
+                        Text("Save")
+                    }
+                }
+                .disabled(!isFormValid || hasSubmitted || isEmailSending)
+                .foregroundColor(isFormValid && !hasSubmitted && !isEmailSending ? .teal : .gray)
+            }
+        }
+        .alert("Email Error", isPresented: $showEmailError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(emailSendingError)
         }
     }
 }
@@ -203,9 +392,20 @@ struct EditHospitalForm: View {
             Section(header: Text("Hospital Information")) {
                 TextField("Hospital Name", text: $editedHospital.name)
                 TextField("Admin Name", text: $editedHospital.adminName)
-                TextField("Hospital ID", text: $editedHospital.licenseNumber)
+                
+                // Display hospital ID as non-editable text
+                HStack {
+                    Text("Hospital ID")
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Text(editedHospital.id)
+                        .foregroundColor(.teal)
+                }
+                
+                TextField("License Number", text: $editedHospital.licenseNumber)
+                    .textCase(.uppercase)
                     .placeholder(when: editedHospital.licenseNumber.isEmpty) {
-                        Text("Hospital ID (HOSXXX)")
+                        Text("Enter state license (e.g., UP1234)")
                             .foregroundColor(.gray)
                     }
             }
@@ -216,15 +416,24 @@ struct EditHospitalForm: View {
                 TextField("State", text: $editedHospital.state)
                 TextField("Pin Code", text: $editedHospital.zipCode)
                     .keyboardType(.numberPad)
-                    .placeholder(when: editedHospital.zipCode.isEmpty) {
-                        Text("Pin Code eg: 123456")
-                            .foregroundColor(.gray)
-                    }
             }
             
             Section(header: Text("Contact Information")) {
-                TextField("Phone", text: $editedHospital.phone)
+                HStack {
+                    Text("+91")
+                        .foregroundColor(.gray)
+                    TextField("Emergency Contact", text: $editedHospital.hospitalPhone)
+                        .keyboardType(.numberPad)
+                }
+                HStack {
+                    Text("+91")
+                        .foregroundColor(.gray)
+                    TextField("Admin Phone", text: $editedHospital.phone)
+                        .keyboardType(.numberPad)
+                }
                 TextField("Email", text: $editedHospital.email)
+                    .keyboardType(.emailAddress)
+                    .autocapitalization(.none)
             }
             
             Section {
@@ -234,9 +443,25 @@ struct EditHospitalForm: View {
                     onSave(editedHospital)
                 }
                 .frame(maxWidth: .infinity)
-                .foregroundColor(.blue)
+                .foregroundColor(.teal)
             }
         }
     }
 }
 
+#Preview {
+    AddHospitalForm(
+        hospitalName: .constant(""),
+        hospitalID: .constant(""),
+        licenseNumber: .constant(""),
+        emergencyContact: .constant(""),
+        street: .constant(""),
+        city: .constant(""),
+        state: .constant(""),
+        zipCode: .constant(""),
+        adminName: .constant(""),
+        phone: .constant(""),
+        email: .constant(""),
+        onSubmit: {}
+    )
+}
