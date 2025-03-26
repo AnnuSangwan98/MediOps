@@ -314,7 +314,7 @@ struct ChangePasswordSheet: View {
 }
 
 // Custom TextField Style
-struct CustomTextFieldStyles: TextFieldStyle {
+struct CustomTextFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .padding()
@@ -324,8 +324,7 @@ struct CustomTextFieldStyles: TextFieldStyle {
     }
 }
 
-// Custom Back Button
-struct CustomBackButtons: View {
+struct CustomBackButton: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
