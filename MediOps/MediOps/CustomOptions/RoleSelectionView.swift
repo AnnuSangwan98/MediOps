@@ -10,7 +10,6 @@ struct RoleSelectionView: View {
     
     var body: some View {
         NavigationStack {
-            
             VStack(spacing: 40) {
                 // Logo and Welcome Text
                 VStack(spacing: 20) {
@@ -44,7 +43,7 @@ struct RoleSelectionView: View {
                 
                 // Role Selection Buttons
                 VStack(spacing: 20) {
-                    // Administrator Button
+                    // Super Admin Button
                     NavigationLink(destination: SuperAdminLoginView()) {
                         RoleButton(
                             icon: "person.badge.key",
@@ -56,6 +55,7 @@ struct RoleSelectionView: View {
                         selectedRole = .superAdmin
                         navigationState.selectRole(.superAdmin)
                     })
+                    
                     // Administrator Button
                     NavigationLink(destination: AdminLoginView()) {
                         RoleButton(
@@ -113,6 +113,12 @@ struct RoleSelectionView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.white)
+            .navigationBarBackButtonHidden(true)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    EmptyView()
+                }
+            }
         }
     }
 }

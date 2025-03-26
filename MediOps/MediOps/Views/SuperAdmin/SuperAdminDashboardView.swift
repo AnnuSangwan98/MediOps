@@ -2,6 +2,9 @@ import SwiftUI
 
 struct SuperAdminDashboardView: View {
     @StateObject private var viewModel = SuperAdminDashboardViewModel()
+    @Environment(\.presentationMode) var presentationMode
+    @EnvironmentObject private var navigationState: AppNavigationState
+    @Environment(\.dismiss) var dismiss
     
     // Form States
     @State private var showHospitalForm = false
@@ -22,6 +25,8 @@ struct SuperAdminDashboardView: View {
     @State private var showDeleteConfirmation = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var showLogoutConfirmation = false
+    @State private var navigateToRoleSelection = false
     
     // Selected Hospital States
     @State private var hospitalToDelete: Hospital?
@@ -49,18 +54,25 @@ struct SuperAdminDashboardView: View {
                 Text("Welcome")
                     .font(.title)
                     .fontWeight(.bold)
-               
             }
             Spacer()
             
-            VStack(alignment: .trailing) {
-                Text("\(viewModel.totalHospitals)")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.teal)
-                Text("Total Hospitals")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+            HStack(spacing: 20) {
+                VStack(alignment: .trailing) {
+                    Text("\(viewModel.totalHospitals)")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.teal)
+                    Text("Total Hospitals")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                
+                Button(action: { showLogoutConfirmation = true }) {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .font(.title2)
+                        .foregroundColor(.red)
+                }
             }
         }
         .padding(.horizontal)
@@ -102,127 +114,142 @@ struct SuperAdminDashboardView: View {
     }
     
     var body: some View {
-        ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-            
-            VStack(spacing: 20) {
-                headerView
-                searchAndFilterView
+        NavigationStack {
+            ZStack {
+                LinearGradient(
+                    gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                // Hospitals section with title outside scroll view
-                VStack(alignment: .leading, spacing: 15) {
-                    Text("Hospitals")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .padding(.horizontal)
+                VStack(spacing: 20) {
+                    headerView
+                    searchAndFilterView
                     
-                    // Only the hospital list is scrollable
-                    ScrollView {
-                        VStack(spacing: 15) {
-                            if viewModel.filteredHospitals.isEmpty {
-                                Text("No hospitals found")
-                                    .foregroundColor(.gray)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.white)
-                                    .cornerRadius(10)
-                                    .shadow(color: .gray.opacity(0.1), radius: 5)
-                            } else {
-                                ForEach(viewModel.filteredHospitals) { hospital in
-                                    HospitalListItem(
-                                        hospital: hospital,
-                                        onEdit: {
-                                            selectedHospital = hospital
-                                            showEditForm = true
-                                        },
-                                        onDelete: {
-                                            hospitalToDelete = hospital
-                                            showDeleteConfirmation = true
-                                        }
-                                    )
+                    // Hospitals section with title outside scroll view
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("Hospitals")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .padding(.horizontal)
+                        
+                        // Only the hospital list is scrollable
+                        ScrollView {
+                            VStack(spacing: 15) {
+                                if viewModel.filteredHospitals.isEmpty {
+                                    Text("No hospitals found")
+                                        .foregroundColor(.gray)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.white)
+                                        .cornerRadius(10)
+                                        .shadow(color: .gray.opacity(0.1), radius: 5)
+                                } else {
+                                    ForEach(viewModel.filteredHospitals) { hospital in
+                                        HospitalListItem(
+                                            hospital: hospital,
+                                            onEdit: {
+                                                selectedHospital = hospital
+                                                showEditForm = true
+                                            },
+                                            onDelete: {
+                                                hospitalToDelete = hospital
+                                                showDeleteConfirmation = true
+                                            }
+                                        )
+                                    }
                                 }
                             }
+                            .padding()
+                        }
+                    }
+                    .padding(.top)
+                }
+                
+                // Floating Action Button
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: { showHospitalForm = true }) {
+                            Image(systemName: "plus")
+                                .font(.title2)
+                                .foregroundColor(.white)
+                                .frame(width: 60, height: 60)
+                                .background(Color.teal)
+                                .clipShape(Circle())
+                                .shadow(color: .gray.opacity(0.3), radius: 5)
                         }
                         .padding()
                     }
                 }
-                .padding(.top)
-            }
-            
-            // Floating Action Button
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Button(action: { showHospitalForm = true }) {
-                        Image(systemName: "plus")
-                            .font(.title2)
-                            .foregroundColor(.white)
-                            .frame(width: 60, height: 60)
-                            .background(Color.teal)
-                            .clipShape(Circle())
-                            .shadow(color: .gray.opacity(0.3), radius: 5)
-                    }
-                    .padding()
+                
+                NavigationLink(destination: RoleSelectionView(), isActive: $navigateToRoleSelection) {
+                    EmptyView()
                 }
             }
-        }
-        .navigationBarHidden(true)
-        .sheet(isPresented: $showHospitalForm) {
-            NavigationView {
-                AddHospitalForm(
-                    hospitalName: $hospitalName,
-                    hospitalID: $hospitalID,
-                    licenseNumber: $licenseNumber,
-                    emergencyContact: $emergencyContact,
-                    street: $street,
-                    city: $city,
-                    state: $state,
-                    zipCode: $zipCode,
-                    adminName: $adminName,
-                    phone: $phone,
-                    email: $email,
-                    onSubmit: addHospital
-                )
-                .navigationTitle("Add Hospital")
-                            }
-        }
-        .sheet(isPresented: $showEditForm) {
-            if let hospital = selectedHospital {
+            .navigationBarHidden(true)
+            .sheet(isPresented: $showHospitalForm) {
                 NavigationView {
-                    EditHospitalForm(hospital: hospital, onSave: updateHospital)
-                        .navigationTitle("Edit Hospital")
-                        .navigationBarItems(trailing: Button("Cancel") {
-                            showEditForm = false
-                        })
+                    AddHospitalForm(
+                        hospitalName: $hospitalName,
+                        hospitalID: $hospitalID,
+                        licenseNumber: $licenseNumber,
+                        emergencyContact: $emergencyContact,
+                        street: $street,
+                        city: $city,
+                        state: $state,
+                        zipCode: $zipCode,
+                        adminName: $adminName,
+                        phone: $phone,
+                        email: $email,
+                        onSubmit: addHospital
+                    )
+                    .navigationTitle("Add Hospital")
                 }
             }
-        }
-        .alert("Success", isPresented: $showSuccessAlert) {
-            Button("OK", role: .cancel) { clearForm() }
-        } message: {
-            Text("Hospital added successfully!")
-        }
-        .alert("Delete Hospital", isPresented: $showDeleteConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) {
-                if let hospital = hospitalToDelete {
-                    deleteHospital(hospital)
+            .sheet(isPresented: $showEditForm) {
+                if let hospital = selectedHospital {
+                    NavigationView {
+                        EditHospitalForm(hospital: hospital, onSave: updateHospital)
+                            .navigationTitle("Edit Hospital")
+                            .navigationBarItems(trailing: Button("Cancel") {
+                                showEditForm = false
+                            })
+                    }
                 }
             }
-        } message: {
-            Text("Are you sure you want to delete this hospital? This action cannot be undone.")
+            .alert("Success", isPresented: $showSuccessAlert) {
+                Button("OK", role: .cancel) { clearForm() }
+            } message: {
+                Text("Hospital added successfully!")
+            }
+            .alert("Delete Hospital", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    if let hospital = hospitalToDelete {
+                        deleteHospital(hospital)
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to delete this hospital? This action cannot be undone.")
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
+            .alert("Logout Confirmation", isPresented: $showLogoutConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Logout", role: .destructive) {
+                    performLogout()
+                }
+            } message: {
+                Text("Are you sure you want to logout?")
+            }
         }
-        .alert("Error", isPresented: $showError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(errorMessage)
-        }
+        .navigationBarBackButtonHidden(true)
     }
     
     // MARK: - Actions
@@ -277,6 +304,15 @@ struct SuperAdminDashboardView: View {
         state = ""
         zipCode = ""
         emergencyContact = ""
+    }
+    
+    private func performLogout() {
+        // Clear user data
+        UserDefaults.standard.removeObject(forKey: "userRole")
+        UserDefaults.standard.removeObject(forKey: "userToken")
+        
+        // Navigate to role selection
+        navigateToRoleSelection = true
     }
 }
 
