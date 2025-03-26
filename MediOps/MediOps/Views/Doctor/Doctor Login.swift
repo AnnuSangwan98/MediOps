@@ -11,6 +11,7 @@ struct DoctorLoginView: View {
     @State private var newPassword: String = ""
     @State private var confirmPassword: String = ""
     @State private var isPasswordVisible: Bool = false
+    @State private var shouldShowPasswordReset: Bool = false
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
@@ -161,74 +162,95 @@ struct DoctorLoginView: View {
     }
     
     private func handleLogin() {
-        guard let url = URL(string: "http://localhost:8082/validate-doctor") else {
-            errorMessage = "Invalid server configuration"
+        // Create the request body
+        let credentials = [
+            "userId": doctorId,
+            "password": password,
+            "userType": "doctor"
+        ]
+        
+        // Create the URL request
+        guard let url = URL(string: "http://localhost:8082/validate-credentials") else {
+            errorMessage = "Invalid server URL"
             showError = true
             return
         }
-        
-        let credentials: [String: Any] = [
-            "doctorId": doctorId, 
-            "password": password
-        ]
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: credentials)
-            
-            URLSession.shared.dataTask(with: request) { data, response, error in
-                DispatchQueue.main.async {
-                    if let error = error {
-                        self.errorMessage = "Network error: \(error.localizedDescription)"
-                        self.showError = true
-                        return
-                    }
-                    
-                    guard let httpResponse = response as? HTTPURLResponse else {
-                        self.errorMessage = "Invalid server response"
-                        self.showError = true
-                        return
-                    }
-                    
-                    guard let data = data else {
-                        self.errorMessage = "No data received"
-                        self.showError = true
-                        return
-                    }
-                    
-                    do {
-                        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                           let status = json["status"] as? String,
-                           let valid = json["valid"] as? Bool {
-                            
-                            if status == "success" {
-                                if valid {
-                                    self.isLoggedIn = true
-                                } else {
-                                    self.errorMessage = "Invalid credentials"
-                                    self.showError = true
-                                }
-                            } else {
-                                self.errorMessage = "Server error: Invalid response format"
-                                self.showError = true
-                            }
-                        } else {
-                            self.errorMessage = "Invalid response format"
-                            self.showError = true
-                        }
-                    } catch {
-                        self.errorMessage = "Failed to parse server response"
-                        self.showError = true
-                    }
-                }
-            }.resume()
-        } catch {
-            self.errorMessage = "Failed to prepare request"
-            self.showError = true
+        // Convert credentials to JSON data
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: credentials) else {
+            errorMessage = "Error preparing request"
+            showError = true
+            return
         }
+        
+        request.httpBody = jsonData
+        
+        // Make the network request
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.errorMessage = "Network error: \(error.localizedDescription)"
+                    self.showError = true
+                    return
+                }
+                
+                guard let data = data else {
+                    self.errorMessage = "No data received from server"
+                    self.showError = true
+                    return
+                }
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    self.errorMessage = "Invalid server response"
+                    self.showError = true
+                    return
+                }
+                
+                // Check HTTP status code
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    self.errorMessage = "Server error (Status \(httpResponse.statusCode))"
+                    self.showError = true
+                    return
+                }
+                
+                // Parse the response using Codable
+                do {
+                    let decoder = JSONDecoder()
+                    struct LoginResponse: Codable {
+                        let status: String
+                        let message: String
+                        let valid: Bool
+                        let data: LoginData?
+                        
+                        struct LoginData: Codable {
+                            let userId: String
+                            let userType: String
+                            let remainingTime: Int
+                        }
+                    }
+                    
+                    let response = try decoder.decode(LoginResponse.self, from: data)
+                    
+                    if response.status == "success" && response.valid {
+                        self.showChangePasswordSheet = true
+                    } else {
+                        self.errorMessage = response.message
+                        self.showError = true
+                    }
+                } catch let decodingError {
+                    print("Parsing error: \(decodingError)")
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("Raw response: \(responseString)")
+                    }
+                    self.errorMessage = "Unable to process server response. Please try again."
+                    self.showError = true
+                }
+            }
+        }.resume()
     }
     
     private func handlePasswordChange() {
