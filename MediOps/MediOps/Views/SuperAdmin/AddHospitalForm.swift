@@ -382,23 +382,21 @@ struct AddHospitalForm: View {
                 
                 TextField("Hospital Name", text: $hospitalName)
                 
-                TextField("Hospital ID", text: $hospitalID)
-                    .placeholder(when: hospitalID.isEmpty) {
-                        Text("Hospital ID (HOSXXX)")
-                            .foregroundColor(.gray)
+                TextField("Hospital ID (HOSXXX)", text: $hospitalID)
+                    .onChange(of: hospitalID) { _, newValue in
+                        hospitalID = newValue.uppercased()
                     }
+                    
                 if !hospitalIdError.isEmpty {
                     Text(hospitalIdError)
                         .font(.caption)
                         .foregroundColor(.red)
                 }
                 
-                TextField("License Number", text: $licenseNumber)
-                    .placeholder(when: licenseNumber.isEmpty) {
-                        Text("License Number (XX12345)")
-                            .foregroundColor(.gray)
+                TextField("License Number (XX12345)", text: $licenseNumber)
+                    .onChange(of: licenseNumber) { _, newValue in
+                        licenseNumber = newValue.uppercased()
                     }
-                    .textCase(.uppercase)
                 if !hospitalLicenseError.isEmpty {
                     Text(hospitalLicenseError)
                         .font(.caption)
@@ -416,6 +414,10 @@ struct AddHospitalForm: View {
                         .foregroundColor(.gray)
                     TextField("Emergency Contact", text: $emergencyContact)
                         .keyboardType(.numberPad)
+                        .onChange(of: emergencyContact) { _, newValue in
+                            // Allow only digits and limit to 10 characters
+                            emergencyContact = newValue.filter { $0.isNumber }.prefix(10).description
+                        }
                 }
                 if !emergencyContactError.isEmpty {
                     Text(emergencyContactError)
@@ -437,6 +439,10 @@ struct AddHospitalForm: View {
                 
                 TextField("Pin Code", text: $zipCode)
                     .keyboardType(.numberPad)
+                    .onChange(of: zipCode) { _, newValue in
+                        // Allow only digits and limit to 10 characters
+                        zipCode = newValue.filter { $0.isNumber }.prefix(6).description
+                    }
                 if !hospitalPinCodeError.isEmpty {
                     Text(hospitalPinCodeError)
                         .font(.caption)
@@ -453,6 +459,10 @@ struct AddHospitalForm: View {
                         .foregroundColor(.gray)
                     TextField("Contact Number", text: $phone)
                         .keyboardType(.numberPad)
+                        .onChange(of: phone) { _, newValue in
+                            // Allow only digits and limit to 10 characters
+                            phone = newValue.filter { $0.isNumber }.prefix(10).description
+                        }
                 }
                 if !phoneError.isEmpty {
                     Text(phoneError)
@@ -483,6 +493,10 @@ struct AddHospitalForm: View {
                 
                 TextField("Pin Code", text: $adminPinCode)
                     .keyboardType(.numberPad)
+                    .onChange(of: adminPinCode) { _, newValue in
+                        // Allow only digits and limit to 10 characters
+                        adminPinCode = newValue.filter { $0.isNumber }.prefix(6).description
+                    }
                 if !adminPinCodeError.isEmpty {
                     Text(adminPinCodeError)
                         .font(.caption)

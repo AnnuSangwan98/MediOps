@@ -8,6 +8,8 @@ struct SuperAdminLoginView: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var isPasswordVisible: Bool = false
+    private let SuperAdminId = "SUPER1"
+    private let SuperAdminPassword = "Super@123"
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
@@ -51,17 +53,10 @@ struct SuperAdminLoginView: View {
                             .font(.subheadline)
                             .foregroundColor(.gray)
                         
-                        TextField("Enter super admin ID (e.g. HOS001)", text: $adminId)
+                        TextField("Enter super admin ID", text: $adminId)
                             .textFieldStyle(CustomTextFieldStyle())
                             .onChange(of: adminId) { _, newValue in
-                                // Automatically format to uppercase for "HOS" part
-                                if newValue.count >= 3 {
-                                    let hosPrefix = newValue.prefix(3).uppercased()
-                                    let numericPart = newValue.dropFirst(3)
-                                    adminId = hosPrefix + numericPart
-                                } else if newValue.count > 0 {
-                                    adminId = newValue.uppercased()
-                                }
+                                adminId = newValue.uppercased()
                             }
                     }
                     
@@ -138,13 +133,17 @@ struct SuperAdminLoginView: View {
     }
     
     private func handleLogin() {
-        // TODO: Implement actual login logic here
-        isLoggedIn = true
+        if adminId == SuperAdminId && password == SuperAdminPassword {
+            isLoggedIn = true
+        } else {
+            showError = true
+            errorMessage = "No user found. Please check your credentials."
+        }
     }
     
     // Validates that the admin ID is in format HOS followed by numbers
     private func isValidAdminId(_ id: String) -> Bool {
-        let adminIdRegex = #"^HOS\d+$"#
+        let adminIdRegex = #"^SUPER\d+$"#
         return NSPredicate(format: "SELF MATCHES %@", adminIdRegex).evaluate(with: id)
     }
     
