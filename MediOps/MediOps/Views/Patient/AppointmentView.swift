@@ -35,23 +35,45 @@ struct AppointmentView: View {
         return startTime
     }
     
+    // Function to check if a date is in the past
+    private func isDateInPast(_ date: Date) -> Bool {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let inputDate = calendar.startOfDay(for: date)
+        return inputDate < today
+    }
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Calendar
-                DatePicker("Select Date", selection: $selectedDate, displayedComponents: [.date])
+                DatePicker("Select Date", 
+                          selection: $selectedDate,
+                          in: Date()...,
+                          displayedComponents: [.date])
                     .datePickerStyle(.graphical)
                     .padding()
                     .background(Color.white)
+                    .onChange(of: selectedDate) { newDate in
+                        // Reset selected time when date changes
+                        selectedTime = nil
+                    }
                 
                 // Time slots
                 ScrollView {
                     LazyVGrid(columns: Array(repeating: .init(.flexible(), spacing: 10), count: 2), spacing: 15) {
                         ForEach(timeSlots, id: \.self) { time in
                             let isSelected = selectedTime?.formatted(date: .omitted, time: .shortened) == time.formatted(date: .omitted, time: .shortened)
+                            let calendar = Calendar.current
+                            let isToday = calendar.isDateInToday(selectedDate)
+                            let currentHour = calendar.component(.hour, from: Date())
+                            let slotHour = calendar.component(.hour, from: time)
+                            let isPastTime = isToday && slotHour <= currentHour
                             
                             Button(action: {
-                                selectedTime = time
+                                if !isPastTime {
+                                    selectedTime = time
+                                }
                             }) {
                                 Text(formatTimeSlot(time))
                                     .font(.system(size: 13, weight: .medium))
@@ -60,14 +82,15 @@ struct AppointmentView: View {
                                     .padding(.vertical, 12)
                                     .padding(.horizontal, 8)
                                     .frame(maxWidth: .infinity)
-                                    .background(isSelected ? Color.teal : Color.white)
-                                    .foregroundColor(isSelected ? .white : .black)
+                                    .background(isSelected ? Color.teal : (isPastTime ? Color.gray.opacity(0.1) : Color.white))
+                                    .foregroundColor(isPastTime ? .gray : (isSelected ? .white : .black))
                                     .cornerRadius(8)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8)
-                                            .stroke(Color.teal, lineWidth: 1)
+                                            .stroke(isPastTime ? Color.gray.opacity(0.3) : Color.teal, lineWidth: 1)
                                     )
                             }
+                            .disabled(isPastTime)
                         }
                     }
                     .padding()

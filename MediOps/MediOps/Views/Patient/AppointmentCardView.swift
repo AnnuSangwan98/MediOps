@@ -14,7 +14,15 @@ struct AppointmentCard: View {
     private func formatTimeRange(_ time: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mm a"
-        return formatter.string(from: time)
+        let startTime = formatter.string(from: time)
+        
+        // Calculate end time (1 hour after start time)
+        if let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: time) {
+            let endTimeString = formatter.string(from: endTime)
+            return "\(startTime) to \(endTimeString)"
+        }
+        
+        return startTime
     }
 
     var body: some View {

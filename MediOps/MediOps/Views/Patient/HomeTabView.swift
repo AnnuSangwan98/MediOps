@@ -253,7 +253,8 @@ struct AppointmentHistoryCard: View {
                 Text(appointment.date.formatted(date: .long, time: .omitted))
                 Spacer()
                 Image(systemName: "clock")
-                Text(appointment.time.formatted(date: .omitted, time: .shortened))
+                let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: appointment.time)!
+                Text("\(appointment.time.formatted(date: .omitted, time: .shortened)) to \(endTime.formatted(date: .omitted, time: .shortened))")
             }
             .font(.subheadline)
             .foregroundColor(.gray)
