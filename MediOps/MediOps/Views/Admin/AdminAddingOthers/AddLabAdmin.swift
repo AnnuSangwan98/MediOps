@@ -24,6 +24,9 @@ struct AddLabAdminView: View {
     @State private var errorMessage = ""
     var onSave: (UIActivity) -> Void
     
+    // Add reference to AdminController
+    private let adminController = AdminController.shared
+    
     // Calculate maximum experience based on age
     private var maximumExperience: Int {
         let calendar = Calendar.current
@@ -168,10 +171,71 @@ struct AddLabAdminView: View {
             labAdminDetails: labAdmin
         )
 
-        sendLabCredentials(activity: activity)
+        // First save to database, then send credentials
+        saveToDatabase(labAdmin: labAdmin, activity: activity)
     }
     
-    private func sendLabCredentials(activity: UIActivity) {
+    private func saveToDatabase(labAdmin: UILabAdmin, activity: UIActivity) {
+        Task {
+            do {
+                // Generate a secure password that meets the requirements
+                let password = generateSecurePassword()
+                
+                // Use a valid hospital ID format
+                let hospitalAdminId = "HOS001"
+                
+                // Save to database using AdminController
+                let (_, _) = try await adminController.createLabAdmin(
+                    email: labAdmin.email,
+                    password: password,
+                    name: labAdmin.fullName,
+                    labName: labAdmin.qualification, // This is actually mapped to department
+                    hospitalAdminId: hospitalAdminId,
+                    contactNumber: labAdmin.phone.replacingOccurrences(of: "+91", with: ""), // Remove country code for 10-digit format
+                    department: "Pathology & Laboratory" // Fixed to match the constraint
+                )
+                
+                // If successful, send credentials email
+                await MainActor.run {
+                    sendLabCredentials(activity: activity, password: password)
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    alertMessage = "Failed to save lab admin: \(error.localizedDescription)"
+                    showAlert = true
+                }
+            }
+        }
+    }
+    
+    // Generate a password that meets the constraints in the lab_admins table
+    private func generateSecurePassword() -> String {
+        // Generate a password that meets all requirements (at least 8 chars, with uppercase, lowercase, digit, and special char)
+        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
+        let numbers = "0123456789"
+        let specialChars = "@$!%*?&"
+        
+        // Ensure at least one of each required character type
+        let guaranteedChars = [
+            String(uppercaseLetters.randomElement()!),
+            String(lowercaseLetters.randomElement()!),
+            String(numbers.randomElement()!),
+            String(specialChars.randomElement()!)
+        ]
+        
+        // Generate remaining characters (at least 4 more for a total of 8+)
+        let remainingLength = 8
+        let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
+        let remainingChars = (0..<remainingLength).map { _ in String(allChars.randomElement()!) }
+        
+        // Combine all characters and shuffle them
+        let passwordChars = guaranteedChars + remainingChars
+        return passwordChars.shuffled().joined()
+    }
+    
+    private func sendLabCredentials(activity: UIActivity, password: String) {
         guard let url = URL(string: "http://localhost:8082/send-credentials") else {
             alertMessage = "Invalid server URL"
             showAlert = true
@@ -192,8 +256,9 @@ struct AddLabAdminView: View {
                 "phone": "+91\(phoneNumber)",
                 "qualification": qualification,
                 "license": license,
-                "labName": "Main Laboratory",
-                "labId": "LAB001"
+                "labName": qualification,
+                "labId": "LAB001",
+                "password": password // Include the password in the email
             ]
         ]
         
@@ -202,6 +267,8 @@ struct AddLabAdminView: View {
             
             URLSession.shared.dataTask(with: request) { data, response, error in
                 DispatchQueue.main.async {
+                    self.isLoading = false
+                    
                     if let error = error as NSError? {
                         switch error.code {
                         case NSURLErrorTimedOut:
@@ -220,15 +287,18 @@ struct AddLabAdminView: View {
                     if let httpResponse = response as? HTTPURLResponse {
                         if httpResponse.statusCode == 200 {
                             // Show success message
-                            self.alertMessage = "Credentials sent successfully to \(email)"
+                            self.alertMessage = "Lab admin created and credentials sent successfully to \(email)"
                             self.showAlert = true
                             // Call onSave callback with the new activity
                             self.onSave(activity)
-                            // Dismiss the view immediately after successful save
+                            // Dismiss the view after successful save
                             self.dismiss()
                         } else {
-                            self.alertMessage = "Failed to send credentials email (Status: \(httpResponse.statusCode))"
+                            // Lab admin was created in database, but email failed
+                            self.alertMessage = "Lab admin created, but failed to send credentials email (Status: \(httpResponse.statusCode))"
                             self.showAlert = true
+                            // Still call onSave as the database operation was successful
+                            self.onSave(activity)
                         }
                     }
                 }

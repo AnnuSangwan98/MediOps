@@ -106,7 +106,7 @@ class AdminController {
     // MARK: - Doctor Management
     
     /// Register a new doctor
-    func createDoctor(email: String, password: String, name: String, specialization: String, hospitalAdminId: String) async throws -> (Models.Doctor, String) {
+    func createDoctor(email: String, password: String, name: String, specialization: String, hospitalAdminId: String) async throws -> (Doctor, String) {
         // 1. Register the base user
         let authResponse = try await userController.register(
             email: email,
@@ -134,7 +134,7 @@ class AdminController {
         try await supabase.insert(into: "doctors", data: doctorData)
         
         // 3. Return doctor object and token
-        let doctor = Models.Doctor(
+        let doctor = Doctor(
             id: doctorId,
             userId: authResponse.user.id,
             name: name,
@@ -148,7 +148,7 @@ class AdminController {
     }
     
     /// Get doctor by ID
-    func getDoctor(id: String) async throws -> Models.Doctor {
+    func getDoctor(id: String) async throws -> Doctor {
         let doctors = try await supabase.select(
             from: "doctors", 
             where: "id", 
@@ -163,7 +163,7 @@ class AdminController {
     }
     
     /// Get doctors by hospital admin ID
-    func getDoctorsByHospitalAdmin(hospitalAdminId: String) async throws -> [Models.Doctor] {
+    func getDoctorsByHospitalAdmin(hospitalAdminId: String) async throws -> [Doctor] {
         let doctors = try await supabase.select(
             from: "doctors", 
             where: "hospital_admin_id", 
@@ -175,50 +175,48 @@ class AdminController {
     
     // MARK: - Lab Admin Management
     
-    /// Register a new lab admin
-    func createLabAdmin(email: String, password: String, name: String, qualification: String, hospitalAdminId: String) async throws -> (Models.LabAdmin, String) {
-        // 1. Register the base user
-        let authResponse = try await userController.register(
-            email: email,
-            password: password,
-            username: name,
-            role: .labAdmin
-        )
-        
-        // 2. Create lab admin record
-        let labAdminId = UUID().uuidString
+    /// Register a new lab admin (independent of users table)
+    func createLabAdmin(email: String, password: String, name: String, labName: String, hospitalAdminId: String, contactNumber: String = "", department: String = "Pathology & Laboratory") async throws -> (LabAdmin, String) {
+        // Generate a LAB-prefixed ID
+        let labAdminId = "LAB" + String(format: "%03d", Int.random(in: 1...999))
         let now = Date()
         let dateFormatter = ISO8601DateFormatter()
         let createdAt = dateFormatter.string(from: now)
         
+        // Create lab admin record directly (no user record)
         let labAdminData: [String: String] = [
             "id": labAdminId,
-            "user_id": authResponse.user.id,
+            "hospital_id": hospitalAdminId,
+            "password": password,
             "name": name,
-            "qualification": qualification,
-            "hospital_admin_id": hospitalAdminId,
+            "email": email,
+            "contact_number": contactNumber,
+            "department": department,
+            "Address": "", // Default empty address
             "created_at": createdAt,
             "updated_at": createdAt
         ]
         
         try await supabase.insert(into: "lab_admins", data: labAdminData)
         
-        // 3. Return lab admin object and token
-        let labAdmin = Models.LabAdmin(
+        // Return lab admin object with a dummy token
+        let labAdmin = LabAdmin(
             id: labAdminId,
-            userId: authResponse.user.id,
+            hospitalId: hospitalAdminId,
             name: name,
-            qualification: qualification,
-            hospitalAdminId: hospitalAdminId,
+            email: email,
+            contactNumber: contactNumber,
+            department: department,
+            address: "",
             createdAt: now,
             updatedAt: now
         )
         
-        return (labAdmin, authResponse.token)
+        return (labAdmin, "lab-admin-token") // Return a dummy token
     }
     
     /// Get lab admin by ID
-    func getLabAdmin(id: String) async throws -> Models.LabAdmin {
+    func getLabAdmin(id: String) async throws -> LabAdmin {
         let labAdmins = try await supabase.select(
             from: "lab_admins", 
             where: "id", 
@@ -233,10 +231,10 @@ class AdminController {
     }
     
     /// Get lab admins by hospital admin ID
-    func getLabAdmins(hospitalAdminId: String) async throws -> [Models.LabAdmin] {
+    func getLabAdmins(hospitalAdminId: String) async throws -> [LabAdmin] {
         let labAdmins = try await supabase.select(
             from: "lab_admins",
-            where: "hospital_admin_id",
+            where: "hospital_id",
             equals: hospitalAdminId
         )
         
@@ -244,14 +242,17 @@ class AdminController {
     }
     
     /// Update lab admin
-    func updateLabAdmin(_ labAdmin: Models.LabAdmin) async throws {
+    func updateLabAdmin(_ labAdmin: LabAdmin) async throws {
         let now = Date()
         let dateFormatter = ISO8601DateFormatter()
         let updatedAt = dateFormatter.string(from: now)
         
         let labAdminData: [String: String] = [
             "name": labAdmin.name,
-            "qualification": labAdmin.qualification,
+            "email": labAdmin.email,
+            "contact_number": labAdmin.contactNumber,
+            "department": labAdmin.department,
+            "Address": labAdmin.address,
             "updated_at": updatedAt
         ]
         
@@ -275,7 +276,7 @@ class AdminController {
     // MARK: - Activity Management
     
     /// Create a new activity
-    func createActivity(type: String, title: String, doctorId: String? = nil, labAdminId: String? = nil) async throws -> Models.Activity {
+    func createActivity(type: String, title: String, doctorId: String? = nil, labAdminId: String? = nil) async throws -> Activity {
         let activityId = UUID().uuidString
         let now = Date()
         let dateFormatter = ISO8601DateFormatter()
@@ -301,7 +302,7 @@ class AdminController {
         
         try await supabase.insert(into: "activities", data: activityData)
         
-        return Models.Activity(
+        return Activity(
             id: activityId,
             type: type,
             title: title,
@@ -313,7 +314,7 @@ class AdminController {
     }
     
     /// Get activities by status
-    func getActivities(status: String? = nil) async throws -> [Models.Activity] {
+    func getActivities(status: String? = nil) async throws -> [Activity] {
         var activities: [[String: Any]]
         
         if let status = status {
@@ -330,7 +331,7 @@ class AdminController {
     }
     
     /// Update activity status
-    func updateActivityStatus(id: String, status: String) async throws -> Models.Activity {
+    func updateActivityStatus(id: String, status: String) async throws -> Activity {
         let updateData: [String: String] = [
             "status": status,
             "timestamp": ISO8601DateFormatter().string(from: Date())
@@ -462,7 +463,7 @@ class AdminController {
         )
     }
     
-    private func parseDoctorData(_ data: [String: Any]) throws -> Models.Doctor {
+    private func parseDoctorData(_ data: [String: Any]) throws -> Doctor {
         guard
             let id = data["id"] as? String,
             let userId = data["user_id"] as? String,
@@ -484,7 +485,7 @@ class AdminController {
             throw AdminError.invalidData
         }
         
-        return Models.Doctor(
+        return Doctor(
             id: id,
             userId: userId,
             name: name,
@@ -495,40 +496,87 @@ class AdminController {
         )
     }
     
-    private func parseLabAdminData(_ data: [String: Any]) throws -> Models.LabAdmin {
-        guard
-            let id = data["id"] as? String,
-            let userId = data["user_id"] as? String,
-            let name = data["name"] as? String,
-            let qualification = data["qualification"] as? String,
-            let hospitalAdminId = data["hospital_admin_id"] as? String,
-            let createdAtString = data["created_at"] as? String,
-            let updatedAtString = data["updated_at"] as? String
-        else {
+    private func parseLabAdminData(_ data: [String: Any]) throws -> LabAdmin {
+        // Print the raw data for debugging
+        print("PARSE LAB ADMIN: Raw data: \(data)")
+        
+        // Check for required fields
+        guard let id = data["id"] as? String else {
+            print("PARSE LAB ADMIN ERROR: Missing id field")
             throw AdminError.invalidData
         }
         
+        guard let hospitalId = data["hospital_id"] as? String else {
+            print("PARSE LAB ADMIN ERROR: Missing hospital_id field")
+            throw AdminError.invalidData
+        }
+        
+        guard let name = data["name"] as? String else {
+            print("PARSE LAB ADMIN ERROR: Missing name field")
+            throw AdminError.invalidData
+        }
+        
+        guard let email = data["email"] as? String else {
+            print("PARSE LAB ADMIN ERROR: Missing email field")
+            throw AdminError.invalidData
+        }
+        
+        // Department might be stored as lab_name in some records
+        let department: String
+        if let dept = data["department"] as? String {
+            department = dept
+        } else if let labName = data["lab_name"] as? String {
+            department = labName
+        } else {
+            print("PARSE LAB ADMIN ERROR: Missing department/lab_name field")
+            department = "Unknown Department" // Provide a default value
+        }
+        
+        // Handle date fields with better error recovery
         let dateFormatter = ISO8601DateFormatter()
+        let now = Date() // Default to current date if parsing fails
         
-        guard
-            let createdAt = dateFormatter.date(from: createdAtString),
-            let updatedAt = dateFormatter.date(from: updatedAtString)
-        else {
-            throw AdminError.invalidData
+        var createdAt = now
+        if let createdAtString = data["created_at"] as? String {
+            createdAt = dateFormatter.date(from: createdAtString) ?? now
+        } else {
+            print("PARSE LAB ADMIN WARNING: Missing created_at field, using current date")
         }
         
-        return Models.LabAdmin(
+        var updatedAt = now
+        if let updatedAtString = data["updated_at"] as? String {
+            updatedAt = dateFormatter.date(from: updatedAtString) ?? now
+        } else {
+            print("PARSE LAB ADMIN WARNING: Missing updated_at field, using current date")
+        }
+        
+        // Optional fields
+        let contactNumber = data["contact_number"] as? String ?? ""
+        
+        // Handle address field which might have inconsistent capitalization
+        let address: String
+        if let addr = data["Address"] as? String {
+            address = addr
+        } else if let addr = data["address"] as? String {
+            address = addr
+        } else {
+            address = ""
+        }
+        
+        return LabAdmin(
             id: id,
-            userId: userId,
+            hospitalId: hospitalId,
             name: name,
-            qualification: qualification,
-            hospitalAdminId: hospitalAdminId,
+            email: email,
+            contactNumber: contactNumber,
+            department: department,
+            address: address,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
     }
     
-    private func parseActivityData(_ data: [String: Any]) throws -> Models.Activity {
+    private func parseActivityData(_ data: [String: Any]) throws -> Activity {
         guard
             let id = data["id"] as? String,
             let type = data["type"] as? String,
@@ -545,7 +593,7 @@ class AdminController {
         let doctorId = data["doctor_id"] as? String
         let labAdminId = data["lab_admin_id"] as? String
         
-        return Models.Activity(
+        return Activity(
             id: id,
             type: type,
             title: title,

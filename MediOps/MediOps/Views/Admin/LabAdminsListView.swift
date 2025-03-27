@@ -131,23 +131,43 @@ struct LabAdminsListView: View {
     private func fetchLabAdmins() async {
         isLoading = true
         do {
-            let hospitalAdminId = "YOUR_HOSPITAL_ADMIN_ID" // Replace with actual hospital admin ID
+            // Get the current user's hospital admin ID or use a fallback
+            var hospitalAdminId = "HOS001"
+            
+            // Try to get the current user's hospital admin ID if available
+            if let currentUser = try? await UserController.shared.getCurrentUser(),
+               let hospitalAdmin = try? await adminController.getHospitalAdminByUserId(userId: currentUser.id) {
+                hospitalAdminId = hospitalAdmin.id
+                print("FETCH LAB ADMINS: Using hospital admin ID: \(hospitalAdminId)")
+            } else {
+                print("FETCH LAB ADMINS: Using fallback hospital admin ID: \(hospitalAdminId)")
+            }
+            
+            print("FETCH LAB ADMINS: Requesting lab admins for hospital: \(hospitalAdminId)")
             let fetchedLabAdmins = try await adminController.getLabAdmins(hospitalAdminId: hospitalAdminId)
+            print("FETCH LAB ADMINS: Successfully retrieved \(fetchedLabAdmins.count) lab admins")
+            
             labAdmins = fetchedLabAdmins.map { labAdmin in
-                UILabAdmin(
+                print("FETCH LAB ADMINS: Processing lab admin ID: \(labAdmin.id), Name: \(labAdmin.name)")
+                return UILabAdmin(
                     id: UUID(uuidString: labAdmin.id) ?? UUID(),
                     fullName: labAdmin.name,
-                    email: "", // Add these fields to your Models.LabAdmin if needed
-                    phone: "",
+                    email: labAdmin.email,
+                    phone: labAdmin.contactNumber.isEmpty ? "" : labAdmin.contactNumber,
                     gender: .male,
                     dateOfBirth: Date(),
                     experience: 0,
-                    qualification: labAdmin.qualification,
-                    address: ""
+                    qualification: labAdmin.department, // Use department instead of labName
+                    address: labAdmin.address
                 )
             }
         } catch {
-            errorMessage = "Failed to fetch lab admins: \(error.localizedDescription)"
+            print("FETCH LAB ADMINS ERROR: \(error.localizedDescription)")
+            if let adminError = error as? AdminError {
+                errorMessage = "Failed to fetch lab admins: \(adminError.errorDescription ?? "Unknown error")"
+            } else {
+                errorMessage = "Failed to fetch lab admins: \(error.localizedDescription)"
+            }
             showError = true
         }
         isLoading = false
@@ -157,40 +177,111 @@ struct LabAdminsListView: View {
         Task {
             isLoading = true
             do {
-                let hospitalAdminId = "YOUR_HOSPITAL_ADMIN_ID" // Replace with actual hospital admin ID
+                // Get the current user's hospital admin ID or use a fallback
+                var hospitalAdminId = "HOS001"
+                
+                // Try to get the current user's hospital admin ID if available
+                if let currentUser = try? await UserController.shared.getCurrentUser(),
+                   let hospitalAdmin = try? await adminController.getHospitalAdminByUserId(userId: currentUser.id) {
+                    hospitalAdminId = hospitalAdmin.id
+                    print("ADD LAB ADMIN: Using hospital admin ID: \(hospitalAdminId)")
+                } else {
+                    print("ADD LAB ADMIN: Using fallback hospital admin ID: \(hospitalAdminId)")
+                }
+                
+                // Generate a secure password that meets the constraints
+                let password = generateSecurePassword()
+                
+                print("ADD LAB ADMIN: Creating lab admin for hospital: \(hospitalAdminId)")
                 let (_, _) = try await adminController.createLabAdmin(
                     email: labAdmin.email,
-                    password: "tempPassword123", // You should generate a secure password
+                    password: password,
                     name: labAdmin.fullName,
-                    qualification: labAdmin.qualification,
-                    hospitalAdminId: hospitalAdminId
+                    labName: labAdmin.qualification, // Maps to department field
+                    hospitalAdminId: hospitalAdminId,
+                    contactNumber: labAdmin.phone.replacingOccurrences(of: "+91", with: ""), // Remove country code for 10-digit format
+                    department: "Pathology & Laboratory" // Fixed to match the constraint
                 )
+                
+                print("ADD LAB ADMIN: Successfully created lab admin")
                 await fetchLabAdmins() // Refresh the list
             } catch {
-                errorMessage = "Failed to add lab admin: \(error.localizedDescription)"
+                print("ADD LAB ADMIN ERROR: \(error.localizedDescription)")
+                if let adminError = error as? AdminError {
+                    errorMessage = "Failed to add lab admin: \(adminError.errorDescription ?? "Unknown error")"
+                } else {
+                    errorMessage = "Failed to add lab admin: \(error.localizedDescription)"
+                }
                 showError = true
                 isLoading = false
             }
         }
     }
     
+    // Generate a password that meets the constraints in the lab_admins table
+    private func generateSecurePassword() -> String {
+        // Generate a password that meets all requirements (at least 8 chars, with uppercase, lowercase, digit, and special char)
+        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
+        let numbers = "0123456789"
+        let specialChars = "@$!%*?&"
+        
+        // Ensure at least one of each required character type
+        let guaranteedChars = [
+            String(uppercaseLetters.randomElement()!),
+            String(lowercaseLetters.randomElement()!),
+            String(numbers.randomElement()!),
+            String(specialChars.randomElement()!)
+        ]
+        
+        // Generate remaining characters (at least 4 more for a total of 8+)
+        let remainingLength = 8
+        let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
+        let remainingChars = (0..<remainingLength).map { _ in String(allChars.randomElement()!) }
+        
+        // Combine all characters and shuffle them
+        let passwordChars = guaranteedChars + remainingChars
+        return passwordChars.shuffled().joined()
+    }
+    
     private func updateLabAdmin(_ labAdmin: UILabAdmin) {
         Task {
             isLoading = true
             do {
-                let modelLabAdmin = Models.LabAdmin(
+                // Get the current user's hospital admin ID or use a fallback
+                var hospitalAdminId = "HOS001"
+                
+                // Try to get the current user's hospital admin ID if available
+                if let currentUser = try? await UserController.shared.getCurrentUser(),
+                   let hospitalAdmin = try? await adminController.getHospitalAdminByUserId(userId: currentUser.id) {
+                    hospitalAdminId = hospitalAdmin.id
+                    print("UPDATE LAB ADMIN: Using hospital admin ID: \(hospitalAdminId)")
+                } else {
+                    print("UPDATE LAB ADMIN: Using fallback hospital admin ID: \(hospitalAdminId)")
+                }
+                
+                print("UPDATE LAB ADMIN: Updating lab admin ID: \(labAdmin.id)")
+                let modelLabAdmin = LabAdmin(
                     id: labAdmin.id.uuidString,
-                    userId: "", // Add this field if needed
+                    hospitalId: hospitalAdminId, 
                     name: labAdmin.fullName,
-                    qualification: labAdmin.qualification,
-                    hospitalAdminId: "YOUR_HOSPITAL_ADMIN_ID", // Replace with actual hospital admin ID
+                    email: labAdmin.email,
+                    contactNumber: labAdmin.phone,
+                    department: labAdmin.qualification,
+                    address: labAdmin.address,
                     createdAt: Date(),
                     updatedAt: Date()
                 )
                 try await adminController.updateLabAdmin(modelLabAdmin)
+                print("UPDATE LAB ADMIN: Successfully updated lab admin")
                 await fetchLabAdmins() // Refresh the list
             } catch {
-                errorMessage = "Failed to update lab admin: \(error.localizedDescription)"
+                print("UPDATE LAB ADMIN ERROR: \(error.localizedDescription)")
+                if let adminError = error as? AdminError {
+                    errorMessage = "Failed to update lab admin: \(adminError.errorDescription ?? "Unknown error")"
+                } else {
+                    errorMessage = "Failed to update lab admin: \(error.localizedDescription)"
+                }
                 showError = true
                 isLoading = false
             }
@@ -201,10 +292,17 @@ struct LabAdminsListView: View {
         Task {
             isLoading = true
             do {
+                print("DELETE LAB ADMIN: Deleting lab admin ID: \(labAdmin.id)")
                 try await adminController.deleteLabAdmin(id: labAdmin.id.uuidString)
+                print("DELETE LAB ADMIN: Successfully deleted lab admin")
                 await fetchLabAdmins() // Refresh the list
             } catch {
-                errorMessage = "Failed to delete lab admin: \(error.localizedDescription)"
+                print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
+                if let adminError = error as? AdminError {
+                    errorMessage = "Failed to delete lab admin: \(adminError.errorDescription ?? "Unknown error")"
+                } else {
+                    errorMessage = "Failed to delete lab admin: \(error.localizedDescription)"
+                }
                 showError = true
                 isLoading = false
             }

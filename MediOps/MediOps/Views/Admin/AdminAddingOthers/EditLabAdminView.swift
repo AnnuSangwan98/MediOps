@@ -98,7 +98,7 @@ struct EditLabAdminView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
-                        updateLabAdmin()
+                        updateLabAdminDetails()
                     }
                     .disabled(!isFormValid)
                 }
@@ -130,14 +130,18 @@ struct EditLabAdminView: View {
         return max(0, age - 25)
     }
     
-    private func updateLabAdmin() {
-        isLoading = true
+    private func updateLabAdminDetails() {
+        guard isFormValid else {
+            alertMessage = "Please fill out all required fields"
+            showAlert = true
+            return
+        }
         
         let updatedLabAdmin = UILabAdmin(
             id: labAdmin.id,
             fullName: fullName,
             email: email,
-            phone: "+91\(phoneNumber)",
+            phone: "+91" + phoneNumber,
             gender: gender,
             dateOfBirth: dateOfBirth,
             experience: experience,
@@ -145,13 +149,9 @@ struct EditLabAdminView: View {
             address: address
         )
         
-        // Call the update callback
+        // Call the onUpdate closure with the updated lab admin
         onUpdate(updatedLabAdmin)
-        
-        // Show success message
-        alertMessage = "Lab admin information updated successfully"
-        showAlert = true
-        isLoading = false
+        dismiss()
     }
     
     private func isValidEmail(_ email: String) -> Bool {

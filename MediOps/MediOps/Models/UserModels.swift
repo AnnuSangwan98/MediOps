@@ -112,19 +112,23 @@ enum Models {
     // MARK: - Lab Admin Model
     struct LabAdmin: Codable, Identifiable {
         let id: String
-        let userId: String
+        let hospitalId: String
         let name: String
-        let labName: String
-        let hospitalAdminId: String
+        let email: String
+        let contactNumber: String
+        let department: String
+        let address: String
         let createdAt: Date
         let updatedAt: Date
         
         enum CodingKeys: String, CodingKey {
             case id
-            case userId = "user_id"
+            case hospitalId = "hospital_id"
             case name
-            case labName = "lab_name"
-            case hospitalAdminId = "hospital_admin_id"
+            case email
+            case contactNumber = "contact_number"
+            case department
+            case address = "Address"
             case createdAt = "created_at"
             case updatedAt = "updated_at"
         }
@@ -168,4 +172,7 @@ typealias UserRole = Models.UserRole
 typealias User = Models.User
 typealias Patient = Models.Patient
 typealias HospitalAdmin = Models.HospitalAdmin
+typealias Doctor = Models.Doctor
+typealias LabAdmin = Models.LabAdmin
+typealias Activity = Models.Activity
 typealias AuthResponse = Models.AuthResponse 
