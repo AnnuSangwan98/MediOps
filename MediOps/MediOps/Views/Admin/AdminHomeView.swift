@@ -118,9 +118,6 @@ struct AdminHomeView: View {
                             Text("Admin Dashboard")
                                 .font(.title)
                                 .fontWeight(.bold)
-                            Text("Hospital Management System")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
                         }
                         Spacer()
                         
@@ -136,7 +133,7 @@ struct AdminHomeView: View {
                     .padding(.horizontal)
                     .padding(.top)
                     
-                    // Statistics Summary
+                    // Quick action
                     LazyVGrid(columns: [
                         GridItem(.flexible()),
                         GridItem(.flexible())
@@ -156,30 +153,7 @@ struct AdminHomeView: View {
                     }
                     .padding(.horizontal)
                     
-                    // Quick Actions Grid
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 20) {
-                        // Add Doctor
-                        AdminDashboardCard(
-                            title: "Add Doctor",
-                            icon: "stethoscope",
-                            color: .teal
-                        ) {
-                            showAddDoctor = true
-                        }
-                        
-                        // Add Lab Admin
-                        AdminDashboardCard(
-                            title: "Add Lab Admin",
-                            icon: "flask.fill",
-                            color: .teal
-                        ) {
-                            showAddLabAdmin = true
-                        }
-                    }
-                    .padding(.horizontal)
+                    
                     
                     // Recent Activity
                     VStack(alignment: .leading, spacing: 15) {

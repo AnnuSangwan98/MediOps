@@ -3,27 +3,26 @@ import SwiftUI
 struct AdminLoginView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var navigationState: AppNavigationState
-    
-    // State variables
-    @State private var email: String = ""
+    @State private var adminId: String = ""
     @State private var password: String = ""
+    @State private var showError: Bool = false
+    @State private var errorMessage: String = ""
+    @State private var isPasswordVisible: Bool = false
     @State private var isLoading = false
-    @State private var showError = false
-    @State private var errorMessage = ""
-    @State private var isPasswordVisible = false
+    @State private var navigateToAdminHome = false
     
     // Services
     private let authService = AuthService.shared
     private let userController = UserController.shared
     
-    // Validation
+    // Computed properties for validation
     private var isValidInput: Bool {
-        !email.isEmpty && !password.isEmpty &&
-        isValidEmail(email) && password.count >= 8
+        return !adminId.isEmpty && !password.isEmpty &&
+               isValidAdminId(adminId) && isValidPassword(password)
     }
     
     var body: some View {
-        NavigationStack {
+        NavigationView {
             ZStack {
                 // Background gradient
                 LinearGradient(
@@ -41,14 +40,12 @@ struct AdminLoginView: View {
                         .foregroundColor(.teal)
                     
                     VStack(spacing: 20) {
-                        // Email Field
+                        // Admin ID Field
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Email")
+                            Text("Admin ID")
                                 .foregroundColor(.gray)
-                            TextField("Enter your email", text: $email)
+                            TextField("Enter your admin ID", text: $adminId)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .textContentType(.emailAddress)
-                                .keyboardType(.emailAddress)
                                 .autocapitalization(.none)
                         }
                         
@@ -97,11 +94,6 @@ struct AdminLoginView: View {
                 }
                 .padding(.top, 50)
             }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(errorMessage)
-            }
             .navigationBarBackButtonHidden(true)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -111,6 +103,16 @@ struct AdminLoginView: View {
                     .foregroundColor(.teal)
                 }
             }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
+            .background(
+                NavigationLink(destination: HospitalAdminDashboardView(), isActive: $navigateToAdminHome) {
+                    EmptyView()
+                }
+            )
         }
     }
     
@@ -118,12 +120,11 @@ struct AdminLoginView: View {
         guard isValidInput else { return }
         
         isLoading = true
-        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         
         Task {
             do {
                 // Attempt to login
-                let authResponse = try await userController.login(email: normalizedEmail, password: password)
+                let authResponse = try await userController.login(email: adminId, password: password)
                 
                 // Verify the user is a hospital admin
                 guard authResponse.user.role == .hospitalAdmin else {
@@ -134,6 +135,8 @@ struct AdminLoginView: View {
                     isLoading = false
                     // Update navigation state and sign in as hospital admin
                     navigationState.signIn(as: .hospitalAdmin)
+                    // Navigate to admin dashboard
+                    navigateToAdminHome = true
                 }
             } catch let error as AuthError {
                 await MainActor.run {
@@ -151,9 +154,30 @@ struct AdminLoginView: View {
         }
     }
     
-    private func isValidEmail(_ email: String) -> Bool {
-        let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
-        return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email)
+    // Validates that the admin ID is in format HOS followed by numbers
+    private func isValidAdminId(_ id: String) -> Bool {
+        let adminIdRegex = #"^HOS\d+$"#
+        return NSPredicate(format: "SELF MATCHES %@", adminIdRegex).evaluate(with: id)
+    }
+    
+    // Validates password complexity
+    private func isValidPassword(_ password: String) -> Bool {
+        // At least 8 characters
+        guard password.count >= 8 else { return false }
+        
+        // Check for at least one uppercase letter
+        let uppercaseRegex = ".*[A-Z]+.*"
+        guard NSPredicate(format: "SELF MATCHES %@", uppercaseRegex).evaluate(with: password) else { return false }
+        
+        // Check for at least one number
+        let numberRegex = ".*[0-9]+.*"
+        guard NSPredicate(format: "SELF MATCHES %@", numberRegex).evaluate(with: password) else { return false }
+        
+        // Check for at least one special character
+        let specialCharRegex = ".*[@#$%^&*()\\-_=+\\[\\]{}|;:'\",.<>/?]+.*"
+        guard NSPredicate(format: "SELF MATCHES %@", specialCharRegex).evaluate(with: password) else { return false }
+        
+        return true
     }
 }
 

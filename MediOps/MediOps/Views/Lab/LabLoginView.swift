@@ -1,4 +1,6 @@
 import SwiftUI
+// Import custom components from the app
+import SwiftUI
 
 struct LabLoginView: View {
     @Environment(\.dismiss) private var dismiss
@@ -8,19 +10,11 @@ struct LabLoginView: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var isPasswordVisible: Bool = false
-    @State private var showChangePasswordSheet: Bool = false
-    @State private var newPassword: String = ""
-    @State private var confirmPassword: String = ""
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
         return !labId.isEmpty && !password.isEmpty &&
                isValidLabId(labId) && isValidPassword(password)
-    }
-    
-    private var isValidPasswordChange: Bool {
-        return !newPassword.isEmpty && !confirmPassword.isEmpty &&
-               newPassword == confirmPassword && isValidPassword(newPassword)
     }
     
     var body: some View {
@@ -62,7 +56,7 @@ struct LabLoginView: View {
                             .foregroundColor(.gray)
                         
                         TextField("Enter lab ID (e.g. LAB001)", text: $labId)
-                            .textFieldStyle(CustomTextFieldStyle())
+                            .textFieldStyle(LabTextFieldStyle())
                             .onChange(of: labId) { _, newValue in
                                 // Automatically format to uppercase for "LAB" part
                                 if newValue.count >= 3 {
@@ -84,10 +78,10 @@ struct LabLoginView: View {
                         ZStack {
                             if isPasswordVisible {
                                 TextField("Enter your password", text: $password)
-                                    .textFieldStyle(CustomTextFieldStyle())
+                                    .textFieldStyle(LabTextFieldStyle())
                             } else {
                                 SecureField("Enter your password", text: $password)
-                                    .textFieldStyle(CustomTextFieldStyle())
+                                    .textFieldStyle(LabTextFieldStyle())
                             }
                             
                             HStack {
@@ -139,32 +133,29 @@ struct LabLoginView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .navigationBarItems(leading: CustomBackButton())
+        .navigationBarItems(leading: LabBackButton())
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage)
         }
-        .sheet(isPresented: $showChangePasswordSheet) {
-            ChangePasswordSheet(
-                newPassword: $newPassword,
-                confirmPassword: $confirmPassword,
-                isValidInput: isValidPasswordChange,
-                onSubmit: handlePasswordChange
-            )
-        }
     }
     
     private func handleLogin() {
-        // Show change password sheet instead of direct login
-        showChangePasswordSheet = true
-    }
-    
-    private func handlePasswordChange() {
-        // All validation is now handled by the isValidPasswordChange computed property
-        // Close the sheet and proceed to login
-        showChangePasswordSheet = false
-        isLoggedIn = true
+        guard isValidLoginInput else { return }
+        
+        // Simulate authentication process
+        // In a real app, this would call your authentication service
+        
+        // Mock login verification
+        if labId.starts(with: "LAB") && isValidPassword(password) {
+            // Successful login
+            isLoggedIn = true
+        } else {
+            // Failed login
+            errorMessage = "Invalid lab ID or password. Please try again."
+            showError = true
+        }
     }
     
     // Validates that the lab ID is in format LAB followed by numbers
@@ -194,122 +185,8 @@ struct LabLoginView: View {
     }
 }
 
-struct ChangePasswordSheetForLab: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var newPassword: String
-    @Binding var confirmPassword: String
-    @State private var isNewPasswordVisible: Bool = false
-    @State private var isConfirmPasswordVisible: Bool = false
-    var isValidInput: Bool
-    var onSubmit: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            // Header
-            Text("Change Password")
-                .font(.system(size: 24, weight: .bold))
-                .foregroundColor(.teal)
-                .padding(.top, 20)
-            
-            // Form fields
-            VStack(spacing: 20) {
-                // New Password field with toggle
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("New Password")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    
-                    ZStack {
-                        if isNewPasswordVisible {
-                            TextField("Enter new password", text: $newPassword)
-                                .textFieldStyle(CustomTextFieldStyle())
-                        } else {
-                            SecureField("Enter new password", text: $newPassword)
-                                .textFieldStyle(CustomTextFieldStyle())
-                        }
-                        
-                        HStack {
-                            Spacer()
-                            Button(action: {
-                                isNewPasswordVisible.toggle()
-                            }) {
-                                Image(systemName: isNewPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                                    .foregroundColor(.gray)
-                                    .padding(.trailing, 16)
-                            }
-                        }
-                    }
-                    
-                    Text("Must contain at least 8 characters, one uppercase letter, one number, and one special character")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .padding(.top, 4)
-                }
-                
-                // Confirm Password field with toggle
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Confirm Password")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    
-                    ZStack {
-                        if isConfirmPasswordVisible {
-                            TextField("Confirm new password", text: $confirmPassword)
-                                .textFieldStyle(CustomTextFieldStyle())
-                        } else {
-                            SecureField("Confirm new password", text: $confirmPassword)
-                                .textFieldStyle(CustomTextFieldStyle())
-                        }
-                        
-                        HStack {
-                            Spacer()
-                            Button(action: {
-                                isConfirmPasswordVisible.toggle()
-                            }) {
-                                Image(systemName: isConfirmPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                                    .foregroundColor(.gray)
-                                    .padding(.trailing, 16)
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            
-            // Submit Button
-            Button(action: onSubmit) {
-                Text("Submit")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 55)
-                    .background(
-                        LinearGradient(gradient: Gradient(colors: [
-                            isValidInput ? Color.teal : Color.gray.opacity(0.5),
-                            isValidInput ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
-                        ]),
-                        startPoint: .leading,
-                        endPoint: .trailing)
-                    )
-                    .cornerRadius(15)
-                    .shadow(color: isValidInput ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
-            }
-            .disabled(!isValidInput)
-            .padding(.horizontal, 20)
-            .padding(.top, 10)
-            
-            Spacer()
-        }
-        .padding(.top, 20)
-        .background(Color.white)
-        .cornerRadius(20)
-        .shadow(radius: 10)
-    }
-}
-
 // Custom TextField Style
-struct CustomTextFieldStyleForLab: TextFieldStyle {
+struct LabTextFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .padding()
@@ -320,7 +197,7 @@ struct CustomTextFieldStyleForLab: TextFieldStyle {
 }
 
 // Custom Back Button
-struct CustomBackButtonForLab: View {
+struct LabBackButton: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {

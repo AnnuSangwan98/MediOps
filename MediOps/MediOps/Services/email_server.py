@@ -216,7 +216,7 @@ def handle_send_credentials():
             license_number = details.get('licenseNumber')
             template_path = os.path.join(os.path.dirname(__file__), '../templates/hospital_admin.html')
             print(f"Loading template from {os.path.abspath(template_path)}")
-            subject = "MediOps - Your Hospital Admin Account Credentials"c
+            subject = "MediOps - Your Hospital Admin Account Credentials"
             placeholders = {
                 '{{fullName}}': full_name,
                 '{{hospitalName}}': hospital_name,
