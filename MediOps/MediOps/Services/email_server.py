@@ -78,7 +78,7 @@ def generate_secure_password():
     special = random.choice("!@#$%^&*()")
     rest = ''.join(random.choices(string.ascii_letters + string.digits + "!@#$%^&*()", k=4))
     password = upper + lower + digit + special + rest
-    return ''.join(random.sample(password, len(password)))  # Shuffle to randomize
+    return ''.join(random.sample(password, len(password)))
 
 def send_email(to_email, subject, html_content):
     try:
@@ -216,7 +216,7 @@ def handle_send_credentials():
             license_number = details.get('licenseNumber')
             template_path = os.path.join(os.path.dirname(__file__), '../templates/hospital_admin.html')
             print(f"Loading template from {os.path.abspath(template_path)}")
-            subject = "MediOps - Your Hospital Admin Account Credentials"
+            subject = "MediOps - Your Hospital Admin Account Credentials"c
             placeholders = {
                 '{{fullName}}': full_name,
                 '{{hospitalName}}': hospital_name,
