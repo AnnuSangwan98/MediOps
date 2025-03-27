@@ -194,8 +194,8 @@ def generate_lab_admin_id():
     return f'LAB{str(number).zfill(3)}'
 
 def generate_hospital_admin_id():
-    number = random.randint(1, 999)
-    return f'HOS{str(number).zfill(3)}'
+    # Hospital ID is now provided by super admin
+    return None
 
 @app.route('/send-credentials', methods=['POST'])
 def handle_send_credentials():
@@ -271,9 +271,11 @@ def handle_send_credentials():
             }
             generated_id = doctor_id
         elif account_type == 'hospital':
-            admin_id = generate_hospital_admin_id()
-            hospital_name = details.get('hospitalName')
             hospital_id = details.get('hospitalId')
+            if not hospital_id:
+                return jsonify({"status": "error", "message": "Hospital ID is required"}), 400
+            admin_id = hospital_id
+            hospital_name = details.get('hospitalName')
             street = details.get('street')
             city = details.get('city')
             state = details.get('state')
