@@ -1,76 +1,40 @@
 from flask import Flask, request, jsonify
-import time
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 import random
 import string
 from threading import Lock
 from typing import Dict, Tuple
 
-# Secure in-memory storage for credentials
+# Secure in-memory storage for doctor credentials
 class CredentialStore:
     def __init__(self):
-        self._store: Dict[str, Tuple[str, datetime, str]] = {}
+        self._store: Dict[str, Tuple[str, datetime]] = {}
         self._lock = Lock()
         self._expiry_time = timedelta(hours=1)
     
-    def store_credentials(self, user_id: str, password: str, user_type: str):
+    def store_credentials(self, doctor_id: str, password: str) -> None:
         with self._lock:
-            # Normalize user type for consistent storage
-            normalized_type = user_type.lower()
-            self._store[user_id] = (password, datetime.now(), normalized_type)
-            print(f"Stored credentials for {user_type} user {user_id} with password {password}")
+            self._store[doctor_id] = (password, datetime.now())
             self._cleanup_expired()
     
-    def validate_credentials(self, user_id: str, password: str, user_type: str) -> Tuple[bool, str]:
-        print(f"Validating credentials - userType: {user_type}, userId: {user_id}, password: {password}")
+    def validate_credentials(self, doctor_id: str, password: str) -> bool:
         with self._lock:
             self._cleanup_expired()
-            if user_id not in self._store:
-                print(f"Credentials not found for {user_type} user {user_id}")
-                return False, f"Credentials not found for {user_type} user"
-            
-            stored_password, timestamp, stored_type = self._store[user_id]
-            if datetime.now() - timestamp > self._expiry_time:
-                del self._store[user_id]
-                print(f"Credentials expired for user {user_id}")
-                return False, "Credentials expired"
-            
-            # Normalize user types for comparison
-            normalized_input_type = user_type.lower()
-            normalized_stored_type = stored_type.lower()
-
-            if normalized_stored_type == 'lab_admin':
-                normalized_stored_type = 'lab'
-            
-            if normalized_stored_type != normalized_input_type:
-                print(f"Type mismatch for user {user_id}: expected {normalized_stored_type}, got {normalized_input_type}")
-                return False, "Invalid user type"
-                
-            if stored_password != password:
-                print(f"Invalid password for user {user_id}")
-                return False, "Invalid password"
-                
-            print(f"Successful validation for {user_type} user {user_id}")
-            return True, ""
-    
-    def get_remaining_time(self, user_id: str) -> int:
-        with self._lock:
-            if user_id not in self._store:
-                return 0
-            _, timestamp, _ = self._store[user_id]
-            remaining = self._expiry_time - (datetime.now() - timestamp)
-            return max(0, int(remaining.total_seconds()))
+            if doctor_id not in self._store:
+                return False
+            stored_password, _ = self._store[doctor_id]
+            return stored_password == password
     
     def _cleanup_expired(self) -> None:
         current_time = datetime.now()
-        expired = [user_id for user_id, (_, timestamp, _) in self._store.items()
+        expired = [doc_id for doc_id, (_, timestamp) in self._store.items()
                   if current_time - timestamp > self._expiry_time]
-        for user_id in expired:
-            del self._store[user_id]
+        for doc_id in expired:
+            del self._store[doc_id]
 
 # Initialize credential store
 credential_store = CredentialStore()
@@ -114,7 +78,7 @@ def generate_secure_password():
     special = random.choice("!@#$%^&*()")
     rest = ''.join(random.choices(string.ascii_letters + string.digits + "!@#$%^&*()", k=4))
     password = upper + lower + digit + special + rest
-    return ''.join(random.sample(password, len(password)))  # Shuffle to randomize
+    return ''.join(random.sample(password, len(password)))
 
 def send_email(to_email, subject, html_content):
     try:
@@ -172,9 +136,11 @@ def handle_send_email():
                 return jsonify({"status": "success", "message": "Email already sent recently"}), 200
 
         # Load OTP template
-        template_path = os.path.join(os.path.dirname(__file__), 'templates/email_template.html')
+        template_path = os.path.join(os.path.dirname(__file__), '../templates/email_template.html')
+        print(f"Loading template from {os.path.abspath(template_path)}")
         with open(template_path, 'r') as file:
             html_content = file.read()
+        print("Successfully loaded template")
         
         # Fill OTP placeholders {1} to {6}
         for idx, digit in enumerate(otp, start=1):
@@ -213,38 +179,6 @@ def handle_send_credentials():
         if not account_type:
             return jsonify({"status": "error", "message": "Account type is required"}), 400
             
-        # Generate credentials
-        password = generate_secure_password()
-        generated_id = None
-        
-        if account_type == 'lab':
-            generated_id = generate_lab_admin_id()
-            # Store credentials in memory for temporary access
-            credential_store.store_credentials(generated_id, password, 'lab')
-            print(f"Stored temporary credentials for lab admin {generated_id}")
-            
-            # Set expiration time for credentials
-            expiry_time = credential_store.get_remaining_time(generated_id)
-            print(f"Lab admin credentials will expire in {expiry_time} seconds")
-            
-        # Store credentials in memory for temporary access
-        if generated_id and password:
-            credential_store.store_credentials(generated_id, password, account_type)
-            print(f"Stored temporary credentials for {account_type} user {generated_id}")
-            
-            # Set expiration time for credentials
-            expiry_time = credential_store.get_remaining_time(generated_id)
-            print(f"Credentials will expire in {expiry_time} seconds")
-            
-        to_email = data.get('to')
-        if not to_email:
-            return jsonify({"status": "error", "message": "Email address is required"}), 400
-            
-        details = data.get('details', {})
-        account_type = data.get('accountType')
-        if not account_type:
-            return jsonify({"status": "error", "message": "Account type is required"}), 400
-            
         full_name = details.get('fullName')
         phone = details.get('phone')
         
@@ -258,7 +192,8 @@ def handle_send_credentials():
             doctor_id = generate_doctor_id()
             specialization = details.get('specialization')
             license_num = details.get('license')
-            template_path = os.path.join(os.path.dirname(__file__), 'templates/doctor_credentials.html')
+            template_path = os.path.join(os.path.dirname(__file__), '../templates/doctor_credentials.html')
+            print(f"Loading template from {os.path.abspath(template_path)}")
             subject = "MediOps - Your Doctor Account Credentials"
             placeholders = {
                 '{{fullName}}': full_name,
@@ -279,8 +214,9 @@ def handle_send_credentials():
             state = details.get('state')
             zip_code = details.get('zipCode')
             license_number = details.get('licenseNumber')
-            template_path = os.path.join(os.path.dirname(__file__), 'templates/hospital_admin.html')
-            subject = "MediOps - Your Hospital Admin Account Credentials"
+            template_path = os.path.join(os.path.dirname(__file__), '../templates/hospital_admin.html')
+            print(f"Loading template from {os.path.abspath(template_path)}")
+            subject = "MediOps - Your Hospital Admin Account Credentials"c
             placeholders = {
                 '{{fullName}}': full_name,
                 '{{hospitalName}}': hospital_name,
@@ -296,19 +232,22 @@ def handle_send_credentials():
             }
             generated_id = admin_id
         else:  # Lab Admin
-            lab_id = generate_lab_admin_id()
+            admin_id = generate_lab_admin_id()
             lab_name = details.get('labName', 'Main Laboratory')
-            template_path = os.path.join(os.path.dirname(__file__), 'templates/lab_admin.html')
+            lab_id = details.get('labId', 'LAB001')
+            template_path = os.path.join(os.path.dirname(__file__), '../templates/lab_admin.html')
+            print(f"Loading template from {os.path.abspath(template_path)}")
             subject = "MediOps - Your Lab Admin Account Credentials"
             placeholders = {
                 '{{fullName}}': full_name,
-                '{{labId}}': lab_id,
+                '{{adminId}}': admin_id,
                 '{{email}}': to_email,
                 '{{password}}': password,
                 '{{labName}}': lab_name,
+                '{{labId}}': lab_id,
                 '{{phone}}': phone
             }
-            generated_id = lab_id
+            generated_id = admin_id
 
         # Prevent spam within 5 seconds window
         current_time = datetime.now()
@@ -338,18 +277,13 @@ def handle_send_credentials():
             return jsonify({"status": "error", "message": "Error processing email template"}), 500
 
         if send_email(to_email, subject, html_content):
-            # Store credentials with normalized user type
-            normalized_type = account_type.lower()
-            credential_store.store_credentials(generated_id, password, normalized_type)
-            
-            # Log successful credential storage
-            print(f"Credentials stored for {normalized_type} account: {generated_id}")
-            
+            # Store credentials if it's a doctor account
+            if account_type == 'doctor':
+                credential_store.store_credentials(generated_id, password)
             return jsonify({
                 "status": "success",
                 "id": generated_id,
-                "password": password,
-                "type": normalized_type
+                "password": password
             }), 200
         else:
             return jsonify({"status": "error", "message": "Failed to send credentials email"}), 500
@@ -357,113 +291,36 @@ def handle_send_credentials():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/validate-credentials', methods=['POST'])
-def validate_user_credentials():
-    print(f"Received credential validation request: {request.json}")
+@app.route('/validate-doctor', methods=['POST'])
+def validate_doctor_credentials():
     try:
-        # Validate request data and headers
-        if not request.is_json:
-            return jsonify({
-                "status": "error",
-                "message": "Content-Type must be application/json",
-                "valid": False,
-                "data": None
-            }), 415
-
         data = request.json
         if not data:
-            return jsonify({
-                "status": "error",
-                "message": "No data provided",
-                "valid": False,
-                "data": None
-            }), 400
+            return jsonify({"status": "error", "message": "No data provided"}), 400
             
-        user_id = data.get('userId')
+        doctor_id = data.get('doctorId')
         password = data.get('password')
-        user_type = data.get('userType', 'doctor')
         
-        # Validate required fields
-        if not user_id or not password:
-            missing_fields = []
-            if not user_id: missing_fields.append('userId')
-            if not password: missing_fields.append('password')
-            return jsonify({
-                "status": "error",
-                "message": f"Missing required fields: {', '.join(missing_fields)}",
-                "valid": False,
-                "data": None
-            }), 400
+        if not doctor_id or not password:
+            return jsonify({"status": "error", "message": "Doctor ID and password are required"}), 400
             
-        # Validate user type
-        valid_user_types = ['doctor', 'lab', 'hospital']
-        if user_type not in valid_user_types:
-            return jsonify({
-                "status": "error",
-                "message": f"Invalid user type. Must be one of: {', '.join(valid_user_types)}",
-                "valid": False,
-                "data": None
-            }), 400
-            
-            
-        # Validate ID format based on user type
-        id_prefix_map = {
-            'doctor': 'DOC',
-            'lab': 'LAB',
-            'hospital': 'HOS'
-        }
-        expected_prefix = id_prefix_map.get(user_type)
-        if not user_id.startswith(expected_prefix):
-            return jsonify({
-                "status": "error",
-                "message": f"Invalid {user_type} ID format. Must start with {expected_prefix}",
-                "valid": False,
-                "data": None
-            }), 400
-            
-        # Rate limiting check (implement if needed)
-        # TODO: Add rate limiting logic here
-            
-        # Validate credentials
-        is_valid, error_message = credential_store.validate_credentials(user_id, password, user_type)
+        is_valid = credential_store.validate_credentials(doctor_id, password)
         
-        if not is_valid:
-            # Log failed attempt with timestamp and specific error
-            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{current_time}] Failed login attempt - Type: {user_type}, ID: {user_id}, Reason: {error_message}")
-            return jsonify({
-                "status": "error",
-                "message": error_message,
-                "valid": False,
-                "data": None
-            }), 401
-        
-        # Return successful validation response
-        remaining_time = credential_store.get_remaining_time(user_id)
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"[{current_time}] Successful login - Type: {user_type}, ID: {user_id}")
         return jsonify({
             "status": "success",
-            "message": "Authentication successful",
-            "valid": True,
-            "data": {
-                "userId": user_id,
-                "userType": user_type,
-                "remainingTime": remaining_time
-            }
+            "valid": is_valid
         }), 200
-    except Exception as e:
-        # Log the error for debugging
-        print(f"Error in validate_user_credentials: {str(e)}")
-        return jsonify({
-            "status": "error",
-            "message": "Unable to process server response",
-            "valid": False,
-            "data": None
-        }), 500
             
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e), "valid": False, "data": None}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8082, debug=True)
+    app.run(
+        host='0.0.0.0',
+        port=8082,
+        debug=True,
+        threaded=True,
+        use_reloader=True,
+        ssl_context=None  # Disable SSL for development
+    )
+

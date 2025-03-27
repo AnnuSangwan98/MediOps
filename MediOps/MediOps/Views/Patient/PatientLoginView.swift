@@ -11,13 +11,15 @@ struct PatientLoginView: View {
     @State private var showForgotPassword = false
     @State private var isLoading = false
     @State private var currentOTP: String = ""
+    @State private var navigationPath = NavigationPath()
+    @State private var isAuthenticated = false
     
     private var isloginButtonEnabled: Bool {
         !email.isEmpty && !password.isEmpty && isValidEmail(email) && password.count >= 8
     }
     
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 // Background gradient
                 LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
@@ -81,14 +83,13 @@ struct PatientLoginView: View {
                             .frame(maxWidth: .infinity, alignment: .trailing)
                             .padding(.top, 4)
                         }
-                        
                         Button(action: handleLogin) {
                             HStack {
                                 if isLoading {
                                     ProgressView()
                                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                 } else {
-                                    Text("Login")
+                                    Text("Proceed")
                                         .font(.title3)
                                         .fontWeight(.semibold)
                                     Image(systemName: "arrow.right")
@@ -103,16 +104,19 @@ struct PatientLoginView: View {
                                 LinearGradient(gradient: Gradient(colors: [Color.teal, Color.teal.opacity(0.8)]),
                                                startPoint: .leading,
                                                endPoint: .trailing) :
-                                LinearGradient(gradient: Gradient(colors: [Color.gray, Color.gray]),
-                                               startPoint: .leading,
-                                               endPoint: .trailing)
+                                    LinearGradient(gradient: Gradient(colors: [Color.gray, Color.gray]),
+                                                   startPoint: .leading,
+                                                   endPoint: .trailing)
                             )
                             .cornerRadius(15)
                             .shadow(color: isloginButtonEnabled ? .teal.opacity(0.3) : .gray.opacity(0.3), radius: 5, x: 0, y: 5)
                         }
                         .disabled(!isloginButtonEnabled || isLoading)
+                        .padding(.top, 10)
                     }
                     .padding(.horizontal, 30)
+                    
+                    Spacer()
                     
                     NavigationLink(destination: PatientSignupView()) {
                         HStack {
@@ -125,22 +129,35 @@ struct PatientLoginView: View {
                         .font(.subheadline)
                     }
                     .padding(.vertical, 20)
-                    
-                    Spacer()
                 }
             }
-            .navigationBarBackButtonHidden(true)
-            .navigationBarItems(leading: CustomBackButton())
+            .navigationDestination(for: String.self) { destination in
+                if destination == "OTPVerification" {
+                    PatientOTPVerificationView(email: email, expectedOTP: currentOTP)
+                } else if destination == "PatientHome" {
+                    PatientHomeView()
+                }
+            }
             .navigationDestination(isPresented: $navigateToOTP) {
                 PatientOTPVerificationView(email: email, expectedOTP: currentOTP)
             }
             .navigationDestination(isPresented: $showForgotPassword) {
                 PatientForgotPasswordView()
             }
+            .navigationBarBackButtonHidden(true)
+            .navigationBarItems(leading: CustomBackButton())
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
+            }
+        }
+        .onAppear {
+            print("PatientLoginView appeared")
+        }
+        .onChange(of: isAuthenticated) { newValue in
+            if newValue {
+                navigationState.signIn(as: .patient)
             }
         }
     }
@@ -174,7 +191,10 @@ struct PatientLoginView: View {
                     
                     await MainActor.run {
                         isLoading = false
-                        navigateToOTP = true
+                        isAuthenticated = true
+                        
+                        // Navigate to OTP verification screen
+                        navigationPath.append("OTPVerification")
                     }
                 } catch {
                     print("PATIENT LOGIN: Failed to send OTP email: \(error.localizedDescription)")
@@ -186,7 +206,10 @@ struct PatientLoginView: View {
                     
                     await MainActor.run {
                         isLoading = false
-                        navigateToOTP = true
+                        isAuthenticated = true
+                        
+                        // Navigate to OTP verification screen with locally generated OTP
+                        navigationPath.append("OTPVerification")
                     }
                 }
             } catch let error as AuthError {

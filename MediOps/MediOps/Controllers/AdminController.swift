@@ -5,6 +5,7 @@ class AdminController {
     
     private let supabase = SupabaseController.shared
     private let userController = UserController.shared
+    private let hospitalController = HospitalController.shared
     
     private init() {}
     
@@ -37,7 +38,29 @@ class AdminController {
         
         try await supabase.insert(into: "hospital_admins", data: adminData)
         
-        // 3. Return hospital admin object and token
+        // 3. Create associated hospital record
+        let hospital = Hospital(
+            id: Hospital.generateUniqueID(),
+            name: hospitalName,
+            adminName: name,
+            licenseNumber: "", // Will be set later by super admin
+            hospitalPhone: "", // Will be set later by super admin
+            street: "",
+            city: "",
+            state: "",
+            zipCode: "",
+            phone: "", // Will be set later
+            email: email,
+            status: .pending,
+            registrationDate: now,
+            lastModified: now,
+            lastModifiedBy: "System",
+            imageData: nil
+        )
+        
+        try await hospitalController.createHospital(hospital)
+        
+        // 4. Return hospital admin object and token
         let admin = HospitalAdmin(
             id: adminId,
             userId: authResponse.user.id,
@@ -310,7 +333,7 @@ class AdminController {
     /// Create a new hospital
     func createHospital(name: String, adminName: String, licenseNumber: String, 
                        street: String, city: String, state: String, zipCode: String,
-                       phone: String, email: String) async throws -> Models.Hospital {
+                       phone: String, email: String) async throws -> Hospital {
         let now = Date()
         let createdAt = ISO8601DateFormatter().string(from: now)
         
@@ -336,26 +359,28 @@ class AdminController {
         
         try await supabase.insert(into: "hospitals", data: hospitalData)
         
-        return Models.Hospital(
+        return Hospital(
             id: hospitalId,
             name: name,
             adminName: adminName,
             licenseNumber: licenseNumber,
+            hospitalPhone: phone,
             street: street,
             city: city,
             state: state,
             zipCode: zipCode, 
             phone: phone,
             email: email,
-            status: "active",
+            status: .active,
             registrationDate: now,
             lastModified: now,
-            lastModifiedBy: "system"
+            lastModifiedBy: "system",
+            imageData: nil
         )
     }
     
     /// Get hospital by ID
-    func getHospital(id: String) async throws -> Models.Hospital {
+    func getHospital(id: String) async throws -> Hospital {
         let hospitals = try await supabase.select(
             from: "hospitals", 
             where: "id", 
@@ -370,7 +395,7 @@ class AdminController {
     }
     
     /// Get all hospitals
-    func getAllHospitals() async throws -> [Models.Hospital] {
+    func getAllHospitals() async throws -> [Hospital] {
         let hospitals = try await supabase.select(from: "hospitals")
         return try hospitals.map { try parseHospitalData($0) }
     }
@@ -386,12 +411,17 @@ class AdminController {
             let createdAtString = data["created_at"] as? String,
             let updatedAtString = data["updated_at"] as? String
         else {
-            throw AdminError.invalidAdminData
+            throw AdminError.invalidData
         }
         
         let dateFormatter = ISO8601DateFormatter()
-        let createdAt = dateFormatter.date(from: createdAtString) ?? Date()
-        let updatedAt = dateFormatter.date(from: updatedAtString) ?? Date()
+        
+        guard
+            let createdAt = dateFormatter.date(from: createdAtString),
+            let updatedAt = dateFormatter.date(from: updatedAtString)
+        else {
+            throw AdminError.invalidData
+        }
         
         return HospitalAdmin(
             id: id,
@@ -413,12 +443,17 @@ class AdminController {
             let createdAtString = data["created_at"] as? String,
             let updatedAtString = data["updated_at"] as? String
         else {
-            throw AdminError.invalidDoctorData
+            throw AdminError.invalidData
         }
         
         let dateFormatter = ISO8601DateFormatter()
-        let createdAt = dateFormatter.date(from: createdAtString) ?? Date()
-        let updatedAt = dateFormatter.date(from: updatedAtString) ?? Date()
+        
+        guard
+            let createdAt = dateFormatter.date(from: createdAtString),
+            let updatedAt = dateFormatter.date(from: updatedAtString)
+        else {
+            throw AdminError.invalidData
+        }
         
         return Models.Doctor(
             id: id,
@@ -487,7 +522,7 @@ class AdminController {
         )
     }
     
-    private func parseHospitalData(_ data: [String: Any]) throws -> Models.Hospital {
+    private func parseHospitalData(_ data: [String: Any]) throws -> Hospital {
         guard 
             let id = data["id"] as? String,
             let name = data["name"] as? String,
@@ -499,7 +534,7 @@ class AdminController {
             let zipCode = data["zip_code"] as? String,
             let phone = data["phone"] as? String,
             let email = data["email"] as? String,
-            let status = data["status"] as? String
+            let statusString = data["status"] as? String
         else {
             throw AdminError.invalidData
         }
@@ -515,11 +550,17 @@ class AdminController {
         
         let lastModifiedBy = data["last_modified_by"] as? String ?? "unknown"
         
-        return Models.Hospital(
+        // Convert status string to enum
+        guard let status = HospitalStatus(rawValue: statusString) else {
+            throw AdminError.invalidData
+        }
+        
+        return Hospital(
             id: id,
             name: name,
             adminName: adminName,
             licenseNumber: licenseNumber,
+            hospitalPhone: phone,
             street: street,
             city: city,
             state: state,
@@ -529,7 +570,8 @@ class AdminController {
             status: status,
             registrationDate: registrationDate,
             lastModified: lastModified,
-            lastModifiedBy: lastModifiedBy
+            lastModifiedBy: lastModifiedBy,
+            imageData: nil
         )
     }
 }
