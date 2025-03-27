@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct PaymentConfirmationView: View {
+struct PaymentFinalView: View {
     let doctor: Doctor
     let appointmentDate: Date
     let appointmentTime: Date
@@ -9,7 +9,6 @@ struct PaymentConfirmationView: View {
     @State private var showSuccess = false
     @State private var sliderOffset: CGFloat = 0
     @State private var isDragging = false
-    @State private var sliderWidth: CGFloat = 0
     
     private let maxSliderOffset: CGFloat = 300 // Adjust this value based on your needs
     private let consultationFee = 500.0 // Default consultation fee
@@ -115,7 +114,7 @@ struct PaymentConfirmationView: View {
                                     if sliderOffset >= maxSliderOffset - 20 {
                                         withAnimation {
                                             sliderOffset = maxSliderOffset
-                                            showSuccess.toggle()
+                                            showSuccess = true
                                         }
                                     } else {
                                         withAnimation {

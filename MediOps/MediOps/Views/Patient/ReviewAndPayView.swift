@@ -144,7 +144,7 @@ struct ReviewAndPayView: View {
             }
             .padding()
             .sheet(isPresented: $showConfirmation) {
-                PaymentConfirmationView(doctor: doctor, appointmentDate: appointmentDate, appointmentTime: appointmentTime)
+                PaymentFinalView(doctor: doctor, appointmentDate: appointmentDate, appointmentTime: appointmentTime)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DismissAllModals"))) { _ in

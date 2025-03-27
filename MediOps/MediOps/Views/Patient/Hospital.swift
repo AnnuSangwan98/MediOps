@@ -417,10 +417,11 @@ class HospitalViewModel: ObservableObject {
                 )
                 
                 return Appointment(
+                    id: id,
                     doctor: doctor,
                     date: date,
                     time: time,
-                    status: Appointment.AppointmentStatus(rawValue: status) ?? .upcoming
+                    status: AppointmentStatus(rawValue: status) ?? .upcoming
                 )
             }
             

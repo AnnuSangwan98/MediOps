@@ -69,7 +69,7 @@ struct AppointmentCard: View {
                         title: Text("Cancel Appointment"),
                         message: Text("Are you sure you want to cancel this appointment?"),
                         primaryButton: .destructive(Text("Yes")) {
-                            AppointmentManager.shared.cancelAppointment(appointment)
+                            AppointmentManager.shared.cancelAppointment(appointment.id)
                         },
                         secondaryButton: .cancel()
                     )

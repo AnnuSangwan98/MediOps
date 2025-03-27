@@ -87,7 +87,7 @@ struct BookingSuccessView: View {
                         doctor: doctor,
                         date: appointmentDate,
                         time: appointmentTime,
-                        status: Appointment.AppointmentStatus.upcoming
+                        status: AppointmentStatus.upcoming
                     )
                     appointmentManager.addAppointment(appointment)
                     
