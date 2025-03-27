@@ -9,8 +9,13 @@ import SwiftUI
 
 struct AppointmentCard: View {
     @State private var showCancelAlert = false
-    @State private var showRescheduleSheet = false
     let appointment: Appointment
+    
+    private func formatTimeRange(_ time: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: time)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -51,48 +56,29 @@ struct AppointmentCard: View {
 
             HStack {
                 Image(systemName: "clock")
-                Text(appointment.time.formatted(date: .omitted, time: .shortened))
+                Text(formatTimeRange(appointment.time))
             }
 
-            HStack(spacing: 12) {
-                Button(action: { showCancelAlert = true }) {
-                    Text("Cancel Appointment")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .padding(8)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(8)
-                }
-                .alert(isPresented: $showCancelAlert) {
-                    Alert(
-                        title: Text("Cancel Appointment"),
-                        message: Text("Are you sure you want to cancel this appointment?"),
-                        primaryButton: .destructive(Text("Yes")) {
-                            AppointmentManager.shared.cancelAppointment(appointment.id)
-                        },
-                        secondaryButton: .cancel()
-                    )
-                }
-
-                Button(action: { showRescheduleSheet = true }) {
-                    Text("Reschedule")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                        .padding(8)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(8)
-                }
-                .sheet(isPresented: $showRescheduleSheet) {
-                    AppointmentView(
-                        doctor: appointment.doctor,
-                        existingAppointment: appointment,
-                        onUpdateAppointment: { updatedAppointment in
-                            AppointmentManager.shared.updateAppointment(updatedAppointment)
-                        }
-                    )
-                }
+            // Centered Cancel Button
+            Button(action: { showCancelAlert = true }) {
+                Text("Cancel Appointment")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.red)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.red.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            .alert(isPresented: $showCancelAlert) {
+                Alert(
+                    title: Text("Cancel Appointment"),
+                    message: Text("Are you sure you want to cancel this appointment?"),
+                    primaryButton: .destructive(Text("Yes")) {
+                        AppointmentManager.shared.cancelAppointment(appointment.id)
+                    },
+                    secondaryButton: .cancel()
+                )
             }
         }
         .padding()

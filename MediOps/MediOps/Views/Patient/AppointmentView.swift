@@ -15,15 +15,25 @@ struct AppointmentView: View {
         let calendar = Calendar.current
         let startTime = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: Date())!
         
-        for hour in 0..<11 {
-            for minute in stride(from: 0, to: 60, by: 30) {
-                if let time = calendar.date(byAdding: .minute, value: hour * 60 + minute, to: startTime) {
-                    slots.append(time)
-                }
+        // Create slots for every hour from 10 AM to 5 PM
+        for hour in 0...7 {
+            if let time = calendar.date(byAdding: .hour, value: hour, to: startTime) {
+                slots.append(time)
             }
         }
         return slots
     }()
+    
+    private func formatTimeSlot(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        let startTime = formatter.string(from: date)
+        
+        if let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: date) {
+            return "\(startTime) to \(formatter.string(from: endTime))"
+        }
+        return startTime
+    }
     
     var body: some View {
         NavigationStack {
@@ -36,17 +46,19 @@ struct AppointmentView: View {
                 
                 // Time slots
                 ScrollView {
-                    LazyVGrid(columns: Array(repeating: .init(.flexible(), spacing: 10), count: 4), spacing: 15) {
+                    LazyVGrid(columns: Array(repeating: .init(.flexible(), spacing: 10), count: 2), spacing: 15) {
                         ForEach(timeSlots, id: \.self) { time in
                             let isSelected = selectedTime?.formatted(date: .omitted, time: .shortened) == time.formatted(date: .omitted, time: .shortened)
                             
                             Button(action: {
                                 selectedTime = time
                             }) {
-                                Text(time.formatted(date: .omitted, time: .shortened))
-                                    .font(.subheadline)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
+                                Text(formatTimeSlot(time))
+                                    .font(.system(size: 13, weight: .medium))
+                                    .minimumScaleFactor(0.8)
+                                    .lineLimit(1)
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 8)
                                     .frame(maxWidth: .infinity)
                                     .background(isSelected ? Color.teal : Color.white)
                                     .foregroundColor(isSelected ? .white : .black)
