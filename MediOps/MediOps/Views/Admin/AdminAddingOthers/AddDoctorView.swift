@@ -10,7 +10,7 @@ import SwiftUI
 struct AddDoctorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var fullName = ""
-    @State private var specialization = ""
+    @State private var specialization = Specialization.generalMedicine
     @State private var email = ""
     @State private var phoneNumber = "" // This will store only the 10 digits part
     @State private var gender: UIDoctor.Gender = .male
@@ -26,6 +26,25 @@ struct AddDoctorView: View {
     @State private var errorMessage = ""
     var onSave: (UIActivity) -> Void
     
+    enum Specialization: String, CaseIterable {
+        case generalMedicine = "General Medicine"
+        case cardiology = "Cardiology"
+        case dermatology = "Dermatology"
+        case endocrinology = "Endocrinology"
+        case gastroenterology = "Gastroenterology"
+        case neurology = "Neurology"
+        case oncology = "Oncology"
+        case ophthalmology = "Ophthalmology"
+        case orthopedics = "Orthopedics"
+        case pediatrics = "Pediatrics"
+        case psychiatry = "Psychiatry"
+        case radiology = "Radiology"
+        case surgery = "Surgery"
+        case urology = "Urology"
+        
+        var id: String { self.rawValue }
+    }
+    
     // Calculate maximum experience based on age
     private var maximumExperience: Int {
         let calendar = Calendar.current
@@ -38,7 +57,7 @@ struct AddDoctorView: View {
     // Add computed property to check if form is valid
     private var isFormValid: Bool {
         !fullName.isEmpty &&
-        !specialization.isEmpty &&
+        !specialization.rawValue.isEmpty &&
         isValidEmail(email) &&
         phoneNumber.count == 10 &&
         !qualification.isEmpty &&
@@ -52,6 +71,13 @@ struct AddDoctorView: View {
                 Section(header: Text("Personal Information")) {
                     TextField("Full Name", text: $fullName)
                     
+                    Picker("Specialization", selection: $specialization) {
+                        ForEach(Specialization.allCases, id: \.id) { specialization in
+                            Text(specialization.rawValue)
+                                .tag(specialization)
+                        }
+                    }
+                    
                     Picker("Gender", selection: $gender) {
                         ForEach(UIDoctor.Gender.allCases) { gender in
                             Text(gender.rawValue).tag(gender)
@@ -60,6 +86,7 @@ struct AddDoctorView: View {
                     
                     DatePicker("Date of Birth",
                               selection: $dateOfBirth,
+                              in: ...Date(),
                               displayedComponents: .date)
                     .onChange(of: dateOfBirth) { _, _ in
                         // Adjust experience if it exceeds the maximum allowed
@@ -70,11 +97,10 @@ struct AddDoctorView: View {
                 }
                 
                 Section(header: Text("Professional Information")) {
-                    TextField("Specialization", text: $specialization)
                     TextField("Qualification", text: $qualification)
                     
                     // Updated license field with more general format hint
-                    TextField("License (XX12345)", text: $license)
+                    TextField("License Number", text: $license)
                         .onChange(of: license) { _, newValue in
                             // Format license to uppercase
                             license = newValue.uppercased()
@@ -127,13 +153,28 @@ struct AddDoctorView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
+                        isLoading = true
                         saveDoctor()
                     }
-                    .disabled(!isFormValid)
+                    .disabled(!isFormValid || isLoading)
+                }
+            }
+            .overlay {
+                if isLoading {
+                    Color.black.opacity(0.2)
+                        .ignoresSafeArea()
+                    ProgressView("Saving...")
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(10)
                 }
             }
             .alert(alertMessage, isPresented: $showAlert) {
-                Button("OK", role: .cancel) {}
+                Button("OK", role: .cancel) {
+                    if !errorMessage.isEmpty {
+                        isLoading = false
+                    }
+                }
             }
         }
     }
@@ -143,7 +184,7 @@ struct AddDoctorView: View {
         
         let doctor = UIDoctor(
             fullName: fullName,
-            specialization: specialization,
+            specialization: specialization.rawValue,
             email: email,
             phone: "+91\(phoneNumber)",
             gender: gender,
@@ -183,7 +224,7 @@ struct AddDoctorView: View {
             "accountType": "doctor",
             "details": [
                 "fullName": fullName,
-                "specialization": specialization,
+                "specialization": specialization.rawValue,
                 "license": license,
                 "phone": "+91\(phoneNumber)",
                 "qualification": qualification,
@@ -235,7 +276,7 @@ struct AddDoctorView: View {
     
     private func resetForm() {
         fullName = ""
-        specialization = ""
+        specialization = Specialization.generalMedicine
         email = ""
         phoneNumber = ""
         gender = .male

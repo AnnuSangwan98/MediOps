@@ -20,6 +20,8 @@ struct AddLabAdminView: View {
     @State private var address = ""
     @State private var showAlert = false
     @State private var alertMessage = ""
+    @State private var isLoading = false
+    @State private var errorMessage = ""
     var onSave: (UIActivity) -> Void
     
     // Calculate maximum experience based on age
@@ -116,13 +118,28 @@ struct AddLabAdminView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
+                        isLoading = true
                         saveLabAdmin()
                     }
-                    .disabled(!isFormValid)
+                    .disabled(!isFormValid || isLoading)
+                }
+            }
+            .overlay {
+                if isLoading {
+                    Color.black.opacity(0.2)
+                        .ignoresSafeArea()
+                    ProgressView("Saving...")
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(10)
                 }
             }
             .alert(alertMessage, isPresented: $showAlert) {
-                Button("OK", role: .cancel) {}
+                Button("OK", role: .cancel) {
+                    if !errorMessage.isEmpty {
+                        isLoading = false
+                    }
+                }
             }
         }
     }

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct AdminProfileView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigationState: AppNavigationState
+    @State private var showLogoutAlert = false
     
     var body: some View {
         NavigationStack {
@@ -43,7 +45,7 @@ struct AdminProfileView: View {
                     
                     Section {
                         Button(action: {
-                            // Add logout action here
+                            showLogoutAlert = true
                         }) {
                             HStack {
                                 Spacer()
@@ -64,10 +66,36 @@ struct AdminProfileView: View {
                     }
                 }
             }
+            .alert("Logout", isPresented: $showLogoutAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Yes, Logout", role: .destructive) {
+                    // First sign out in navigation state
+                    navigationState.signOut()
+                    
+                    // Dismiss the profile sheet
+                    dismiss()
+                    
+                    // Get the scene delegate window
+                    guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                          let window = windowScene.windows.first else { return }
+                    
+                    // Reset to RoleSelectionView
+                    let contentView = NavigationStack {
+                        RoleSelectionView()
+                    }
+                    .environmentObject(navigationState)
+                    
+                    window.rootViewController = UIHostingController(rootView: contentView)
+                    window.makeKeyAndVisible()
+                }
+            } message: {
+                Text("Are you sure you want to log out?")
+            }
         }
     }
 }
 
 #Preview {
     AdminProfileView()
+        .environmentObject(AppNavigationState())
 } 
