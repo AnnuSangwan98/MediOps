@@ -4,15 +4,76 @@ import SwiftUI
 @MainActor
 class DoctorViewModel: ObservableObject {
     @Published var doctors: [Doctor] = []
+    @Published var isLoading = false
+    
+    private let supabase = SupabaseController.shared
     
     func loadDoctors(for hospital: HospitalModel) async {
-        let hospitalViewModel = HospitalViewModel.shared
-        await MainActor.run {
-            hospitalViewModel.selectedHospital = hospital
-        }
-        await hospitalViewModel.fetchDoctors()
-        await MainActor.run {
-            self.doctors = hospitalViewModel.doctors
+        isLoading = true
+        print("Loading doctors for hospital: \(hospital.id)")
+        
+        do {
+            // First try to fetch using hospital_id
+            var results = try await supabase.select(
+                from: "doctors",
+                where: "hospital_id",
+                equals: hospital.id
+            )
+            
+            print("Initial query returned \(results.count) doctors")
+            
+            // If no results, try without the where clause to see all doctors
+            if results.isEmpty {
+                print("No doctors found with hospital_id, fetching all doctors")
+                results = try await supabase.select(from: "doctors")
+                print("Found \(results.count) total doctors")
+            }
+            
+            self.doctors = results.compactMap { data in
+                do {
+                    guard let id = data["id"] as? String,
+                          let name = data["name"] as? String,
+                          let specialization = data["specialization"] as? String,
+                          let experience = data["experience"] as? Int
+                    else {
+                        print("Failed to parse required doctor data: \(data)")
+                        return nil
+                    }
+                    
+                    // Optional fields with default values
+                    let hospitalId = data["hospital_id"] as? String ?? hospital.id
+                    let qualifications = data["qualifications"] as? [String] ?? []
+                    let licenseNo = data["license_no"] as? String ?? "N/A"
+                    let email = data["email"] as? String ?? ""
+                    let status = data["doctor_status"] as? String ?? "active"
+                    let rating = data["rating"] as? Double ?? 4.5
+                    let consultationFee = data["consultation_fee"] as? Double ?? 500.0
+                    
+                    return Doctor(
+                        id: id,
+                        hospitalId: hospitalId,
+                        name: name,
+                        specialization: specialization,
+                        qualifications: qualifications,
+                        licenseNo: licenseNo,
+                        experience: experience,
+                        email: email,
+                        contactNumber: data["contact_number"] as? String,
+                        doctorStatus: status,
+                        rating: rating,
+                        consultationFee: consultationFee
+                    )
+                } catch {
+                    print("Error parsing doctor data: \(error)")
+                    return nil
+                }
+            }
+            
+            print("Successfully parsed \(self.doctors.count) doctors")
+            isLoading = false
+        } catch {
+            print("Error fetching doctors: \(error)")
+            isLoading = false
         }
     }
 }
