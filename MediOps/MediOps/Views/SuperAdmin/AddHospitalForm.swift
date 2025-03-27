@@ -190,9 +190,9 @@ struct AddHospitalForm: View {
         }
         
         // Validate Hospital License Number
-        let licenseRegex = "^[A-Z]{2}\\d{4}$"
+        let licenseRegex = "^[A-Z]{2}\\d{5}$"
         if !NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: licenseNumber) {
-            hospitalLicenseError = "License number must be 2 capital letters followed by 4 digits (e.g., UP1234)"
+            hospitalLicenseError = "License number must be 2 capital letters followed by 4 digits (e.g., XX12345)"
             isValid = false
         }
         
@@ -395,7 +395,7 @@ struct AddHospitalForm: View {
                 
                 TextField("License Number", text: $licenseNumber)
                     .placeholder(when: licenseNumber.isEmpty) {
-                        Text("License Number (xx1234)")
+                        Text("License Number (XX12345)")
                             .foregroundColor(.gray)
                     }
                     .textCase(.uppercase)
@@ -551,7 +551,7 @@ struct EditHospitalForm: View {
                 TextField("License Number", text: $editedHospital.licenseNumber)
                     .textCase(.uppercase)
                     .placeholder(when: editedHospital.licenseNumber.isEmpty) {
-                        Text("Enter state license (e.g., UP1234)")
+                        Text("Enter state license (e.g., XX12345)")
                             .foregroundColor(.gray)
                     }
             }
