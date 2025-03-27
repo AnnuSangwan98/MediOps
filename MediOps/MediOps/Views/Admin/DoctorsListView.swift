@@ -3,6 +3,8 @@ import SwiftUI
 struct DoctorsListView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showAddDoctor = false
+    @State private var showEditDoctor = false
+    @State private var doctorToEdit: UIDoctor?
     @Binding var doctors: [UIDoctor]
     
     init(doctors: Binding<[UIDoctor]>) {
@@ -54,8 +56,18 @@ struct DoctorsListView: View {
                             .padding()
                         } else {
                             ForEach(doctors) { doctor in
-                                DoctorCard(doctor: doctor)
-                                    .padding(.horizontal)
+                                DoctorCard(
+                                    doctor: doctor,
+                                    onEdit: { editDoctor(doctor) },
+                                    onDelete: {
+                                        withAnimation {
+                                            if let index = doctors.firstIndex(where: { $0.id == doctor.id }) {
+                                                doctors.remove(at: index)
+                                            }
+                                        }
+                                    }
+                                )
+                                .padding(.horizontal)
                             }
                         }
                     }
@@ -91,11 +103,27 @@ struct DoctorsListView: View {
                 }
             }
         }
+        .sheet(isPresented: $showEditDoctor) {
+            if let doctor = doctorToEdit {
+                EditDoctorView(doctor: doctor) { updatedDoctor in
+                    if let index = doctors.firstIndex(where: { $0.id == doctor.id }) {
+                        doctors[index] = updatedDoctor
+                    }
+                }
+            }
+        }
+    }
+    
+    private func editDoctor(_ doctor: UIDoctor) {
+        doctorToEdit = doctor
+        showEditDoctor = true
     }
 }
 
 struct DoctorCard: View {
     let doctor: UIDoctor
+    var onEdit: () -> Void
+    var onDelete: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -108,6 +136,21 @@ struct DoctorCard: View {
                         .foregroundColor(.gray)
                 }
                 Spacer()
+                
+                Menu {
+                    Button(action: onEdit) {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(.gray)
+                        .padding(8)
+                        .contentShape(Rectangle())
+                }
             }
             
             HStack {

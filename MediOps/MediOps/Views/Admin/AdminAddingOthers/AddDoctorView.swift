@@ -27,20 +27,11 @@ struct AddDoctorView: View {
     var onSave: (UIActivity) -> Void
     
     enum Specialization: String, CaseIterable {
-        case generalMedicine = "General Medicine"
+        case generalMedicine = "General medicine"
+        case orthopaedics = "Orthopaedics"
+        case gynaecology = "Gynaecology"
         case cardiology = "Cardiology"
-        case dermatology = "Dermatology"
-        case endocrinology = "Endocrinology"
-        case gastroenterology = "Gastroenterology"
-        case neurology = "Neurology"
-        case oncology = "Oncology"
-        case ophthalmology = "Ophthalmology"
-        case orthopedics = "Orthopedics"
-        case pediatrics = "Pediatrics"
-        case psychiatry = "Psychiatry"
-        case radiology = "Radiology"
-        case surgery = "Surgery"
-        case urology = "Urology"
+        case pathologyLaboratory = "Pathology & laboratory"
         
         var id: String { self.rawValue }
     }
@@ -208,7 +199,7 @@ struct AddDoctorView: View {
     }
 
     private func sendDoctorCredentials(activity: UIActivity) {
-        guard let url = URL(string: "http://localhost:8082/send-credentials") else {
+        guard let url = URL(string: "http://192.168.182.100:8082/send-credentials") else {
             alertMessage = "Invalid server URL"
             showAlert = true
             return
@@ -217,7 +208,7 @@ struct AddDoctorView: View {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 30
+        request.timeoutInterval = 60  // Increased timeout to 60 seconds
         
         let emailData: [String: Any] = [
             "to": email,

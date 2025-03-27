@@ -176,7 +176,7 @@ class AdminController {
     // MARK: - Lab Admin Management
     
     /// Register a new lab admin
-    func createLabAdmin(email: String, password: String, name: String, labName: String, hospitalAdminId: String) async throws -> (Models.LabAdmin, String) {
+    func createLabAdmin(email: String, password: String, name: String, qualification: String, hospitalAdminId: String) async throws -> (Models.LabAdmin, String) {
         // 1. Register the base user
         let authResponse = try await userController.register(
             email: email,
@@ -195,7 +195,7 @@ class AdminController {
             "id": labAdminId,
             "user_id": authResponse.user.id,
             "name": name,
-            "lab_name": labName,
+            "qualification": qualification,
             "hospital_admin_id": hospitalAdminId,
             "created_at": createdAt,
             "updated_at": createdAt
@@ -208,7 +208,7 @@ class AdminController {
             id: labAdminId,
             userId: authResponse.user.id,
             name: name,
-            labName: labName,
+            qualification: qualification,
             hospitalAdminId: hospitalAdminId,
             createdAt: now,
             updatedAt: now
@@ -233,14 +233,43 @@ class AdminController {
     }
     
     /// Get lab admins by hospital admin ID
-    func getLabAdminsByHospitalAdmin(hospitalAdminId: String) async throws -> [Models.LabAdmin] {
+    func getLabAdmins(hospitalAdminId: String) async throws -> [Models.LabAdmin] {
         let labAdmins = try await supabase.select(
-            from: "lab_admins", 
-            where: "hospital_admin_id", 
+            from: "lab_admins",
+            where: "hospital_admin_id",
             equals: hospitalAdminId
         )
         
         return try labAdmins.map { try parseLabAdminData($0) }
+    }
+    
+    /// Update lab admin
+    func updateLabAdmin(_ labAdmin: Models.LabAdmin) async throws {
+        let now = Date()
+        let dateFormatter = ISO8601DateFormatter()
+        let updatedAt = dateFormatter.string(from: now)
+        
+        let labAdminData: [String: String] = [
+            "name": labAdmin.name,
+            "qualification": labAdmin.qualification,
+            "updated_at": updatedAt
+        ]
+        
+        try await supabase.update(
+            table: "lab_admins",
+            data: labAdminData,
+            where: "id",
+            equals: labAdmin.id
+        )
+    }
+    
+    /// Delete lab admin
+    func deleteLabAdmin(id: String) async throws {
+        try await supabase.delete(
+            from: "lab_admins",
+            where: "id",
+            equals: id
+        )
     }
     
     // MARK: - Activity Management
@@ -471,23 +500,28 @@ class AdminController {
             let id = data["id"] as? String,
             let userId = data["user_id"] as? String,
             let name = data["name"] as? String,
-            let labName = data["lab_name"] as? String,
+            let qualification = data["qualification"] as? String,
             let hospitalAdminId = data["hospital_admin_id"] as? String,
             let createdAtString = data["created_at"] as? String,
             let updatedAtString = data["updated_at"] as? String
         else {
-            throw AdminError.invalidLabAdminData
+            throw AdminError.invalidData
         }
         
         let dateFormatter = ISO8601DateFormatter()
-        let createdAt = dateFormatter.date(from: createdAtString) ?? Date()
-        let updatedAt = dateFormatter.date(from: updatedAtString) ?? Date()
+        
+        guard
+            let createdAt = dateFormatter.date(from: createdAtString),
+            let updatedAt = dateFormatter.date(from: updatedAtString)
+        else {
+            throw AdminError.invalidData
+        }
         
         return Models.LabAdmin(
             id: id,
             userId: userId,
             name: name,
-            labName: labName,
+            qualification: qualification,
             hospitalAdminId: hospitalAdminId,
             createdAt: createdAt,
             updatedAt: updatedAt
