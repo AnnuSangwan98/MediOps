@@ -82,6 +82,9 @@ struct LabAdminsListView: View {
                     }
                     .padding(.vertical)
                 }
+                .refreshable {
+                    await fetchLabAdmins()
+                }
             }
             
             // Floating Add Button
@@ -107,16 +110,18 @@ struct LabAdminsListView: View {
         }
         .sheet(isPresented: $showAddLabAdmin) {
             AddLabAdminView { activity in
-                if let labAdmin = activity.labAdminDetails {
-                    labAdmins.append(labAdmin)
+                // Refresh the list after adding a lab admin
+                Task {
+                    await fetchLabAdmins()
                 }
             }
         }
         .sheet(isPresented: $showEditLabAdmin) {
             if let labAdmin = labAdminToEdit {
                 EditLabAdminView(labAdmin: labAdmin) { updatedLabAdmin in
-                    if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
-                        labAdmins[index] = updatedLabAdmin
+                    // Refresh the list after editing a lab admin
+                    Task {
+                        await fetchLabAdmins()
                     }
                 }
             }
@@ -152,112 +157,80 @@ struct LabAdminsListView: View {
     private func fetchLabAdmins() async {
         isLoading = true
         do {
-            // Try to get the current user and their hospital admin ID
-            var hospitalAdminId: String? = nil
-            
-            if let currentUser = try? await UserController.shared.getCurrentUser() {
-                print("FETCH LAB ADMINS: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
-                
-                // If user is a hospital admin, use their ID directly
-                if currentUser.role == .hospitalAdmin {
-                    // For hospital admin, their ID should equal their hospital ID per schema constraint
-                    hospitalAdminId = currentUser.id
-                    print("FETCH LAB ADMINS: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
-                } else {
-                    // For other roles, try to get their associated hospital admin
-                    do {
-                        let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
-                        hospitalAdminId = hospitalAdmin.id
-                        print("FETCH LAB ADMINS: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
-                    } catch {
-                        print("FETCH LAB ADMINS WARNING: \(error.localizedDescription)")
-                    }
-                }
+            // Get hospital ID from UserDefaults (saved during login)
+            guard let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") else {
+                print("FETCH LAB ADMINS ERROR: No hospital ID found in UserDefaults")
+                errorMessage = "Failed to fetch lab admins: Hospital ID not found. Please login again."
+                showError = true
+                isLoading = false
+                return
             }
             
-            // If we couldn't determine the hospital admin ID, use a fallback
-            if hospitalAdminId == nil {
-                hospitalAdminId = "HOS001" // Fallback ID
-                print("FETCH LAB ADMINS: Using fallback hospital admin ID: \(hospitalAdminId!)")
-            }
+            print("FETCH LAB ADMINS: Using hospital ID from UserDefaults: \(hospitalId)")
             
-            // Fetch the lab admins
-            print("FETCH LAB ADMINS: Requesting lab admins for hospital: \(hospitalAdminId!)")
-            let fetchedLabAdmins = try await adminController.getLabAdmins(hospitalAdminId: hospitalAdminId!)
+            // Fetch lab admins for the specific hospital ID from Supabase
+            let fetchedLabAdmins = try await adminController.getLabAdmins(hospitalAdminId: hospitalId)
             print("FETCH LAB ADMINS: Successfully retrieved \(fetchedLabAdmins.count) lab admins")
             
             // Map to UI models
-            labAdmins = fetchedLabAdmins.map { labAdmin in
-                print("FETCH LAB ADMINS: Processing lab admin ID: \(labAdmin.id), Name: \(labAdmin.name)")
-                return UILabAdmin(
-                    id: UUID(), // Use a UUID for SwiftUI's Identifiable protocol
-                    originalId: labAdmin.id, // Store the original Supabase ID
-                    fullName: labAdmin.name,
-                    email: labAdmin.email,
-                    phone: labAdmin.contactNumber.isEmpty ? "" : "+91\(labAdmin.contactNumber)", // Add +91 prefix for UI
-                    gender: .male, // Default gender
-                    dateOfBirth: Date(), // Default date
-                    experience: 0, // Default experience
-                    qualification: labAdmin.department, // Use department instead of labName
-                    address: labAdmin.address
-                )
+            await MainActor.run {
+                labAdmins = fetchedLabAdmins.map { labAdmin in
+                    print("FETCH LAB ADMINS: Processing lab admin ID: \(labAdmin.id), Name: \(labAdmin.name)")
+                    return UILabAdmin(
+                        id: UUID(), // Use a UUID for SwiftUI's Identifiable protocol
+                        originalId: labAdmin.id, // Store the original Supabase ID
+                        fullName: labAdmin.name,
+                        email: labAdmin.email,
+                        phone: labAdmin.contactNumber.isEmpty ? "" : "+91\(labAdmin.contactNumber)", // Add +91 prefix for UI
+                        gender: .male, // Default gender
+                        dateOfBirth: Date(), // Default date
+                        experience: 0, // Default experience
+                        qualification: labAdmin.department, // Use department instead of labName
+                        address: labAdmin.address
+                    )
+                }
+                isLoading = false
             }
         } catch {
-            print("FETCH LAB ADMINS ERROR: \(error.localizedDescription)")
-            if let adminError = error as? AdminError {
-                errorMessage = "Failed to fetch lab admins: \(adminError.errorDescription ?? "Unknown error")"
-            } else {
-                errorMessage = "Failed to fetch lab admins: \(error.localizedDescription)"
+            await MainActor.run {
+                print("FETCH LAB ADMINS ERROR: \(error.localizedDescription)")
+                if let adminError = error as? AdminError {
+                    errorMessage = "Failed to fetch lab admins: \(adminError.errorDescription ?? "Unknown error")"
+                } else {
+                    errorMessage = "Failed to fetch lab admins: \(error.localizedDescription)"
+                }
+                showError = true
+                isLoading = false
             }
-            showError = true
         }
-        isLoading = false
     }
     
     private func addLabAdmin(_ labAdmin: UILabAdmin) {
         Task {
             isLoading = true
             do {
-                // Try to get the current user and their hospital admin ID
-                var hospitalAdminId: String? = nil
-                
-                if let currentUser = try? await UserController.shared.getCurrentUser() {
-                    print("ADD LAB ADMIN: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
-                    
-                    // If user is a hospital admin, use their ID directly
-                    if currentUser.role == .hospitalAdmin {
-                        // For hospital admin, their ID should equal their hospital ID per schema constraint
-                        hospitalAdminId = currentUser.id
-                        print("ADD LAB ADMIN: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
-                    } else {
-                        // For other roles, try to get their associated hospital admin
-                        do {
-                            let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
-                            hospitalAdminId = hospitalAdmin.id
-                            print("ADD LAB ADMIN: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
-                        } catch {
-                            print("ADD LAB ADMIN WARNING: \(error.localizedDescription)")
-                        }
-                    }
+                // Get hospital ID from UserDefaults (saved during login)
+                guard let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") else {
+                    print("ADD LAB ADMIN ERROR: No hospital ID found in UserDefaults")
+                    errorMessage = "Failed to add lab admin: Hospital ID not found. Please login again."
+                    showError = true
+                    isLoading = false
+                    return
                 }
                 
-                // If we couldn't determine the hospital admin ID, use a fallback
-                if hospitalAdminId == nil {
-                    hospitalAdminId = "HOS001" // Fallback ID
-                    print("ADD LAB ADMIN: Using fallback hospital admin ID: \(hospitalAdminId!)")
-                }
+                print("ADD LAB ADMIN: Using hospital ID from UserDefaults: \(hospitalId)")
                 
                 // Generate a secure password that meets the constraints
                 let password = generateSecurePassword()
                 
                 // Create the lab admin
-                print("ADD LAB ADMIN: Creating lab admin for hospital: \(hospitalAdminId!)")
+                print("ADD LAB ADMIN: Creating lab admin for hospital: \(hospitalId)")
                 let (_, _) = try await adminController.createLabAdmin(
                     email: labAdmin.email,
                     password: password,
                     name: labAdmin.fullName,
                     labName: labAdmin.qualification, // Maps to department field
-                    hospitalAdminId: hospitalAdminId!,
+                    hospitalAdminId: hospitalId,
                     contactNumber: labAdmin.phone.replacingOccurrences(of: "+91", with: ""), // Remove country code for 10-digit format
                     department: "Pathology & Laboratory" // Fixed to match the constraint
                 )
@@ -307,40 +280,22 @@ struct LabAdminsListView: View {
         Task {
             isLoading = true
             do {
-                // Try to get the current user and their hospital admin ID
-                var hospitalAdminId: String? = nil
-                
-                if let currentUser = try? await UserController.shared.getCurrentUser() {
-                    print("UPDATE LAB ADMIN: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
-                    
-                    // If user is a hospital admin, use their ID directly
-                    if currentUser.role == .hospitalAdmin {
-                        // For hospital admin, their ID should equal their hospital ID per schema constraint
-                        hospitalAdminId = currentUser.id
-                        print("UPDATE LAB ADMIN: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
-                    } else {
-                        // For other roles, try to get their associated hospital admin
-                        do {
-                            let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
-                            hospitalAdminId = hospitalAdmin.id
-                            print("UPDATE LAB ADMIN: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
-                        } catch {
-                            print("UPDATE LAB ADMIN WARNING: \(error.localizedDescription)")
-                        }
-                    }
+                // Get hospital ID from UserDefaults (saved during login)
+                guard let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") else {
+                    print("UPDATE LAB ADMIN ERROR: No hospital ID found in UserDefaults")
+                    errorMessage = "Failed to update lab admin: Hospital ID not found. Please login again."
+                    showError = true
+                    isLoading = false
+                    return
                 }
                 
-                // If we couldn't determine the hospital admin ID, use a fallback
-                if hospitalAdminId == nil {
-                    hospitalAdminId = "HOS001" // Fallback ID
-                    print("UPDATE LAB ADMIN: Using fallback hospital admin ID: \(hospitalAdminId!)")
-                }
+                print("UPDATE LAB ADMIN: Using hospital ID from UserDefaults: \(hospitalId)")
                 
                 // Create the model lab admin with the correct hospital ID
                 print("UPDATE LAB ADMIN: Updating lab admin ID: \(labAdmin.id)")
                 let modelLabAdmin = LabAdmin(
                     id: labAdmin.id.uuidString,
-                    hospitalId: hospitalAdminId!,
+                    hospitalId: hospitalId,
                     name: labAdmin.fullName,
                     email: labAdmin.email,
                     contactNumber: labAdmin.phone,
