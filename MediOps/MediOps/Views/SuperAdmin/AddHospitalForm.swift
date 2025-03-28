@@ -126,6 +126,12 @@ struct AddHospitalForm: View {
         "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
     ]
     
+    // Section toggle states
+    @State private var hospitalInfoExpanded = true
+    @State private var hospitalAddressExpanded = false
+    @State private var adminInfoExpanded = false
+    @State private var adminAddressExpanded = false
+    
     private var isFormValid: Bool {
         // Updated validation to match schema requirements
         !hospitalName.isEmpty && 
@@ -348,162 +354,217 @@ struct AddHospitalForm: View {
     var body: some View {
         Form {
             // Hospital Information Section
-            Section(header: Text("Hospital Information").foregroundColor(.teal)) {
-                // Hospital Image
-                HStack {
-                    Text("Hospital Image")
-                    Spacer()
-                    PhotosPicker(selection: $imageSelection, matching: .images) {
-                        if let hospitalImage = hospitalImage {
-                            Image(uiImage: hospitalImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 80, height: 80)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        } else {
-                            Image(systemName: "building.2.fill")
-                                .font(.system(size: 40))
-                                .foregroundColor(.gray)
-                                .frame(width: 80, height: 80)
-                                .background(Color.gray.opacity(0.1))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
-                }
-                .onChange(of: imageSelection) { newValue in
-                    Task {
-                        if let data = try? await newValue?.loadTransferable(type: Data.self) {
-                            if let image = UIImage(data: data) {
-                                hospitalImage = image
+            Section {
+                DisclosureGroup(
+                    isExpanded: $hospitalInfoExpanded,
+                    content: {
+                        // Hospital Image
+                        HStack {
+                            Text("Hospital Image")
+                            Spacer()
+                            PhotosPicker(selection: $imageSelection, matching: .images) {
+                                if let hospitalImage = hospitalImage {
+                                    Image(uiImage: hospitalImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 80, height: 80)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                } else {
+                                    Image(systemName: "building.2.fill")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.gray)
+                                        .frame(width: 80, height: 80)
+                                        .background(Color.gray.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
                             }
                         }
-                    }
-                }
-                
-                TextField("Hospital Name", text: $hospitalName)
-                
-                TextField("Hospital ID (HOSXXX)", text: $hospitalID)
-                    .onChange(of: hospitalID) { _, newValue in
-                        hospitalID = newValue.uppercased()
-                    }
-                    
-                if !hospitalIdError.isEmpty {
-                    Text(hospitalIdError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-                
-                TextField("License Number (XX12345)", text: $licenseNumber)
-                    .onChange(of: licenseNumber) { _, newValue in
-                        licenseNumber = newValue.uppercased()
-                    }
-                if !hospitalLicenseError.isEmpty {
-                    Text(hospitalLicenseError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-                
-                Picker("Accreditation", selection: $selectedAccreditation) {
-                    ForEach(accreditationTypes, id: \.self) { type in
-                        Text(type).tag(type)
-                    }
-                }
-                
-                HStack {
-                    Text("+91")
-                        .foregroundColor(.gray)
-                    TextField("Emergency Contact", text: $emergencyContact)
-                        .keyboardType(.numberPad)
-                        .onChange(of: emergencyContact) { _, newValue in
-                            // Allow only digits and limit to 10 characters
-                            emergencyContact = newValue.filter { $0.isNumber }.prefix(10).description
+                        .onChange(of: imageSelection) { newValue in
+                            Task {
+                                if let data = try? await newValue?.loadTransferable(type: Data.self) {
+                                    if let image = UIImage(data: data) {
+                                        hospitalImage = image
+                                    }
+                                }
+                            }
                         }
-                }
-                if !emergencyContactError.isEmpty {
-                    Text(emergencyContactError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
+                        
+                        TextField("Hospital Name", text: $hospitalName)
+                        
+                        TextField("Hospital ID (HOSXXX)", text: $hospitalID)
+                            .onChange(of: hospitalID) { _, newValue in
+                                hospitalID = newValue.uppercased()
+                            }
+                            
+                        if !hospitalIdError.isEmpty {
+                            Text(hospitalIdError)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                        
+                        TextField("License Number (XX12345)", text: $licenseNumber)
+                            .onChange(of: licenseNumber) { _, newValue in
+                                licenseNumber = newValue.uppercased()
+                            }
+                        if !hospitalLicenseError.isEmpty {
+                            Text(hospitalLicenseError)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                        
+                        Picker("Accreditation", selection: $selectedAccreditation) {
+                            ForEach(accreditationTypes, id: \.self) { type in
+                                Text(type).tag(type)
+                            }
+                        }
+                        
+                        HStack {
+                            Text("+91")
+                                .foregroundColor(.gray)
+                            TextField("Emergency Contact", text: $emergencyContact)
+                                .keyboardType(.numberPad)
+                                .onChange(of: emergencyContact) { _, newValue in
+                                    // Allow only digits and limit to 10 characters
+                                    emergencyContact = newValue.filter { $0.isNumber }.prefix(10).description
+                                }
+                        }
+                        if !emergencyContactError.isEmpty {
+                            Text(emergencyContactError)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    },
+                    label: {
+                        HStack {
+                            Image(systemName: "building.2")
+                                .foregroundColor(.teal)
+                            Text("HOSPITAL INFORMATION")
+                                .font(.headline)
+                                .foregroundColor(.teal)
+                        }
+                    }
+                )
             }
             
             // Hospital Address Section
-            Section(header: Text("Hospital Address").foregroundColor(.teal)) {
-                TextField("Street/Locality", text: $street)
-                TextField("City", text: $city)
-                
-                Picker("State", selection: $state) {
-                    ForEach(indianStates, id: \.self) { state in
-                        Text(state).tag(state)
+            Section {
+                DisclosureGroup(
+                    isExpanded: $hospitalAddressExpanded,
+                    content: {
+                        TextField("Street/Locality", text: $street)
+                        TextField("City", text: $city)
+                        
+                        Picker("State", selection: $state) {
+                            ForEach(indianStates, id: \.self) { state in
+                                Text(state).tag(state)
+                            }
+                        }
+                        
+                        TextField("Pin Code", text: $zipCode)
+                            .keyboardType(.numberPad)
+                            .onChange(of: zipCode) { _, newValue in
+                                // Allow only digits and limit to 10 characters
+                                zipCode = newValue.filter { $0.isNumber }.prefix(6).description
+                            }
+                        if !hospitalPinCodeError.isEmpty {
+                            Text(hospitalPinCodeError)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    },
+                    label: {
+                        HStack {
+                            Image(systemName: "mappin.and.ellipse")
+                                .foregroundColor(.teal)
+                            Text("HOSPITAL ADDRESS")
+                                .font(.headline)
+                                .foregroundColor(.teal)
+                        }
                     }
-                }
-                
-                TextField("Pin Code", text: $zipCode)
-                    .keyboardType(.numberPad)
-                    .onChange(of: zipCode) { _, newValue in
-                        // Allow only digits and limit to 10 characters
-                        zipCode = newValue.filter { $0.isNumber }.prefix(6).description
-                    }
-                if !hospitalPinCodeError.isEmpty {
-                    Text(hospitalPinCodeError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
+                )
             }
             
             // Admin Information Section
-            Section(header: Text("Admin Information").foregroundColor(.teal)) {
-                TextField("Admin Name", text: $adminName)
-                
-                HStack {
-                    Text("+91")
-                        .foregroundColor(.gray)
-                    TextField("Contact Number", text: $phone)
-                        .keyboardType(.numberPad)
-                        .onChange(of: phone) { _, newValue in
-                            // Allow only digits and limit to 10 characters
-                            phone = newValue.filter { $0.isNumber }.prefix(10).description
+            Section {
+                DisclosureGroup(
+                    isExpanded: $adminInfoExpanded,
+                    content: {
+                        TextField("Admin Name", text: $adminName)
+                        
+                        HStack {
+                            Text("+91")
+                                .foregroundColor(.gray)
+                            TextField("Contact Number", text: $phone)
+                                .keyboardType(.numberPad)
+                                .onChange(of: phone) { _, newValue in
+                                    // Allow only digits and limit to 10 characters
+                                    phone = newValue.filter { $0.isNumber }.prefix(10).description
+                                }
                         }
-                }
-                if !phoneError.isEmpty {
-                    Text(phoneError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-                
-                TextField("Email", text: $email)
-                    .keyboardType(.emailAddress)
-                    .autocapitalization(.none)
-                if !emailError.isEmpty {
-                    Text(emailError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
+                        if !phoneError.isEmpty {
+                            Text(phoneError)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                        
+                        TextField("Email", text: $email)
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                        if !emailError.isEmpty {
+                            Text(emailError)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    },
+                    label: {
+                        HStack {
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.teal)
+                            Text("ADMIN INFORMATION")
+                                .font(.headline)
+                                .foregroundColor(.teal)
+                        }
+                    }
+                )
             }
             
             // Admin Address Section
-            Section(header: Text("Admin Address").foregroundColor(.teal)) {
-                TextField("Locality", text: $adminLocality)
-                TextField("City", text: $adminCity)
-                
-                Picker("State", selection: $selectedAdminState) {
-                    ForEach(indianStates, id: \.self) { state in
-                        Text(state).tag(state)
+            Section {
+                DisclosureGroup(
+                    isExpanded: $adminAddressExpanded,
+                    content: {
+                        TextField("Locality", text: $adminLocality)
+                        TextField("City", text: $adminCity)
+                        
+                        Picker("State", selection: $selectedAdminState) {
+                            ForEach(indianStates, id: \.self) { state in
+                                Text(state).tag(state)
+                            }
+                        }
+                        
+                        TextField("Pin Code", text: $adminPinCode)
+                            .keyboardType(.numberPad)
+                            .onChange(of: adminPinCode) { _, newValue in
+                                // Allow only digits and limit to 10 characters
+                                adminPinCode = newValue.filter { $0.isNumber }.prefix(6).description
+                            }
+                        if !adminPinCodeError.isEmpty {
+                            Text(adminPinCodeError)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    },
+                    label: {
+                        HStack {
+                            Image(systemName: "house.fill")
+                                .foregroundColor(.teal)
+                            Text("ADMIN ADDRESS")
+                                .font(.headline)
+                                .foregroundColor(.teal)
+                        }
                     }
-                }
-                
-                TextField("Pin Code", text: $adminPinCode)
-                    .keyboardType(.numberPad)
-                    .onChange(of: adminPinCode) { _, newValue in
-                        // Allow only digits and limit to 10 characters
-                        adminPinCode = newValue.filter { $0.isNumber }.prefix(6).description
-                    }
-                if !adminPinCodeError.isEmpty {
-                    Text(adminPinCodeError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
+                )
             }
-            
         }
         .navigationBarBackButtonHidden(true)
         .navigationTitle("Add Hospital")
@@ -541,6 +602,7 @@ struct AddHospitalForm: View {
 struct EditHospitalForm: View {
     private let supabase = SupabaseController.shared
     @State private var editedHospital: Hospital
+    @State private var adminData: [String: Any]? = nil
     let onSave: (Hospital) -> Void
     
     // UI states
@@ -549,67 +611,144 @@ struct EditHospitalForm: View {
     @State private var errorMessage = ""
     @Environment(\.dismiss) private var dismiss
     
+    // Section toggle states
+    @State private var hospitalInfoExpanded = true
+    @State private var adminInfoExpanded = false
+    
     init(hospital: Hospital, onSave: @escaping (Hospital) -> Void) {
         _editedHospital = State(initialValue: hospital)
         self.onSave = onSave
     }
     
+    private func fetchAdminData() {
+        Task {
+            do {
+                adminData = try await supabase.fetchHospitalAdmin(hospitalId: editedHospital.id)
+                
+                if let admin = adminData {
+                    await MainActor.run {
+                        if let adminName = admin["admin_name"] as? String {
+                            editedHospital.adminName = adminName
+                        }
+                        
+                        if let contactNumber = admin["contact_number"] as? String {
+                            editedHospital.phone = contactNumber
+                        }
+                        
+                        if let email = admin["email"] as? String {
+                            editedHospital.email = email
+                        }
+                    }
+                }
+            } catch {
+                print("Error fetching admin data: \(error.localizedDescription)")
+                // We'll continue even if admin data fetch fails
+            }
+        }
+    }
+    
     var body: some View {
         Form {
-            Section(header: Text("Hospital Information")) {
-                TextField("Hospital Name", text: $editedHospital.name)
-                TextField("Admin Name", text: $editedHospital.adminName)
-                
-                // Display hospital ID as non-editable text
-                HStack {
-                    Text("Hospital ID")
-                        .foregroundColor(.gray)
-                    Spacer()
-                    Text(editedHospital.id)
-                        .foregroundColor(.teal)
-                }
-                
-                TextField("License Number", text: $editedHospital.licenseNumber)
-                    .textCase(.uppercase)
-                    .placeholder(when: editedHospital.licenseNumber.isEmpty) {
-                        Text("Enter state license (e.g., XX12345)")
+            // HOSPITAL INFORMATION
+            Section {
+                DisclosureGroup(
+                    isExpanded: $hospitalInfoExpanded,
+                    content: {
+                        TextField("Hospital Name", text: $editedHospital.name)
+                        
+                        // Display hospital ID as non-editable text
+                        HStack {
+                            Text("Hospital ID")
+                                .foregroundColor(.gray)
+                            Spacer()
+                            Text(editedHospital.id)
+                                .foregroundColor(.teal)
+                        }
+                        
+                        TextField("License Number", text: $editedHospital.licenseNumber)
+                            .textCase(.uppercase)
+                            .placeholder(when: editedHospital.licenseNumber.isEmpty) {
+                                Text("Enter state license (e.g., XX12345)")
+                                    .foregroundColor(.gray)
+                            }
+                            
+                        // Hospital address fields
+                        Text("Hospital Address")
+                            .font(.headline)
                             .foregroundColor(.gray)
+                            .padding(.top, 10)
+                        
+                        TextField("Street", text: $editedHospital.street)
+                        TextField("City", text: $editedHospital.city)
+                        TextField("State", text: $editedHospital.state)
+                        TextField("Pin Code", text: $editedHospital.zipCode)
+                            .keyboardType(.numberPad)
+                        
+                        // Hospital contact
+                        Text("Hospital Contact")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                            .padding(.top, 10)
+                            
+                        HStack {
+                            Text("+91")
+                                .foregroundColor(.gray)
+                            TextField("Emergency Contact", text: $editedHospital.hospitalPhone)
+                                .keyboardType(.numberPad)
+                        }
+                        
+                        Picker("Hospital Status", selection: $editedHospital.status) {
+                            Text("Active").tag(HospitalStatus.active)
+                            Text("Pending").tag(HospitalStatus.pending)
+                            Text("Inactive").tag(HospitalStatus.inactive)
+                        }
+                        .pickerStyle(SegmentedPickerStyle())
+                    },
+                    label: {
+                        HStack {
+                            Image(systemName: "building.2")
+                                .foregroundColor(.teal)
+                            Text("HOSPITAL INFORMATION")
+                                .font(.headline)
+                                .foregroundColor(.teal)
+                        }
                     }
+                )
             }
             
-            Section(header: Text("Address")) {
-                TextField("Street", text: $editedHospital.street)
-                TextField("City", text: $editedHospital.city)
-                TextField("State", text: $editedHospital.state)
-                TextField("Pin Code", text: $editedHospital.zipCode)
-                    .keyboardType(.numberPad)
-            }
-            
-            Section(header: Text("Contact Information")) {
-                HStack {
-                    Text("+91")
-                        .foregroundColor(.gray)
-                    TextField("Emergency Contact", text: $editedHospital.hospitalPhone)
-                        .keyboardType(.numberPad)
-                }
-                HStack {
-                    Text("+91")
-                        .foregroundColor(.gray)
-                    TextField("Admin Phone", text: $editedHospital.phone)
-                        .keyboardType(.numberPad)
-                }
-                TextField("Email", text: $editedHospital.email)
-                    .keyboardType(.emailAddress)
-                    .autocapitalization(.none)
-            }
-            
-            Section(header: Text("Status")) {
-                Picker("Hospital Status", selection: $editedHospital.status) {
-                    Text("Active").tag(HospitalStatus.active)
-                    Text("Pending").tag(HospitalStatus.pending)
-                    Text("Inactive").tag(HospitalStatus.inactive)
-                }
-                .pickerStyle(SegmentedPickerStyle())
+            // ADMIN INFORMATION
+            Section {
+                DisclosureGroup(
+                    isExpanded: $adminInfoExpanded,
+                    content: {
+                        TextField("Admin Name", text: $editedHospital.adminName)
+                        
+                        Text("Admin Contact")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                            .padding(.top, 10)
+                            
+                        HStack {
+                            Text("+91")
+                                .foregroundColor(.gray)
+                            TextField("Admin Phone", text: $editedHospital.phone)
+                                .keyboardType(.numberPad)
+                        }
+                        
+                        TextField("Email", text: $editedHospital.email)
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                    },
+                    label: {
+                        HStack {
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.teal)
+                            Text("ADMIN INFORMATION")
+                                .font(.headline)
+                                .foregroundColor(.teal)
+                        }
+                    }
+                )
             }
             
             Section {
@@ -632,6 +771,9 @@ struct EditHospitalForm: View {
             Text(errorMessage)
         }
         .interactiveDismissDisabled(isLoading)
+        .onAppear {
+            fetchAdminData()
+        }
     }
     
     private func saveChanges() {
@@ -641,8 +783,42 @@ struct EditHospitalForm: View {
         editedHospital.lastModified = Date()
         editedHospital.lastModifiedBy = "Super Admin"
         
-        // Call the onSave callback which will handle the Supabase update
+        // First call the onSave callback for updating hospital data
         onSave(editedHospital)
+        
+        // Then update the admin data in the hospital_admins table
+        Task {
+            do {
+                struct AdminUpdateData: Encodable {
+                    let admin_name: String
+                    let email: String 
+                    let contact_number: String
+                }
+                
+                let adminUpdate = AdminUpdateData(
+                    admin_name: editedHospital.adminName,
+                    email: editedHospital.email,
+                    contact_number: editedHospital.phone
+                )
+                
+                try await supabase.update(
+                    table: "hospital_admins",
+                    data: adminUpdate,
+                    where: "hospital_id",
+                    equals: editedHospital.id
+                )
+                
+                print("SUPABASE: Successfully updated admin data for hospital \(editedHospital.id)")
+                
+            } catch {
+                print("Error updating admin data: \(error.localizedDescription)")
+                await MainActor.run {
+                    errorMessage = "Failed to update admin information: \(error.localizedDescription)"
+                    showError = true
+                    isLoading = false
+                }
+            }
+        }
     }
 }
 

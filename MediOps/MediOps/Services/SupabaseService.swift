@@ -141,19 +141,37 @@ class SupabaseController {
                     imageData = Data(base64Encoded: imageBase64)
                 }
                 
+                // Fetch admin data for this hospital
+                var adminName = "Admin"
+                var adminPhone = contactNumber
+                var adminEmail = email
+                
+                // Try to get admin data
+                if let adminData = try? await fetchHospitalAdmin(hospitalId: id) {
+                    if let name = adminData["admin_name"] as? String {
+                        adminName = name
+                    }
+                    if let phone = adminData["contact_number"] as? String {
+                        adminPhone = phone
+                    }
+                    if let mail = adminData["email"] as? String {
+                        adminEmail = mail
+                    }
+                }
+                
                 // Create hospital object with extracted data
                 let hospital = Hospital(
                     id: id,
                     name: name,
-                    adminName: "Admin", // We don't have admin name in the hospitals table
+                    adminName: adminName,
                     licenseNumber: licenseNumber,
                     hospitalPhone: emergencyContact,
                     street: hospitalAddress,
                     city: city,
                     state: state,
                     zipCode: pincode,
-                    phone: contactNumber,
-                    email: email,
+                    phone: adminPhone,
+                    email: adminEmail,
                     status: status,
                     registrationDate: Date(), // Default to current date if not available
                     lastModified: Date(),
@@ -247,6 +265,30 @@ class SupabaseController {
     func generateToken(userId: String) -> String {
         // In a real app, you'd use a proper JWT library
         return "token_\(userId)_\(Int(Date().timeIntervalSince1970))"
+    }
+    
+    /// Fetch hospital admin details by hospital_id
+    func fetchHospitalAdmin(hospitalId: String) async throws -> [String: Any]? {
+        print("SUPABASE: Fetching admin details for hospital \(hospitalId)")
+        
+        do {
+            let admins = try await select(
+                from: "hospital_admins",
+                where: "hospital_id",
+                equals: hospitalId
+            )
+            
+            guard let admin = admins.first else {
+                print("SUPABASE: No admin found for hospital \(hospitalId)")
+                return nil
+            }
+            
+            print("SUPABASE: Successfully retrieved admin details for hospital \(hospitalId)")
+            return admin
+        } catch {
+            print("SUPABASE ERROR: Failed to fetch admin details: \(error.localizedDescription)")
+            throw error
+        }
     }
 }
 
