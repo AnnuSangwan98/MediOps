@@ -306,6 +306,112 @@ class AdminController {
         }
     }
     
+    /// Update doctor information
+    func updateDoctor(
+        doctorId: String,
+        name: String,
+        specialization: String,
+        qualifications: [String],
+        licenseNo: String,
+        experience: Int,
+        addressLine: String,
+        email: String,
+        contactNumber: String
+    ) async throws {
+        print("UPDATE DOCTOR: Updating doctor with ID: \(doctorId)")
+        
+        // Create an Encodable struct for doctor data
+        struct DoctorUpdateData: Encodable {
+            let name: String
+            let specialization: String
+            let qualifications: [String]
+            let license_no: String
+            let experience: Int
+            let address_line: String
+            let email: String
+            let contact_number: String
+            let updated_at: String
+        }
+        
+        // Prepare the update data with fields that can be updated
+        let doctorData = DoctorUpdateData(
+            name: name,
+            specialization: specialization,
+            qualifications: qualifications,
+            license_no: licenseNo,
+            experience: experience,
+            address_line: addressLine,
+            email: email,
+            contact_number: contactNumber,
+            updated_at: ISO8601DateFormatter().string(from: Date())
+        )
+        
+        // Update the doctor record in Supabase
+        try await supabase.update(
+            table: "doctors",
+            data: doctorData,
+            where: "id",
+            equals: doctorId
+        )
+        
+        print("UPDATE DOCTOR: Successfully updated doctor with ID: \(doctorId)")
+    }
+    
+    /// Delete a doctor
+    func deleteDoctor(id: String) async throws {
+        print("DELETE DOCTOR: Attempting to delete doctor with ID: \(id)")
+        
+        // First try direct deletion (most reliable)
+        do {
+            print("DELETE DOCTOR: Attempting full deletion first")
+            try await supabase.delete(
+                from: "doctors",
+                where: "id",
+                equals: id
+            )
+            print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id)")
+            return // Exit if deletion was successful
+        } catch {
+            print("DELETE DOCTOR ERROR on full deletion: \(error.localizedDescription)")
+            // If direct deletion fails, try status updates
+        }
+        
+        // Create an Encodable struct for the status update
+        struct DoctorStatusUpdate: Encodable {
+            let doctor_status: String
+            let updated_at: String
+        }
+        
+        // Try various possible status values that might be allowed by the check constraint
+        let possibleStatuses = ["inactive", "deleted", "disabled", "removed", "deactivated", "closed"]
+        
+        for status in possibleStatuses {
+            do {
+                print("DELETE DOCTOR: Trying status update to '\(status)'")
+                let doctorData = DoctorStatusUpdate(
+                    doctor_status: status,
+                    updated_at: ISO8601DateFormatter().string(from: Date())
+                )
+                
+                try await supabase.update(
+                    table: "doctors",
+                    data: doctorData,
+                    where: "id",
+                    equals: id
+                )
+                
+                print("DELETE DOCTOR: Successfully updated doctor status to '\(status)' with ID: \(id)")
+                return // Exit the function if this status update works
+            } catch {
+                print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
+                // Continue trying other statuses
+            }
+        }
+        
+        // If we reach here, none of our approaches worked
+        throw AdminError.doctorDeleteFailed
+    }
+    
     // MARK: - Lab Admin Management
     
     /// Register a new lab admin (independent of users table)
@@ -434,14 +540,24 @@ class AdminController {
         let dateFormatter = ISO8601DateFormatter()
         let updatedAt = dateFormatter.string(from: now)
         
-        let labAdminData: [String: String] = [
-            "name": labAdmin.name,
-            "email": labAdmin.email,
-            "contact_number": labAdmin.contactNumber,
-            "department": labAdmin.department,
-            "Address": labAdmin.address,
-            "updated_at": updatedAt
-        ]
+        // Create an Encodable struct for lab admin updates
+        struct LabAdminUpdateData: Encodable {
+            let name: String
+            let email: String
+            let contact_number: String
+            let department: String
+            let Address: String
+            let updated_at: String
+        }
+        
+        let labAdminData = LabAdminUpdateData(
+            name: labAdmin.name,
+            email: labAdmin.email,
+            contact_number: labAdmin.contactNumber,
+            department: labAdmin.department,
+            Address: labAdmin.address,
+            updated_at: updatedAt
+        )
         
         try await supabase.update(
             table: "lab_admins",
@@ -453,11 +569,27 @@ class AdminController {
     
     /// Delete lab admin
     func deleteLabAdmin(id: String) async throws {
-        try await supabase.delete(
-            from: "lab_admins",
-            where: "id",
-            equals: id
-        )
+        print("DELETE LAB ADMIN: Attempting to delete lab admin with ID: \(id)")
+        
+        // First try direct deletion
+        do {
+            try await supabase.delete(
+                from: "lab_admins",
+                where: "id",
+                equals: id
+            )
+            print("DELETE LAB ADMIN: Successfully deleted lab admin with ID: \(id)")
+            return
+        } catch {
+            print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
+            
+            // If there are foreign key constraints preventing deletion,
+            // we could implement a soft delete by updating a status field
+            // (if such a field exists in the lab_admins table)
+            
+            // For now, just rethrow the error
+            throw error
+        }
     }
     
     // MARK: - Activity Management
@@ -991,6 +1123,7 @@ enum AdminError: Error, LocalizedError {
     case invalidActivityData
     case hospitalNotFound
     case invalidData
+    case doctorDeleteFailed
     
     var errorDescription: String? {
         switch self {
@@ -1014,6 +1147,8 @@ enum AdminError: Error, LocalizedError {
             return "Hospital not found"
         case .invalidData:
             return "Invalid data"
+        case .doctorDeleteFailed:
+            return "Failed to delete doctor"
         }
     }
 } 

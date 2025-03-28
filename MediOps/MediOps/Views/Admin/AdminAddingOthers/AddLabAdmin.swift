@@ -213,7 +213,12 @@ struct AddLabAdminView: View {
     private func saveToDatabase(labAdmin: UILabAdmin, activity: UIActivity) {
         Task {
             do {
-                // Generate a secure password that meets the requirements
+                // Generate a secure password that meets the Supabase constraints:
+                // - At least 8 characters
+                // - At least one uppercase letter
+                // - At least one lowercase letter
+                // - At least one digit
+                // - At least one special character (@$!%*?&)
                 let password = generateSecurePassword()
                 
                 // Use a valid hospital ID format
@@ -244,29 +249,34 @@ struct AddLabAdminView: View {
         }
     }
     
-    // Generate a password that meets the constraints in the lab_admins table
+    // Generate a password that meets the Supabase constraints:
+    // - At least 8 characters
+    // - At least one uppercase letter
+    // - At least one lowercase letter
+    // - At least one digit
+    // - At least one special character (@$!%*?&)
     private func generateSecurePassword() -> String {
-        // Generate a password that meets all requirements (at least 8 chars, with uppercase, lowercase, digit, and special char)
         let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
         let numbers = "0123456789"
-        let specialChars = "@$!%*?&"
+        let specialChars = "@$!%*?&" // Only allowed special characters per constraint
         
-        // Ensure at least one of each required character type
-        let guaranteedChars = [
-            String(uppercaseLetters.randomElement()!),
-            String(lowercaseLetters.randomElement()!),
-            String(numbers.randomElement()!),
-            String(specialChars.randomElement()!)
-        ]
+        // Ensure at least one character from each required category
+        var passwordChars: [String] = []
+        passwordChars.append(String(uppercaseLetters.randomElement()!))
+        passwordChars.append(String(lowercaseLetters.randomElement()!))
+        passwordChars.append(String(numbers.randomElement()!))
+        passwordChars.append(String(specialChars.randomElement()!))
         
-        // Generate remaining characters (at least 4 more for a total of 8+)
-        let remainingLength = 8
+        // Add more random characters to reach at least 8 characters
         let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
-        let remainingChars = (0..<remainingLength).map { _ in String(allChars.randomElement()!) }
+        let additionalLength = 8 // Will give us a 12-character password
         
-        // Combine all characters and shuffle them
-        let passwordChars = guaranteedChars + remainingChars
+        for _ in 0..<additionalLength {
+            passwordChars.append(String(allChars.randomElement()!))
+        }
+        
+        // Shuffle and join the characters
         return passwordChars.shuffled().joined()
     }
     

@@ -9,6 +9,10 @@ struct DoctorsListView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var doctorToDelete: UIDoctor?
+    @State private var showDeleteConfirmation = false
+    @State private var showSuccessMessage = false
+    @State private var successMessage = ""
     
     private let adminController = AdminController.shared
     private let userController = UserController.shared
@@ -69,7 +73,8 @@ struct DoctorsListView: View {
                                     doctor: doctor,
                                     onEdit: { editDoctor(doctor) },
                                     onDelete: {
-                                        deleteDoctor(doctor)
+                                        doctorToDelete = doctor
+                                        showDeleteConfirmation = true
                                     }
                                 )
                                 .padding(.horizontal)
@@ -117,10 +122,28 @@ struct DoctorsListView: View {
                 }
             }
         }
+        // Error alert
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage)
+        }
+        // Delete confirmation alert
+        .alert("Delete Doctor", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                if let doctor = doctorToDelete {
+                    confirmDeleteDoctor(doctor)
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this doctor? This action cannot be undone.")
+        }
+        // Success message alert
+        .alert("Success", isPresented: $showSuccessMessage) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(successMessage)
         }
         .task {
             await fetchDoctors()
@@ -163,8 +186,12 @@ struct DoctorsListView: View {
             let fetchedDoctors = try await adminController.getDoctorsByHospitalAdmin(hospitalAdminId: hospitalAdminId!)
             print("FETCH DOCTORS: Successfully retrieved \(fetchedDoctors.count) doctors")
             
+            // Filter only active doctors
+            let activeDoctors = fetchedDoctors.filter { $0.doctorStatus == "active" }
+            print("FETCH DOCTORS: Filtered to \(activeDoctors.count) active doctors")
+            
             // Map to UI models
-            doctors = fetchedDoctors.map { doctor in
+            doctors = activeDoctors.map { doctor in
                 print("FETCH DOCTORS: Processing doctor ID: \(doctor.id), Name: \(doctor.name)")
                 return UIDoctor(
                     id: doctor.id,
@@ -193,11 +220,33 @@ struct DoctorsListView: View {
         showEditDoctor = true
     }
     
-    private func deleteDoctor(_ doctor: UIDoctor) {
-        // TODO: Implement deletion through Supabase
-        withAnimation {
-            if let index = doctors.firstIndex(where: { $0.id == doctor.id }) {
-                doctors.remove(at: index)
+    private func confirmDeleteDoctor(_ doctor: UIDoctor) {
+        isLoading = true
+        
+        Task {
+            do {
+                // Call the AdminController to mark the doctor as inactive
+                try await adminController.deleteDoctor(id: doctor.id)
+                
+                await MainActor.run {
+                    // Remove from UI list
+                    withAnimation {
+                        if let index = doctors.firstIndex(where: { $0.id == doctor.id }) {
+                            doctors.remove(at: index)
+                        }
+                    }
+                    
+                    // Show success message
+                    successMessage = "Doctor successfully removed"
+                    showSuccessMessage = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to delete doctor: \(error.localizedDescription)"
+                    showError = true
+                    isLoading = false
+                }
             }
         }
     }

@@ -9,6 +9,10 @@ struct LabAdminsListView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @Binding var labAdmins: [UILabAdmin]
+    @State private var labAdminToDelete: UILabAdmin?
+    @State private var showDeleteConfirmation = false
+    @State private var showSuccessMessage = false
+    @State private var successMessage = ""
     
     private let adminController = AdminController.shared
     
@@ -41,9 +45,12 @@ struct LabAdminsListView: View {
                 // Lab Admins List
                 ScrollView {
                     VStack(spacing: 20) {
-                        if labAdmins.isEmpty {
+                        if isLoading {
+                            ProgressView("Loading lab admins...")
+                                .padding()
+                        } else if labAdmins.isEmpty {
                             VStack(spacing: 15) {
-                                Image(systemName: "flask")
+                                Image(systemName: "flask.fill")
                                     .font(.system(size: 40))
                                     .foregroundColor(.gray)
                                 Text("No lab admins added yet")
@@ -64,7 +71,10 @@ struct LabAdminsListView: View {
                                 LabAdminCard(
                                     labAdmin: labAdmin,
                                     onEdit: { editLabAdmin(labAdmin) },
-                                    onDelete: { deleteLabAdmin(labAdmin) }
+                                    onDelete: {
+                                        labAdminToDelete = labAdmin
+                                        showDeleteConfirmation = true
+                                    }
                                 )
                                 .padding(.horizontal)
                             }
@@ -94,34 +104,45 @@ struct LabAdminsListView: View {
                 }
                 .padding(.bottom, 20)
             }
-            
-            if isLoading {
-                Color.black.opacity(0.2)
-                    .ignoresSafeArea()
-                ProgressView()
-                    .padding()
-                    .background(Color.white)
-                    .cornerRadius(10)
-            }
         }
         .sheet(isPresented: $showAddLabAdmin) {
             AddLabAdminView { activity in
                 if let labAdmin = activity.labAdminDetails {
-                    addLabAdmin(labAdmin)
+                    labAdmins.append(labAdmin)
                 }
             }
         }
         .sheet(isPresented: $showEditLabAdmin) {
             if let labAdmin = labAdminToEdit {
                 EditLabAdminView(labAdmin: labAdmin) { updatedLabAdmin in
-                    updateLabAdmin(updatedLabAdmin)
+                    if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
+                        labAdmins[index] = updatedLabAdmin
+                    }
                 }
             }
         }
+        // Error alert
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage)
+        }
+        // Delete confirmation alert
+        .alert("Delete Lab Admin", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                if let labAdmin = labAdminToDelete {
+                    confirmDeleteLabAdmin(labAdmin)
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this lab admin? This action cannot be undone.")
+        }
+        // Success message alert
+        .alert("Success", isPresented: $showSuccessMessage) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(successMessage)
         }
         .task {
             await fetchLabAdmins()
@@ -169,10 +190,11 @@ struct LabAdminsListView: View {
             labAdmins = fetchedLabAdmins.map { labAdmin in
                 print("FETCH LAB ADMINS: Processing lab admin ID: \(labAdmin.id), Name: \(labAdmin.name)")
                 return UILabAdmin(
-                    id: UUID(uuidString: labAdmin.id) ?? UUID(),
+                    id: UUID(), // Use a UUID for SwiftUI's Identifiable protocol
+                    originalId: labAdmin.id, // Store the original Supabase ID
                     fullName: labAdmin.name,
                     email: labAdmin.email,
-                    phone: labAdmin.contactNumber.isEmpty ? "" : labAdmin.contactNumber,
+                    phone: labAdmin.contactNumber.isEmpty ? "" : "+91\(labAdmin.contactNumber)", // Add +91 prefix for UI
                     gender: .male, // Default gender
                     dateOfBirth: Date(), // Default date
                     experience: 0, // Default experience
@@ -348,8 +370,16 @@ struct LabAdminsListView: View {
         Task {
             isLoading = true
             do {
-                print("DELETE LAB ADMIN: Deleting lab admin ID: \(labAdmin.id)")
-                try await adminController.deleteLabAdmin(id: labAdmin.id.uuidString)
+                // Get the lab admin ID to use with the API (using originalId when available)
+                let labAdminId: String
+                if let originalId = labAdmin.originalId, !originalId.isEmpty {
+                    labAdminId = originalId
+                } else {
+                    labAdminId = String(describing: labAdmin.id)
+                }
+                
+                print("DELETE LAB ADMIN: Deleting lab admin with ID: \(labAdminId)")
+                try await adminController.deleteLabAdmin(id: labAdminId)
                 print("DELETE LAB ADMIN: Successfully deleted lab admin")
                 await fetchLabAdmins() // Refresh the list
             } catch {
@@ -368,6 +398,48 @@ struct LabAdminsListView: View {
     private func editLabAdmin(_ labAdmin: UILabAdmin) {
         labAdminToEdit = labAdmin
         showEditLabAdmin = true
+    }
+    
+    private func confirmDeleteLabAdmin(_ labAdmin: UILabAdmin) {
+        isLoading = true
+        
+        Task {
+            do {
+                // Get the lab admin ID to use with the API
+                let labAdminId: String
+                if let originalId = labAdmin.originalId, !originalId.isEmpty {
+                    labAdminId = originalId
+                } else {
+                    labAdminId = String(describing: labAdmin.id)
+                }
+                
+                print("DELETE LAB ADMIN: Deleting lab admin with ID: \(labAdminId)")
+                
+                // Call the AdminController to delete the lab admin
+                try await adminController.deleteLabAdmin(id: labAdminId)
+                
+                await MainActor.run {
+                    // Remove from UI list
+                    withAnimation {
+                        if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
+                            labAdmins.remove(at: index)
+                        }
+                    }
+                    
+                    // Show success message
+                    successMessage = "Lab admin successfully removed"
+                    showSuccessMessage = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
+                    errorMessage = "Failed to delete lab admin: \(error.localizedDescription)"
+                    showError = true
+                    isLoading = false
+                }
+            }
+        }
     }
 }
 

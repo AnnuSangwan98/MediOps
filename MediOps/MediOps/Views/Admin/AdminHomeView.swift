@@ -24,6 +24,7 @@ struct UIDoctor: Identifiable {
 
 struct UILabAdmin: Identifiable {
     var id = UUID()
+    var originalId: String? // Store the original Supabase ID (e.g., LAB001)
     var fullName: String
     var email: String
     var phone: String // This will store the full phone number including +91

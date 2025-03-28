@@ -20,6 +20,7 @@ struct AddDoctorView: View {
     @State private var selectedQualifications: Set<String> = ["MBBS"] // Default to MBBS
     @State private var license = ""
     @State private var address = "" // Added address state
+    @State private var pincode = "" // Add pincode field
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var isLoading = false
@@ -63,7 +64,8 @@ struct AddDoctorView: View {
         phoneNumber.count == 10 &&
         !selectedQualifications.isEmpty &&
         isValidLicense(license) &&
-        !address.isEmpty
+        !address.isEmpty &&
+        isValidPincode(pincode) // Add pincode validation
     }
     
     var body: some View {
@@ -171,6 +173,19 @@ struct AddDoctorView: View {
                     
                     // Changed to TextField for address
                     TextField("Address", text: $address)
+                    
+                    // Add pincode field with validation
+                    TextField("Pincode (6 digits)", text: $pincode)
+                        .keyboardType(.numberPad)
+                        .onChange(of: pincode) { _, newValue in
+                            // Keep only digits and limit to 6
+                            let filtered = newValue.filter { "0123456789".contains($0) }
+                            if filtered.count > 6 {
+                                pincode = String(filtered.prefix(6))
+                            } else {
+                                pincode = filtered
+                            }
+                        }
                 }
                 
                 Section(header: Text("Account Information")) {
@@ -237,113 +252,147 @@ struct AddDoctorView: View {
     }
     
     private func saveDoctor() {
-        guard isFormValid else { return }
+        isLoading = true
+        
+        // Generate a secure password that meets the Supabase constraints
+        let securePassword = generateSecurePassword()
         
         Task {
             do {
-                // Get current user to determine hospital admin ID
-                var hospitalId: String? = nil
+                // Try to get the current user and their hospital admin ID
+                var hospitalAdminId: String? = nil
                 
                 if let currentUser = try? await userController.getCurrentUser() {
-                    print("ADD DOCTOR: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
+                    print("Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
                     
                     // If user is a hospital admin, use their ID directly
                     if currentUser.role == .hospitalAdmin {
-                        hospitalId = currentUser.id
-                        print("ADD DOCTOR: User is a hospital admin, using ID: \(hospitalId ?? "unknown")")
+                        hospitalAdminId = currentUser.id
+                        print("User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
                     } else {
                         // For other roles, try to get their associated hospital admin
                         do {
                             let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
-                            hospitalId = hospitalAdmin.id
-                            print("ADD DOCTOR: Retrieved hospital admin ID: \(hospitalId ?? "unknown")")
+                            hospitalAdminId = hospitalAdmin.id
+                            print("Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
                         } catch {
-                            print("ADD DOCTOR WARNING: \(error.localizedDescription)")
+                            print("Warning: \(error.localizedDescription)")
                         }
                     }
                 }
                 
                 // If we couldn't determine the hospital admin ID, use a fallback
-                if hospitalId == nil {
-                    hospitalId = "HOS001" // Fallback ID
-                    print("ADD DOCTOR: Using fallback hospital ID: \(hospitalId!)")
+                if hospitalAdminId == nil {
+                    hospitalAdminId = "HOS001" // Fallback ID
+                    print("Using fallback hospital admin ID: \(hospitalAdminId!)")
                 }
                 
-                // Make sure we have all required fields according to the DB schema
-                // Prepare qualifications array (Required by schema constraint)
-                let qualificationArray: [String] = Array(selectedQualifications)
+                // Prepare the doctor data
+                print("Creating doctor with hospital admin ID: \(hospitalAdminId!)")
                 
-                // Default values for required fields that aren't in the form
-                let defaultState = "Maharashtra"
-                let defaultCity = "Mumbai"
-                let defaultPincode = "400001"
-                let doctorStatus = "active"
+                // Convert qualifications for API
+                let qualificationsArray = Array(selectedQualifications)
                 
-                // Call AdminController to create doctor
-                let (doctor, token) = try await adminController.createDoctor(
+                // Create the doctor
+                let (doctor, _) = try await adminController.createDoctor(
                     email: email,
-                    password: password,
+                    password: securePassword,
                     name: fullName,
                     specialization: specialization.rawValue,
-                    hospitalId: hospitalId!,
-                    qualifications: qualificationArray,
+                    hospitalId: hospitalAdminId!,
+                    qualifications: qualificationsArray,
                     licenseNo: license,
                     experience: experience,
                     addressLine: address,
-                    state: defaultState,
-                    city: defaultCity,
-                    pincode: defaultPincode,
-                    contactNumber: phoneNumber,
-                    emergencyContactNumber: phoneNumber,
-                    doctorStatus: doctorStatus
+                    state: "", // Add these fields if needed
+                    city: "",
+                    pincode: pincode,
+                    contactNumber: phoneNumber
                 )
                 
-                print("DOCTOR CREATED: \(doctor.name) with ID: \(doctor.id)")
+                // Send credentials to the doctor
+                await sendDoctorCredentials(email: email, password: securePassword)
                 
-                // Create UI model for the doctor
+                // Create a doctor record for the UI
                 let uiDoctor = UIDoctor(
                     id: doctor.id,
                     fullName: doctor.name,
-                    specialization: specialization.rawValue,
-                    email: email,
+                    specialization: doctor.specialization,
+                    email: doctor.email,
                     phone: "+91\(phoneNumber)",
                     gender: gender,
                     dateOfBirth: dateOfBirth,
                     experience: experience,
-                    qualification: qualificationArray.joined(separator: ", "),
+                    qualification: qualificationsArray.joined(separator: ", "),
                     license: license,
                     address: address
                 )
                 
-                // Create activity for the UI
+                // Create an activity for the new doctor
                 let activity = UIActivity(
+                    id: UUID(),
                     type: .doctorAdded,
-                    title: "New Doctor: \(doctor.name)",
+                    title: "Added new doctor: \(fullName)",
                     timestamp: Date(),
                     status: .completed,
                     doctorDetails: uiDoctor,
-                    labAdminDetails: nil
+                    labAdminDetails: nil,
+                    hospitalDetails: nil
                 )
                 
-                // Call the sendDoctorCredentials function to send email
-                sendDoctorCredentials(activity: activity)
-                
+                await MainActor.run {
+                    resetForm()
+                    onSave(activity)
+                    isLoading = false
+                    dismiss()
+                }
             } catch {
                 await MainActor.run {
-                    isLoading = false
                     alertMessage = "Failed to create doctor: \(error.localizedDescription)"
                     showAlert = true
-                    print("ADD DOCTOR ERROR: \(error)")
+                    isLoading = false
                 }
             }
         }
     }
-
-    private func sendDoctorCredentials(activity: UIActivity) {
+    
+    // Generate a password that meets the Supabase constraints:
+    // - At least 8 characters
+    // - At least one uppercase letter
+    // - At least one lowercase letter
+    // - At least one digit
+    // - At least one special character (@$!%*?&)
+    private func generateSecurePassword() -> String {
+        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
+        let numbers = "0123456789"
+        let specialChars = "@$!%*?&"
+        
+        // Ensure at least one character from each required category
+        var passwordChars: [String] = []
+        passwordChars.append(String(uppercaseLetters.randomElement()!))
+        passwordChars.append(String(lowercaseLetters.randomElement()!))
+        passwordChars.append(String(numbers.randomElement()!))
+        passwordChars.append(String(specialChars.randomElement()!))
+        
+        // Add more random characters to reach at least 8 characters
+        let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
+        let additionalLength = 8 // Will give us a 12-character password
+        
+        for _ in 0..<additionalLength {
+            passwordChars.append(String(allChars.randomElement()!))
+        }
+        
+        // Shuffle and join the characters
+        return passwordChars.shuffled().joined()
+    }
+    
+    private func sendDoctorCredentials(email: String, password: String) async {
         guard let url = URL(string: "http://192.168.182.100:8082/send-credentials") else {
-            alertMessage = "Invalid server URL"
-            showAlert = true
-            isLoading = false
+            await MainActor.run {
+                alertMessage = "Invalid server URL"
+                showAlert = true
+            }
             return
         }
         
@@ -369,45 +418,23 @@ struct AddDoctorView: View {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: emailData)
             
-            URLSession.shared.dataTask(with: request) { data, response, error in
-                DispatchQueue.main.async {
-                    isLoading = false
-                    
-                    if let error = error as NSError? {
-                        switch error.code {
-                        case NSURLErrorTimedOut:
-                            self.alertMessage = "Request timed out. Please try again."
-                        case NSURLErrorNotConnectedToInternet:
-                            self.alertMessage = "No internet connection. Please check your network settings."
-                        case NSURLErrorCannotConnectToHost:
-                            self.alertMessage = "Cannot connect to server. Please try again later."
-                        default:
-                            self.alertMessage = "Network error: \(error.localizedDescription)"
-                        }
-                        self.showAlert = true
-                        return
-                    }
-                    
-                    if let httpResponse = response as? HTTPURLResponse {
-                        if httpResponse.statusCode == 200 {
-                            // Show success message
-                            self.alertMessage = "Doctor created successfully and credentials sent to \(email)"
-                            self.showAlert = true
-                            // Call onSave callback with the new activity
-                            self.onSave(activity)
-                        } else {
-                            self.alertMessage = "Doctor created successfully but failed to send credentials email (Status: \(httpResponse.statusCode))"
-                            self.showAlert = true
-                            // Still call onSave since the doctor was created
-                            self.onSave(activity)
-                        }
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("Credentials email sent successfully")
+                } else {
+                    await MainActor.run {
+                        alertMessage = "Doctor created successfully but failed to send credentials email (Status: \(httpResponse.statusCode))"
+                        showAlert = true
                     }
                 }
-            }.resume()
+            }
         } catch {
-            isLoading = false
-            alertMessage = "Failed to prepare email data"
-            showAlert = true
+            await MainActor.run {
+                alertMessage = "Doctor created successfully but failed to send credentials email: \(error.localizedDescription)"
+                showAlert = true
+            }
         }
     }
     
@@ -422,6 +449,7 @@ struct AddDoctorView: View {
         selectedQualifications = ["MBBS"]
         license = ""
         address = "" // Reset address
+        pincode = "" // Reset pincode
         password = generateSecurePassword() // Generate new password
     }
     
@@ -435,26 +463,10 @@ struct AddDoctorView: View {
         return NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: license)
     }
     
-    private func generateSecurePassword() -> String {
-        let upperLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        let lowerLetters = "abcdefghijklmnopqrstuvwxyz"
-        let numbers = "0123456789"
-        let specialChars = "!@#$%^&*()_-+="
-        
-        // Ensure at least one character from each category
-        var password = String(upperLetters.randomElement()!)
-        password += String(lowerLetters.randomElement()!)
-        password += String(numbers.randomElement()!)
-        password += String(specialChars.randomElement()!)
-        
-        // Add additional random characters
-        let allChars = upperLetters + lowerLetters + numbers + specialChars
-        for _ in 0..<6 {
-            password += String(allChars.randomElement()!)
-        }
-        
-        // Shuffle the password
-        return String(password.shuffled())
+    // Add validation for pincode (must be exactly 6 digits)
+    private func isValidPincode(_ pincode: String) -> Bool {
+        let pincodeRegex = #"^[0-9]{6}$"#
+        return NSPredicate(format: "SELF MATCHES %@", pincodeRegex).evaluate(with: pincode)
     }
 }
 

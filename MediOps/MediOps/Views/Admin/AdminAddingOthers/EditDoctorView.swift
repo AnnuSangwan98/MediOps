@@ -16,6 +16,9 @@ struct EditDoctorView: View {
     @State private var alertMessage = ""
     @State private var isLoading = false
     
+    // Add reference to AdminController
+    private let adminController = AdminController.shared
+    
     let doctor: UIDoctor
     let onUpdate: (UIDoctor) -> Void
     
@@ -118,7 +121,7 @@ struct EditDoctorView: View {
                     Button("Save") {
                         updateDoctor()
                     }
-                    .disabled(!isFormValid)
+                    .disabled(!isFormValid || isLoading)
                 }
             }
             .overlay {
@@ -151,6 +154,7 @@ struct EditDoctorView: View {
     private func updateDoctor() {
         isLoading = true
         
+        // Create the updated UIDoctor object for the UI
         let updatedDoctor = UIDoctor(
             id: doctor.id,
             fullName: fullName,
@@ -165,13 +169,45 @@ struct EditDoctorView: View {
             address: address
         )
         
-        // Call the update callback
-        onUpdate(updatedDoctor)
-        
-        // Show success message
-        alertMessage = "Doctor information updated successfully"
-        showAlert = true
-        isLoading = false
+        // Save to Supabase
+        Task {
+            do {
+                // Parse qualifications from comma-separated string to array
+                let qualificationsArray = qualification.split(separator: ",").map { 
+                    String($0.trimmingCharacters(in: .whitespaces)) 
+                }
+                
+                // Update doctor in Supabase
+                try await adminController.updateDoctor(
+                    doctorId: doctor.id, 
+                    name: fullName,
+                    specialization: specialization.rawValue,
+                    qualifications: qualificationsArray,
+                    licenseNo: license,
+                    experience: experience,
+                    addressLine: address,
+                    email: email,
+                    contactNumber: phoneNumber
+                )
+                
+                // Update UI on success
+                await MainActor.run {
+                    // Call the update callback
+                    onUpdate(updatedDoctor)
+                    
+                    // Show success message
+                    alertMessage = "Doctor information updated successfully in database"
+                    showAlert = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    alertMessage = "Failed to update doctor: \(error.localizedDescription)"
+                    showAlert = true
+                    isLoading = false
+                }
+            }
+        }
     }
     
     private func isValidEmail(_ email: String) -> Bool {

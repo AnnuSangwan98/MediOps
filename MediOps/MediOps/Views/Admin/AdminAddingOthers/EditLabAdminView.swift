@@ -14,6 +14,9 @@ struct EditLabAdminView: View {
     @State private var alertMessage = ""
     @State private var isLoading = false
     
+    // Add reference to AdminController
+    private let adminController = AdminController.shared
+    
     let labAdmin: UILabAdmin
     let onUpdate: (UILabAdmin) -> Void
     
@@ -100,7 +103,7 @@ struct EditLabAdminView: View {
                     Button("Save") {
                         updateLabAdminDetails()
                     }
-                    .disabled(!isFormValid)
+                    .disabled(!isFormValid || isLoading)
                 }
             }
             .overlay {
@@ -137,6 +140,9 @@ struct EditLabAdminView: View {
             return
         }
         
+        isLoading = true
+        
+        // Create updated UILabAdmin for the UI
         let updatedLabAdmin = UILabAdmin(
             id: labAdmin.id,
             fullName: fullName,
@@ -149,9 +155,74 @@ struct EditLabAdminView: View {
             address: address
         )
         
-        // Call the onUpdate closure with the updated lab admin
-        onUpdate(updatedLabAdmin)
-        dismiss()
+        // Update in Supabase
+        Task {
+            do {
+                // Get the labAdminId string from the UUID
+                let labAdminId = getLabAdminId(from: labAdmin.id)
+                print("UPDATE LAB ADMIN: Using ID: \(labAdminId)")
+                
+                // First, fetch the current lab admin from the database to get the hospitalId
+                let existingLabAdmin = try await adminController.getLabAdmin(id: labAdminId)
+                print("UPDATE LAB ADMIN: Got existing lab admin with hospital ID: \(existingLabAdmin.hospitalId)")
+                
+                // Create the database model preserving the original hospitalId
+                let labAdminModel = LabAdmin(
+                    id: labAdminId,
+                    hospitalId: existingLabAdmin.hospitalId,
+                    name: fullName,
+                    email: email,
+                    contactNumber: phoneNumber, // Store without +91 prefix
+                    department: qualification, // Using qualification as department
+                    address: address,
+                    createdAt: existingLabAdmin.createdAt, // Preserve original creation date
+                    updatedAt: Date() // Update the modified date
+                )
+                
+                // Save to database
+                try await adminController.updateLabAdmin(labAdminModel)
+                print("UPDATE LAB ADMIN: Successfully updated lab admin in Supabase")
+                
+                // Update UI
+                await MainActor.run {
+                    // Call the onUpdate closure with the updated lab admin
+                    onUpdate(updatedLabAdmin)
+                    
+                    // Show success message
+                    alertMessage = "Lab admin updated successfully in database"
+                    showAlert = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    print("UPDATE LAB ADMIN ERROR: \(error.localizedDescription)")
+                    alertMessage = "Failed to update lab admin: \(error.localizedDescription)"
+                    showAlert = true
+                    isLoading = false
+                }
+            }
+        }
+    }
+    
+    // Helper function to get the correct labAdminId string
+    private func getLabAdminId(from uuid: UUID) -> String {
+        // First check if we have an original ID from Supabase
+        if let originalId = labAdmin.originalId, !originalId.isEmpty {
+            print("Using original Supabase ID: \(originalId)")
+            return originalId
+        }
+        
+        // Fallback to UUID string conversion
+        let idString = String(describing: uuid)
+        
+        // If it's already a LAB formatted ID, return it
+        if idString.hasPrefix("LAB") {
+            return idString
+        }
+        
+        // If all fails, log a warning and use UUID string
+        print("WARNING: Using UUID as lab admin ID: \(idString). This may cause database issues.")
+        return idString
     }
     
     private func isValidEmail(_ email: String) -> Bool {
