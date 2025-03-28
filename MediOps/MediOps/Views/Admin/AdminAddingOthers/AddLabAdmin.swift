@@ -221,8 +221,17 @@ struct AddLabAdminView: View {
                 // - At least one special character (@$!%*?&)
                 let password = generateSecurePassword()
                 
-                // Use a valid hospital ID format
-                let hospitalAdminId = "HOS001"
+                // Get hospital ID from UserDefaults
+                guard let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") else {
+                    await MainActor.run {
+                        isLoading = false
+                        alertMessage = "Failed to save lab admin: Hospital ID not found. Please login again."
+                        showAlert = true
+                    }
+                    return
+                }
+                
+                print("SAVE LAB ADMIN: Using hospital ID from UserDefaults: \(hospitalId)")
                 
                 // Save to database using AdminController
                 let (_, _) = try await adminController.createLabAdmin(
@@ -230,7 +239,7 @@ struct AddLabAdminView: View {
                     password: password,
                     name: labAdmin.fullName,
                     labName: labAdmin.qualification, // This is actually mapped to department
-                    hospitalAdminId: hospitalAdminId,
+                    hospitalAdminId: hospitalId,
                     contactNumber: labAdmin.phone.replacingOccurrences(of: "+91", with: ""), // Remove country code for 10-digit format
                     department: "Pathology & Laboratory" // Fixed to match the constraint
                 )

@@ -83,6 +83,9 @@ struct DoctorsListView: View {
                     }
                     .padding(.vertical)
                 }
+                .refreshable {
+                    await fetchDoctors()
+                }
             }
             
             // Floating Add Button
@@ -108,16 +111,18 @@ struct DoctorsListView: View {
         }
         .sheet(isPresented: $showAddDoctor) {
             AddDoctorView { activity in
-                if let doctor = activity.doctorDetails {
-                    doctors.append(doctor)
+                // Refresh the list after adding a doctor
+                Task {
+                    await fetchDoctors()
                 }
             }
         }
         .sheet(isPresented: $showEditDoctor) {
             if let doctor = doctorToEdit {
                 EditDoctorView(doctor: doctor) { updatedDoctor in
-                    if let index = doctors.firstIndex(where: { $0.id == doctor.id }) {
-                        doctors[index] = updatedDoctor
+                    // Refresh the list after editing a doctor
+                    Task {
+                        await fetchDoctors()
                     }
                 }
             }
@@ -153,66 +158,53 @@ struct DoctorsListView: View {
     private func fetchDoctors() async {
         isLoading = true
         do {
-            // Try to get the current user and their hospital admin ID
-            var hospitalAdminId: String? = nil
-            
-            if let currentUser = try? await userController.getCurrentUser() {
-                print("FETCH DOCTORS: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
-                
-                // If user is a hospital admin, use their ID directly
-                if currentUser.role == .hospitalAdmin {
-                    hospitalAdminId = currentUser.id
-                    print("FETCH DOCTORS: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
-                } else {
-                    // For other roles, try to get their associated hospital admin
-                    do {
-                        let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
-                        hospitalAdminId = hospitalAdmin.id
-                        print("FETCH DOCTORS: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
-                    } catch {
-                        print("FETCH DOCTORS WARNING: \(error.localizedDescription)")
-                    }
-                }
+            // Get hospital ID from UserDefaults (saved during login)
+            guard let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") else {
+                print("FETCH DOCTORS ERROR: No hospital ID found in UserDefaults")
+                errorMessage = "Failed to fetch doctors: Hospital ID not found. Please login again."
+                showError = true
+                isLoading = false
+                return
             }
             
-            // If we couldn't determine the hospital admin ID, use a fallback
-            if hospitalAdminId == nil {
-                hospitalAdminId = "HOS001" // Fallback ID
-                print("FETCH DOCTORS: Using fallback hospital admin ID: \(hospitalAdminId!)")
-            }
+            print("FETCH DOCTORS: Using hospital ID from UserDefaults: \(hospitalId)")
             
-            // Fetch the doctors
-            print("FETCH DOCTORS: Requesting doctors for hospital admin: \(hospitalAdminId!)")
-            let fetchedDoctors = try await adminController.getDoctorsByHospitalAdmin(hospitalAdminId: hospitalAdminId!)
+            // Fetch doctors for the specific hospital ID from Supabase
+            let fetchedDoctors = try await adminController.getDoctorsByHospitalAdmin(hospitalAdminId: hospitalId)
             print("FETCH DOCTORS: Successfully retrieved \(fetchedDoctors.count) doctors")
-            
+                
             // Filter only active doctors
             let activeDoctors = fetchedDoctors.filter { $0.doctorStatus == "active" }
-            print("FETCH DOCTORS: Filtered to \(activeDoctors.count) active doctors")
+            print("FETCH DOCTORS: Filtered to \(activeDoctors.count) active doctors for hospital \(hospitalId)")
             
             // Map to UI models
-            doctors = activeDoctors.map { doctor in
-                print("FETCH DOCTORS: Processing doctor ID: \(doctor.id), Name: \(doctor.name)")
-                return UIDoctor(
-                    id: doctor.id,
-                    fullName: doctor.name,
-                    specialization: doctor.specialization,
-                    email: doctor.email,
-                    phone: doctor.contactNumber ?? "",
-                    gender: .male, // Default gender
-                    dateOfBirth: Date(), // Default date
-                    experience: doctor.experience,
-                    qualification: doctor.qualifications.joined(separator: ", "),
-                    license: doctor.licenseNo,
-                    address: doctor.addressLine
-                )
+            await MainActor.run {
+                doctors = activeDoctors.map { doctor in
+                    print("FETCH DOCTORS: Processing doctor ID: \(doctor.id), Name: \(doctor.name)")
+                    return UIDoctor(
+                        id: doctor.id,
+                        fullName: doctor.name,
+                        specialization: doctor.specialization,
+                        email: doctor.email,
+                        phone: doctor.contactNumber ?? "",
+                        gender: .male, // Default gender
+                        dateOfBirth: Date(), // Default date
+                        experience: doctor.experience,
+                        qualification: doctor.qualifications.joined(separator: ", "),
+                        license: doctor.licenseNo,
+                        address: doctor.addressLine
+                    )
+                }
+                isLoading = false
             }
         } catch {
-            print("FETCH DOCTORS ERROR: \(error.localizedDescription)")
-            errorMessage = "Failed to fetch doctors: \(error.localizedDescription)"
-            showError = true
+            await MainActor.run {
+                print("FETCH DOCTORS ERROR: \(error.localizedDescription)")
+                errorMessage = "Failed to fetch doctors: \(error.localizedDescription)"
+                showError = true
+                isLoading = false
+            }
         }
-        isLoading = false
     }
     
     private func editDoctor(_ doctor: UIDoctor) {
