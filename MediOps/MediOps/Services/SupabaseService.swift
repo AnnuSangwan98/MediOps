@@ -95,6 +95,83 @@ class SupabaseController {
         }
     }
     
+    /// Fetch hospital data from Supabase
+    func fetchHospitals() async throws -> [Hospital] {
+        print("SUPABASE: Fetching all hospitals")
+        
+        do {
+            let jsonArray = try await select(from: "hospitals")
+            
+            // Parse the JSON array into Hospital objects
+            var hospitals: [Hospital] = []
+            
+            for json in jsonArray {
+                // Extract all required fields from the JSON
+                guard let id = json["id"] as? String,
+                      let name = json["hospital_name"] as? String,
+                      let email = json["email"] as? String,
+                      let contactNumber = json["contact_number"] as? String,
+                      let emergencyContact = json["emergency_contact_number"] as? String,
+                      let licenseNumber = json["licence"] as? String,
+                      let hospitalAddress = json["hospital_address"] as? String,
+                      let state = json["hospital_state"] as? String,
+                      let city = json["hospital_city"] as? String,
+                      let pincode = json["area_pincode"] as? String,
+                      let statusString = json["status"] as? String else {
+                    print("SUPABASE: Missing required fields in hospital data")
+                    continue
+                }
+                
+                // Convert status string to HospitalStatus enum
+                let status: HospitalStatus
+                switch statusString.lowercased() {
+                case "active":
+                    status = .active
+                case "pending":
+                    status = .pending
+                case "inactive":
+                    status = .inactive
+                default:
+                    status = .pending
+                }
+                
+                // Convert profile image if available
+                var imageData: Data? = nil
+                if let imageBase64 = json["hospital_profile_image"] as? String, !imageBase64.isEmpty {
+                    imageData = Data(base64Encoded: imageBase64)
+                }
+                
+                // Create hospital object with extracted data
+                let hospital = Hospital(
+                    id: id,
+                    name: name,
+                    adminName: "Admin", // We don't have admin name in the hospitals table
+                    licenseNumber: licenseNumber,
+                    hospitalPhone: emergencyContact,
+                    street: hospitalAddress,
+                    city: city,
+                    state: state,
+                    zipCode: pincode,
+                    phone: contactNumber,
+                    email: email,
+                    status: status,
+                    registrationDate: Date(), // Default to current date if not available
+                    lastModified: Date(),
+                    lastModifiedBy: "System",
+                    imageData: imageData
+                )
+                
+                hospitals.append(hospital)
+            }
+            
+            print("SUPABASE: Successfully parsed \(hospitals.count) hospitals")
+            return hospitals
+        } catch {
+            print("SUPABASE ERROR: Failed to fetch hospitals: \(error.localizedDescription)")
+            throw error
+        }
+    }
+    
     /// Generic method to retrieve data with a filter
     func select(from table: String, columns: String = "*", where column: String, equals value: String) async throws -> [[String: Any]] {
         print("SUPABASE: Selecting from \(table) where \(column) = \(value)")

@@ -137,7 +137,38 @@ struct SuperAdminDashboardView: View {
                         // Only the hospital list is scrollable
                         ScrollView {
                             VStack(spacing: 15) {
-                                if viewModel.filteredHospitals.isEmpty {
+                                if viewModel.isLoading {
+                                    ProgressView("Loading hospitals...")
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .padding()
+                                } else if !viewModel.errorMessage.isEmpty {
+                                    VStack(spacing: 15) {
+                                        Text("Error")
+                                            .font(.headline)
+                                            .foregroundColor(.red)
+                                        
+                                        Text(viewModel.errorMessage)
+                                            .font(.subheadline)
+                                            .foregroundColor(.gray)
+                                            .multilineTextAlignment(.center)
+                                        
+                                        Button(action: { viewModel.fetchHospitals() }) {
+                                            Text("Try Again")
+                                                .font(.headline)
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 24)
+                                                .padding(.vertical, 12)
+                                                .background(Color.teal)
+                                                .cornerRadius(8)
+                                        }
+                                    }
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color.white)
+                                    .cornerRadius(10)
+                                    .shadow(color: .gray.opacity(0.1), radius: 5)
+                                    .padding()
+                                } else if viewModel.filteredHospitals.isEmpty {
                                     Text("No hospitals found")
                                         .foregroundColor(.gray)
                                         .frame(maxWidth: .infinity)
@@ -162,6 +193,9 @@ struct SuperAdminDashboardView: View {
                                 }
                             }
                             .padding()
+                        }
+                        .refreshable {
+                            await refreshData()
                         }
                     }
                     .padding(.top)
@@ -254,33 +288,23 @@ struct SuperAdminDashboardView: View {
     
     // MARK: - Actions
     private func addHospital() {
-        let newHospital = Hospital(
-            id: hospitalID,
-            name: hospitalName,
-            adminName: adminName,
-            licenseNumber: licenseNumber,
-            hospitalPhone: emergencyContact,
-            street: street,
-            city: city,
-            state: state,
-            zipCode: zipCode,
-            phone: phone,
-            email: email,
-            status: .pending,
-            registrationDate: Date(),
-            lastModified: Date(),
-            lastModifiedBy: "Super Admin",
-            imageData: nil
-        )
-        
-        viewModel.addHospital(newHospital)
+        // The actual adding of the hospital to Supabase is already handled in the AddHospitalForm
+        // This method is just called after submission from the form
+        // We'll refresh the hospitals list to reflect the new addition
+        Task {
+            await refreshData()
+        }
         showSuccessAlert = true
         showHospitalForm = false
         clearForm()
     }
     
     private func updateHospital(_ hospital: Hospital) {
-        viewModel.updateHospital(hospital)
+        // The EditHospitalForm will handle the actual Supabase update
+        // This will refresh the list after an update
+        Task {
+            await refreshData()
+        }
         showEditForm = false
         showSuccessAlert = true
     }
@@ -290,6 +314,10 @@ struct SuperAdminDashboardView: View {
         hospitalToDelete = nil
         errorMessage = "Hospital deleted successfully"
         showError = true
+    }
+    
+    private func refreshData() async {
+        viewModel.fetchHospitals()
     }
     
     private func clearForm() {
