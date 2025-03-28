@@ -101,38 +101,98 @@ class SupabaseController {
         
         // Use direct URL session with headers
         let escapedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
-        let url = URL(string: "\(supabaseURL)/rest/v1/\(table)?select=\(columns)&\(column)=eq.\(escapedValue)")!
+        let urlString = "\(supabaseURL)/rest/v1/\(table)?select=\(columns)&\(column)=eq.\(escapedValue)"
+        print("🌐 SUPABASE URL: \(urlString)")
+        
+        guard let url = URL(string: urlString) else {
+            print("❌ SUPABASE ERROR: Invalid URL: \(urlString)")
+            throw NSError(domain: "SupabaseError", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
+        }
+        
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
         request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
         
         do {
+            print("🔄 SUPABASE: Starting request to \(table) at \(Date().formatted(date: .numeric, time: .standard))")
             let (data, response) = try await session.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("SUPABASE ERROR: Invalid response type")
+                print("❌ SUPABASE ERROR: Invalid response type")
                 return []
             }
             
-            print("SUPABASE: Response status code: \(httpResponse.statusCode)")
+            print("📊 SUPABASE: Response status code: \(httpResponse.statusCode)")
             
             if httpResponse.statusCode != 200 {
                 if let responseString = String(data: data, encoding: .utf8) {
-                    print("SUPABASE ERROR: \(responseString)")
+                    print("❌ SUPABASE ERROR: \(responseString)")
                 }
                 return []
             }
             
+            if table == "appointments" {
+                // Log raw data for appointments to debug
+                if let rawJSON = String(data: data, encoding: .utf8) {
+                    print("📋 SUPABASE RAW APPOINTMENTS DATA: \(rawJSON)")
+                }
+            }
+            
             guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-                print("SUPABASE ERROR: Failed to parse JSON data")
+                print("❌ SUPABASE ERROR: Failed to parse JSON data")
                 return []
             }
             
-            print("SUPABASE: Successfully retrieved \(jsonArray.count) records from \(table)")
+            print("✅ SUPABASE: Successfully retrieved \(jsonArray.count) records from \(table)")
+            
+            // Extra logging for appointments table
+            if table == "appointments" && jsonArray.isEmpty {
+                print("⚠️ SUPABASE WARNING: No appointments found for \(column) = \(value)")
+                print("🔍 Double check if this patient ID exists in the database or if there might be formatting issues")
+            }
+            
             return jsonArray
         } catch {
-            print("SUPABASE ERROR: Failed to fetch data from \(table): \(error.localizedDescription)")
+            print("❌ SUPABASE ERROR: Failed to fetch data from \(table): \(error.localizedDescription)")
+            throw error
+        }
+    }
+    
+    /// Update a record by ID
+    func update(table: String, id: String, data: [String: Any]) async throws {
+        print("🔄 SUPABASE: Updating record with ID \(id) in \(table)")
+        
+        let url = URL(string: "\(supabaseURL)/rest/v1/\(table)?id=eq.\(id)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("return=minimal", forHTTPHeaderField: "Prefer")
+        
+        // Serialize the data
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: data)
+            request.httpBody = jsonData
+            
+            let (_, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ SUPABASE ERROR: Invalid response type")
+                throw NSError(domain: "SupabaseError", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
+            }
+            
+            print("📊 SUPABASE: Update response status code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode != 204 && httpResponse.statusCode != 200 {
+                print("❌ SUPABASE ERROR: Failed to update record with status code \(httpResponse.statusCode)")
+                throw NSError(domain: "SupabaseError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Update failed with status code \(httpResponse.statusCode)"])
+            }
+            
+            print("✅ SUPABASE: Successfully updated record with ID \(id) in \(table)")
+        } catch {
+            print("❌ SUPABASE ERROR: Failed to update record in \(table): \(error.localizedDescription)")
             throw error
         }
     }
@@ -159,6 +219,39 @@ class SupabaseController {
     
     // MARK: - Helper Methods
     
+    /// Diagnostic method to check if appointments table is accessible and has data
+    func checkAppointmentsTable() async -> Bool {
+        print("🩺 DIAGNOSTIC: Checking appointments table accessibility")
+        do {
+            let results = try await select(from: "appointments", columns: "count(*)", where: "id", equals: "dummy_value")
+            print("✅ DIAGNOSTIC: Successfully connected to appointments table")
+            
+            // Try to get total count from appointments table
+            let allResults = try await select(from: "appointments", columns: "count(*)")
+            if let firstResult = allResults.first, let count = firstResult["count"] as? Int {
+                print("📊 DIAGNOSTIC: Total appointments in database: \(count)")
+            } else {
+                print("⚠️ DIAGNOSTIC: Could not get appointments count")
+            }
+            
+            // Try to get a sample appointment
+            let sampleResults = try await select(from: "appointments")
+            if let firstAppointment = sampleResults.first {
+                print("📋 DIAGNOSTIC: Sample appointment data found: \(firstAppointment["id"] ?? "unknown")")
+                if let patientId = firstAppointment["patient_id"] as? String {
+                    print("👤 DIAGNOSTIC: Sample patient_id: \(patientId)")
+                }
+            } else {
+                print("⚠️ DIAGNOSTIC: No sample appointment found")
+            }
+            
+            return true
+        } catch {
+            print("❌ DIAGNOSTIC: Failed to access appointments table: \(error.localizedDescription)")
+            return false
+        }
+    }
+    
     /// Hash a password using SHA256
     func hashPassword(_ password: String) -> String {
         // Returning plain text password instead of hashing for development purposes
@@ -170,6 +263,60 @@ class SupabaseController {
     func generateToken(userId: String) -> String {
         // In a real app, you'd use a proper JWT library
         return "token_\(userId)_\(Int(Date().timeIntervalSince1970))"
+    }
+    
+    /// Direct method to insert an appointment with proper formatting according to the database schema
+    func insertAppointment(id: String, patientId: String, doctorId: String, hospitalId: String, 
+                          slotId: Int, date: Date, reason: String) async throws {
+        print("🔄 DIRECT APPOINTMENT INSERT: Creating appointment with ID: \(id)")
+        
+        // Format date for database
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let formattedDate = dateFormatter.string(from: date)
+        
+        // Create appointment data conforming to the table schema
+        let appointmentData: [String: Any] = [
+            "id": id,
+            "patient_id": patientId,
+            "doctor_id": doctorId,
+            "hospital_id": hospitalId,
+            "availability_slot_id": slotId,
+            "appointment_date": formattedDate,
+            "status": "upcoming",
+            "reason": reason
+        ]
+        
+        let url = URL(string: "\(supabaseURL)/rest/v1/appointments")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("return=representation", forHTTPHeaderField: "Prefer")
+        
+        let jsonData = try JSONSerialization.data(withJSONObject: appointmentData)
+        request.httpBody = jsonData
+        
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
+        }
+        
+        print("📊 Response status code: \(httpResponse.statusCode)")
+        
+        if httpResponse.statusCode != 201 && httpResponse.statusCode != 200 {
+            if let errorStr = String(data: responseData, encoding: .utf8) {
+                print("❌ Error details: \(errorStr)")
+                throw NSError(domain: "AppointmentError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to create appointment: \(errorStr)"])
+            } else {
+                throw NSError(domain: "AppointmentError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to create appointment"])
+            }
+        }
+        
+        if let responseStr = String(data: responseData, encoding: .utf8) {
+            print("✅ Appointment created successfully: \(responseStr)")
+        }
     }
 }
 

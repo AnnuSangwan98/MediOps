@@ -12,6 +12,7 @@ struct HomeTabView: View {
     @StateObject private var appointmentManager = AppointmentManager.shared
     @State private var showProfile = false
     @State private var selectedTab = 0
+    @AppStorage("current_user_id") private var userId: String?
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -21,6 +22,13 @@ struct HomeTabView: View {
                     Text("Home")
                 }
                 .tag(0)
+                .onAppear {
+                    // Refresh appointments each time home tab appears
+                    if selectedTab == 0 {
+                        print("📱 Home tab appeared - refreshing appointments")
+                        appointmentManager.refreshAppointments()
+                    }
+                }
             
             historyTab
                 .tabItem {
@@ -37,6 +45,11 @@ struct HomeTabView: View {
                 .tag(2)
         }
         .accentColor(.blue)
+        .onAppear {
+            print("📱 HomeTabView appeared with user ID: \(userId ?? "nil")")
+            // Initial refresh of appointments
+            appointmentManager.refreshAppointments()
+        }
     }
     
     private var homeTab: some View {
@@ -98,8 +111,20 @@ struct HomeTabView: View {
                 await hospitalVM.fetchHospitals()
                 await hospitalVM.fetchAvailableCities()
                 
-                if let userId = UserDefaults.standard.string(forKey: "userId") {
+                if let userId = userId {
+                    print("🔍 Home Tab task using user ID: \(userId)")
                     try? await hospitalVM.fetchAppointments(for: userId)
+                } else {
+                    print("⚠️ No user ID found in HomeTab task")
+                }
+            }
+            .onAppear {
+                if let userId = userId {
+                    print("🔄 Home Tab appeared with user ID: \(userId)")
+                    // Add a direct call to refresh appointments
+                    appointmentManager.refreshAppointments()
+                } else {
+                    print("⚠️ No user ID found in HomeTab onAppear")
                 }
             }
         }
@@ -108,11 +133,32 @@ struct HomeTabView: View {
     private var historyTab: some View {
         NavigationStack {
             List {
-                ForEach(appointmentManager.appointments.filter { $0.status == .completed }, id: \.id) { appointment in
-                    AppointmentHistoryCard(appointment: appointment)
+                if appointmentManager.appointments.filter({ $0.status == .completed || $0.status == .cancelled }).isEmpty {
+                    Text("No appointment history")
+                        .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding()
+                } else {
+                    Section(header: Text("Completed Appointments")) {
+                        ForEach(appointmentManager.appointments.filter { $0.status == .completed }, id: \.id) { appointment in
+                            AppointmentHistoryCard(appointment: appointment)
+                                .listRowBackground(Color.green.opacity(0.1))
+                        }
+                    }
+                    
+                    Section(header: Text("Cancelled Appointments")) {
+                        ForEach(appointmentManager.appointments.filter { $0.status == .cancelled }, id: \.id) { appointment in
+                            AppointmentHistoryCard(appointment: appointment, isCancelled: true)
+                                .listRowBackground(Color.red.opacity(0.1))
+                        }
+                    }
                 }
             }
             .navigationTitle("Appointment History")
+            .refreshable {
+                print("🔃 Manually refreshing appointment history")
+                appointmentManager.refreshAppointments()
+            }
         }
     }
     
@@ -227,6 +273,7 @@ struct HomeTabView: View {
 
 struct AppointmentHistoryCard: View {
     let appointment: Appointment
+    var isCancelled: Bool = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -239,12 +286,13 @@ struct AppointmentHistoryCard: View {
                         .foregroundColor(.gray)
                 }
                 Spacer()
-                Text("Completed")
+                
+                Text(isCancelled ? "Cancelled" : "Completed")
                     .font(.caption)
-                    .foregroundColor(.green)
+                    .foregroundColor(isCancelled ? .red : .green)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.green.opacity(0.1))
+                    .background(isCancelled ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
                     .cornerRadius(8)
             }
             
