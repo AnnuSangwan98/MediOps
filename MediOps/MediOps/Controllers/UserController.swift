@@ -219,9 +219,11 @@ class UserController {
     /// Get current user data
     func getCurrentUser() async throws -> User? {
         guard let userId = userDefaults.string(forKey: "current_user_id") else {
+            print("GET CURRENT USER: No user ID found in UserDefaults")
             return nil
         }
         
+        print("GET CURRENT USER: Fetching user with ID: \(userId)")
         let users = try await supabase.select(
             from: "users",
             where: "id",
@@ -229,8 +231,11 @@ class UserController {
         )
         
         guard let user = users.first else {
+            print("GET CURRENT USER: No user found with ID: \(userId)")
             return nil
         }
+        
+        print("GET CURRENT USER: Raw user data: \(user)")
         
         guard 
             let id = user["id"] as? String,
@@ -238,12 +243,49 @@ class UserController {
             let roleString = user["role"] as? String,
             let username = user["username"] as? String,
             let createdAtString = user["created_at"] as? String,
-            let updatedAtString = user["updated_at"] as? String,
-            let role = UserRole(rawValue: roleString)
+            let updatedAtString = user["updated_at"] as? String
         else {
+            print("GET CURRENT USER: Missing required fields in user data")
             return nil
         }
         
+        // Use the custom initializer to handle various role string formats
+        guard let role = UserRole(rawValue: roleString) else {
+            print("GET CURRENT USER: Invalid role string: \(roleString)")
+            // Fallback to patient if role can't be parsed
+            let fallbackRole = UserRole.patient
+            print("GET CURRENT USER: Using fallback role: \(fallbackRole.rawValue)")
+            
+            // If we can identify a hospital admin from email, override the fallback
+            if let hospitalAdmins = try? await supabase.select(
+                from: "hospital_admins",
+                where: "email",
+                equals: email
+            ), !hospitalAdmins.isEmpty {
+                print("GET CURRENT USER: Found matching hospital admin record, using hospitalAdmin role")
+                return createUserWithRole(id: id, email: email, username: username, 
+                                        createdAtString: createdAtString, 
+                                        updatedAtString: updatedAtString, 
+                                        role: .hospitalAdmin)
+            }
+            
+            return createUserWithRole(id: id, email: email, username: username, 
+                                    createdAtString: createdAtString, 
+                                    updatedAtString: updatedAtString, 
+                                    role: fallbackRole)
+        }
+        
+        print("GET CURRENT USER: Successfully parsed role: \(role.rawValue)")
+        return createUserWithRole(id: id, email: email, username: username, 
+                                createdAtString: createdAtString, 
+                                updatedAtString: updatedAtString, 
+                                role: role)
+    }
+    
+    // Helper method to create user with proper date parsing
+    private func createUserWithRole(id: String, email: String, username: String, 
+                                  createdAtString: String, updatedAtString: String, 
+                                  role: UserRole) -> User {
         let dateFormatter = ISO8601DateFormatter()
         let createdAt = dateFormatter.date(from: createdAtString) ?? Date()
         let updatedAt = dateFormatter.date(from: updatedAtString) ?? Date()

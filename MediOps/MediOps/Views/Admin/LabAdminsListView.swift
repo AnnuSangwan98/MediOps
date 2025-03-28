@@ -131,22 +131,41 @@ struct LabAdminsListView: View {
     private func fetchLabAdmins() async {
         isLoading = true
         do {
-            // Get the current user's hospital admin ID or use a fallback
-            var hospitalAdminId = "HOS001"
+            // Try to get the current user and their hospital admin ID
+            var hospitalAdminId: String? = nil
             
-            // Try to get the current user's hospital admin ID if available
-            if let currentUser = try? await UserController.shared.getCurrentUser(),
-               let hospitalAdmin = try? await adminController.getHospitalAdminByUserId(userId: currentUser.id) {
-                hospitalAdminId = hospitalAdmin.id
-                print("FETCH LAB ADMINS: Using hospital admin ID: \(hospitalAdminId)")
-            } else {
-                print("FETCH LAB ADMINS: Using fallback hospital admin ID: \(hospitalAdminId)")
+            if let currentUser = try? await UserController.shared.getCurrentUser() {
+                print("FETCH LAB ADMINS: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
+                
+                // If user is a hospital admin, use their ID directly
+                if currentUser.role == .hospitalAdmin {
+                    // For hospital admin, their ID should equal their hospital ID per schema constraint
+                    hospitalAdminId = currentUser.id
+                    print("FETCH LAB ADMINS: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
+                } else {
+                    // For other roles, try to get their associated hospital admin
+                    do {
+                        let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
+                        hospitalAdminId = hospitalAdmin.id
+                        print("FETCH LAB ADMINS: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
+                    } catch {
+                        print("FETCH LAB ADMINS WARNING: \(error.localizedDescription)")
+                    }
+                }
             }
             
-            print("FETCH LAB ADMINS: Requesting lab admins for hospital: \(hospitalAdminId)")
-            let fetchedLabAdmins = try await adminController.getLabAdmins(hospitalAdminId: hospitalAdminId)
+            // If we couldn't determine the hospital admin ID, use a fallback
+            if hospitalAdminId == nil {
+                hospitalAdminId = "HOS001" // Fallback ID
+                print("FETCH LAB ADMINS: Using fallback hospital admin ID: \(hospitalAdminId!)")
+            }
+            
+            // Fetch the lab admins
+            print("FETCH LAB ADMINS: Requesting lab admins for hospital: \(hospitalAdminId!)")
+            let fetchedLabAdmins = try await adminController.getLabAdmins(hospitalAdminId: hospitalAdminId!)
             print("FETCH LAB ADMINS: Successfully retrieved \(fetchedLabAdmins.count) lab admins")
             
+            // Map to UI models
             labAdmins = fetchedLabAdmins.map { labAdmin in
                 print("FETCH LAB ADMINS: Processing lab admin ID: \(labAdmin.id), Name: \(labAdmin.name)")
                 return UILabAdmin(
@@ -154,9 +173,9 @@ struct LabAdminsListView: View {
                     fullName: labAdmin.name,
                     email: labAdmin.email,
                     phone: labAdmin.contactNumber.isEmpty ? "" : labAdmin.contactNumber,
-                    gender: .male,
-                    dateOfBirth: Date(),
-                    experience: 0,
+                    gender: .male, // Default gender
+                    dateOfBirth: Date(), // Default date
+                    experience: 0, // Default experience
                     qualification: labAdmin.department, // Use department instead of labName
                     address: labAdmin.address
                 )
@@ -177,28 +196,46 @@ struct LabAdminsListView: View {
         Task {
             isLoading = true
             do {
-                // Get the current user's hospital admin ID or use a fallback
-                var hospitalAdminId = "HOS001"
+                // Try to get the current user and their hospital admin ID
+                var hospitalAdminId: String? = nil
                 
-                // Try to get the current user's hospital admin ID if available
-                if let currentUser = try? await UserController.shared.getCurrentUser(),
-                   let hospitalAdmin = try? await adminController.getHospitalAdminByUserId(userId: currentUser.id) {
-                    hospitalAdminId = hospitalAdmin.id
-                    print("ADD LAB ADMIN: Using hospital admin ID: \(hospitalAdminId)")
-                } else {
-                    print("ADD LAB ADMIN: Using fallback hospital admin ID: \(hospitalAdminId)")
+                if let currentUser = try? await UserController.shared.getCurrentUser() {
+                    print("ADD LAB ADMIN: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
+                    
+                    // If user is a hospital admin, use their ID directly
+                    if currentUser.role == .hospitalAdmin {
+                        // For hospital admin, their ID should equal their hospital ID per schema constraint
+                        hospitalAdminId = currentUser.id
+                        print("ADD LAB ADMIN: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
+                    } else {
+                        // For other roles, try to get their associated hospital admin
+                        do {
+                            let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
+                            hospitalAdminId = hospitalAdmin.id
+                            print("ADD LAB ADMIN: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
+                        } catch {
+                            print("ADD LAB ADMIN WARNING: \(error.localizedDescription)")
+                        }
+                    }
+                }
+                
+                // If we couldn't determine the hospital admin ID, use a fallback
+                if hospitalAdminId == nil {
+                    hospitalAdminId = "HOS001" // Fallback ID
+                    print("ADD LAB ADMIN: Using fallback hospital admin ID: \(hospitalAdminId!)")
                 }
                 
                 // Generate a secure password that meets the constraints
                 let password = generateSecurePassword()
                 
-                print("ADD LAB ADMIN: Creating lab admin for hospital: \(hospitalAdminId)")
+                // Create the lab admin
+                print("ADD LAB ADMIN: Creating lab admin for hospital: \(hospitalAdminId!)")
                 let (_, _) = try await adminController.createLabAdmin(
                     email: labAdmin.email,
                     password: password,
                     name: labAdmin.fullName,
                     labName: labAdmin.qualification, // Maps to department field
-                    hospitalAdminId: hospitalAdminId,
+                    hospitalAdminId: hospitalAdminId!,
                     contactNumber: labAdmin.phone.replacingOccurrences(of: "+91", with: ""), // Remove country code for 10-digit format
                     department: "Pathology & Laboratory" // Fixed to match the constraint
                 )
@@ -248,22 +285,40 @@ struct LabAdminsListView: View {
         Task {
             isLoading = true
             do {
-                // Get the current user's hospital admin ID or use a fallback
-                var hospitalAdminId = "HOS001"
+                // Try to get the current user and their hospital admin ID
+                var hospitalAdminId: String? = nil
                 
-                // Try to get the current user's hospital admin ID if available
-                if let currentUser = try? await UserController.shared.getCurrentUser(),
-                   let hospitalAdmin = try? await adminController.getHospitalAdminByUserId(userId: currentUser.id) {
-                    hospitalAdminId = hospitalAdmin.id
-                    print("UPDATE LAB ADMIN: Using hospital admin ID: \(hospitalAdminId)")
-                } else {
-                    print("UPDATE LAB ADMIN: Using fallback hospital admin ID: \(hospitalAdminId)")
+                if let currentUser = try? await UserController.shared.getCurrentUser() {
+                    print("UPDATE LAB ADMIN: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
+                    
+                    // If user is a hospital admin, use their ID directly
+                    if currentUser.role == .hospitalAdmin {
+                        // For hospital admin, their ID should equal their hospital ID per schema constraint
+                        hospitalAdminId = currentUser.id
+                        print("UPDATE LAB ADMIN: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
+                    } else {
+                        // For other roles, try to get their associated hospital admin
+                        do {
+                            let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
+                            hospitalAdminId = hospitalAdmin.id
+                            print("UPDATE LAB ADMIN: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
+                        } catch {
+                            print("UPDATE LAB ADMIN WARNING: \(error.localizedDescription)")
+                        }
+                    }
                 }
                 
+                // If we couldn't determine the hospital admin ID, use a fallback
+                if hospitalAdminId == nil {
+                    hospitalAdminId = "HOS001" // Fallback ID
+                    print("UPDATE LAB ADMIN: Using fallback hospital admin ID: \(hospitalAdminId!)")
+                }
+                
+                // Create the model lab admin with the correct hospital ID
                 print("UPDATE LAB ADMIN: Updating lab admin ID: \(labAdmin.id)")
                 let modelLabAdmin = LabAdmin(
                     id: labAdmin.id.uuidString,
-                    hospitalId: hospitalAdminId, 
+                    hospitalId: hospitalAdminId!,
                     name: labAdmin.fullName,
                     email: labAdmin.email,
                     contactNumber: labAdmin.phone,
@@ -272,6 +327,7 @@ struct LabAdminsListView: View {
                     createdAt: Date(),
                     updatedAt: Date()
                 )
+                
                 try await adminController.updateLabAdmin(modelLabAdmin)
                 print("UPDATE LAB ADMIN: Successfully updated lab admin")
                 await fetchLabAdmins() // Refresh the list

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+// Using SwiftUI's import approach to access QualificationToggle from another file
 
 struct AddLabAdminView: View {
     @Environment(\.dismiss) private var dismiss
@@ -15,7 +16,7 @@ struct AddLabAdminView: View {
     @State private var gender: UILabAdmin.Gender = .male
     @State private var dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
     @State private var experience = 0
-    @State private var qualification = ""
+    @State private var selectedQualifications: Set<String> = ["MBBS"] // Default to MBBS
     @State private var license = ""
     @State private var address = ""
     @State private var showAlert = false
@@ -26,6 +27,9 @@ struct AddLabAdminView: View {
     
     // Add reference to AdminController
     private let adminController = AdminController.shared
+    
+    // Add allowed qualifications
+    private let availableQualifications = ["MBBS", "MD", "MS"]
     
     // Calculate maximum experience based on age
     private var maximumExperience: Int {
@@ -40,7 +44,7 @@ struct AddLabAdminView: View {
         !fullName.isEmpty &&
         isValidEmail(email) &&
         phoneNumber.count == 10 &&
-        !qualification.isEmpty &&
+        !selectedQualifications.isEmpty &&
         isValidLicense(license) &&
         !address.isEmpty
     }
@@ -69,7 +73,38 @@ struct AddLabAdminView: View {
                 }
                 
                 Section(header: Text("Professional Information")) {
-                    TextField("Qualification", text: $qualification)
+                    // Qualifications picker
+                    VStack(alignment: .leading) {
+                        Text("Qualifications")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                            .padding(.bottom, 5)
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(availableQualifications, id: \.self) { qualification in
+                                    QualificationToggle(
+                                        title: qualification,
+                                        isSelected: selectedQualifications.contains(qualification),
+                                        action: {
+                                            if selectedQualifications.contains(qualification) {
+                                                selectedQualifications.remove(qualification)
+                                            } else {
+                                                selectedQualifications.insert(qualification)
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        
+                        if selectedQualifications.isEmpty {
+                            Text("Select at least one qualification")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    }
+                    .padding(.vertical, 5)
                     
                     TextField("License (XX12345)", text: $license)
                         .onChange(of: license) { _, newValue in
@@ -158,7 +193,7 @@ struct AddLabAdminView: View {
             gender: gender,
             dateOfBirth: dateOfBirth,
             experience: experience,
-            qualification: qualification,
+            qualification: selectedQualifications.joined(separator: ", "),
             address: address
         )
 
@@ -254,9 +289,9 @@ struct AddLabAdminView: View {
                 "fullName": fullName,
                 "email": email,
                 "phone": "+91\(phoneNumber)",
-                "qualification": qualification,
+                "qualification": selectedQualifications.joined(separator: ", "),
                 "license": license,
-                "labName": qualification,
+                "labName": selectedQualifications.joined(separator: ", "),
                 "labId": "LAB001",
                 "password": password // Include the password in the email
             ]
@@ -316,7 +351,7 @@ struct AddLabAdminView: View {
         gender = .male
         dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
         experience = 0
-        qualification = ""
+        selectedQualifications = ["MBBS"]
         license = ""
         address = ""
     }
