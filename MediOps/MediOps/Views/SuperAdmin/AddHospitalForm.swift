@@ -42,6 +42,10 @@ struct AddHospitalForm: View {
         let password: String
         let role: String
         let status: String
+        let street: String
+        let city: String
+        let state: String
+        let pincode: String
     }
     
     private struct EmailDetails: Encodable {
@@ -317,9 +321,13 @@ struct AddHospitalForm: View {
                     email: email,
                     contact_number: phone,
                     id: hospitalID,
-                    password: generatedPassword,  // Use the generated password from email server
+                    password: generatedPassword,  // Use the generated password
                     role: "HOSPITAL_ADMIN",
-                    status: "active"
+                    status: "active",
+                    street: adminLocality,
+                    city: adminCity,
+                    state: selectedAdminState,
+                    pincode: adminPinCode
                 )
                 
                 print("Inserting admin with data:", adminData)
@@ -614,6 +622,22 @@ struct EditHospitalForm: View {
     // Section toggle states
     @State private var hospitalInfoExpanded = true
     @State private var adminInfoExpanded = false
+    @State private var adminAddressExpanded = false
+    
+    // Admin address fields
+    @State private var adminStreet: String = ""
+    @State private var adminCity: String = ""
+    @State private var adminState: String = "Delhi"
+    @State private var adminPincode: String = ""
+    
+    // Constants
+    let indianStates = [
+        "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi",
+        "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+        "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+        "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+        "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
+    ]
     
     init(hospital: Hospital, onSave: @escaping (Hospital) -> Void) {
         _editedHospital = State(initialValue: hospital)
@@ -637,6 +661,23 @@ struct EditHospitalForm: View {
                         
                         if let email = admin["email"] as? String {
                             editedHospital.email = email
+                        }
+                        
+                        // Fetch admin address fields
+                        if let street = admin["street"] as? String {
+                            adminStreet = street
+                        }
+                        
+                        if let city = admin["city"] as? String {
+                            adminCity = city
+                        }
+                        
+                        if let state = admin["state"] as? String {
+                            adminState = state
+                        }
+                        
+                        if let pincode = admin["pincode"] as? String {
+                            adminPincode = pincode
                         }
                     }
                 }
@@ -751,6 +792,39 @@ struct EditHospitalForm: View {
                 )
             }
             
+            // ADMIN ADDRESS
+            Section {
+                DisclosureGroup(
+                    isExpanded: $adminAddressExpanded,
+                    content: {
+                        TextField("Street/Locality", text: $adminStreet)
+                        TextField("City", text: $adminCity)
+                        
+                        Picker("State", selection: $adminState) {
+                            ForEach(indianStates, id: \.self) { state in
+                                Text(state).tag(state)
+                            }
+                        }
+                        
+                        TextField("Pin Code", text: $adminPincode)
+                            .keyboardType(.numberPad)
+                            .onChange(of: adminPincode) { _, newValue in
+                                // Allow only digits and limit to 6 characters
+                                adminPincode = newValue.filter { $0.isNumber }.prefix(6).description
+                            }
+                    },
+                    label: {
+                        HStack {
+                            Image(systemName: "house.fill")
+                                .foregroundColor(.teal)
+                            Text("ADMIN ADDRESS")
+                                .font(.headline)
+                                .foregroundColor(.teal)
+                        }
+                    }
+                )
+            }
+            
             Section {
                 Button(action: saveChanges) {
                     if isLoading {
@@ -793,12 +867,20 @@ struct EditHospitalForm: View {
                     let admin_name: String
                     let email: String 
                     let contact_number: String
+                    let street: String
+                    let city: String
+                    let state: String
+                    let pincode: String
                 }
                 
                 let adminUpdate = AdminUpdateData(
                     admin_name: editedHospital.adminName,
                     email: editedHospital.email,
-                    contact_number: editedHospital.phone
+                    contact_number: editedHospital.phone,
+                    street: adminStreet,
+                    city: adminCity,
+                    state: adminState,
+                    pincode: adminPincode
                 )
                 
                 try await supabase.update(
