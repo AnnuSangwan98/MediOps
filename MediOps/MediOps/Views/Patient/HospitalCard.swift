@@ -25,12 +25,6 @@ struct HospitalCard: View {
                     .foregroundColor(.gray)
                 
                 Spacer()
-                
-                Image(systemName: "star.fill")
-                    .foregroundColor(.yellow)
-                Text(String(format: "%.1f", hospital.rating))
-                    .font(.headline)
-                    .foregroundColor(.black)
             }
         }
         .padding()

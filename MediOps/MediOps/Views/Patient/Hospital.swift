@@ -134,7 +134,10 @@ class HospitalViewModel: ObservableObject {
             let results = try await supabase.select(from: "hospitals")
             print("SUPABASE RESULTS: \(results.count) hospitals found") // Debug log
             
-            self.hospitals = results.compactMap { data in
+            // First create basic hospital models
+            var hospitalModels: [HospitalModel] = []
+            
+            for data in results {
                 guard let id = data["id"] as? String,
                       let name = data["hospital_name"] as? String,
                       let address = data["hospital_address"] as? String,
@@ -149,14 +152,23 @@ class HospitalViewModel: ObservableObject {
                       let type = data["type"] as? String,
                       let status = data["status"] as? String,
                       let departments = data["departments"] as? [String],
-                      let numDoctors = data["number_of_doctors"] as? Int,
                       let numAppointments = data["number_of_appointments"] as? Int
                 else { 
                     print("Failed to parse hospital data: \(data)") // Debug log
-                    return nil 
+                    continue
                 }
                 
-                return HospitalModel(
+                // Now fetch actual doctor count for this hospital
+                let doctorResults = try await supabase.select(
+                    from: "doctors",
+                    where: "hospital_id",
+                    equals: id
+                )
+                
+                let numDoctors = doctorResults.count
+                print("Hospital \(name) has \(numDoctors) doctors")
+                
+                let hospital = HospitalModel(
                     id: id,
                     hospitalName: name,
                     hospitalAddress: address,
@@ -178,8 +190,11 @@ class HospitalViewModel: ObservableObject {
                     description: data["description"] as? String,
                     rating: data["rating"] as? Double ?? 0.0
                 )
+                
+                hospitalModels.append(hospital)
             }
             
+            self.hospitals = hospitalModels
             print("VIEWMODEL: Parsed \(self.hospitals.count) hospitals") // Debug log
             isLoading = false
         } catch {
