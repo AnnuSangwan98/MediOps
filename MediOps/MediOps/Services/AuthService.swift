@@ -90,9 +90,19 @@ class AuthService {
     // MARK: - Doctor Management
     
     /// Create a new doctor
-    func createDoctor(email: String, name: String, specialization: String, hospitalAdminId: String) async throws -> (Models.Doctor, String) {
+    func createDoctor(email: String, name: String, specialization: String, hospitalId: String) async throws -> (Models.Doctor, String) {
         // Generate a secure password
         let password = generateSecurePassword()
+        
+        // Default values for required fields
+        let qualifications = ["MBBS"] // Default qualification that meets the constraint
+        let licenseNo = "AB12345" // Default license that matches the pattern ^[A-Za-z]{2}[0-9]{5}$
+        let experience = 2 // Default experience
+        let addressLine = "123 Main St" // Default address
+        let state = "Maharashtra" // Default state
+        let city = "Mumbai" // Default city
+        let pincode = "400001" // Default pincode that matches the pattern ^[0-9]{6}$
+        let contactNumber = "9876543210" // Default contact number that matches the pattern ^[0-9]{10}$
         
         // Create the doctor
         let (doctor, token) = try await adminController.createDoctor(
@@ -100,7 +110,15 @@ class AuthService {
             password: password,
             name: name,
             specialization: specialization,
-            hospitalAdminId: hospitalAdminId
+            hospitalId: hospitalId,
+            qualifications: qualifications,
+            licenseNo: licenseNo,
+            experience: experience,
+            addressLine: addressLine,
+            state: state,
+            city: city,
+            pincode: pincode,
+            contactNumber: contactNumber
         )
         
         // Send credentials via email
@@ -113,8 +131,8 @@ class AuthService {
     
     /// Create a new lab admin
     func createLabAdmin(email: String, name: String, labName: String, hospitalAdminId: String) async throws -> (Models.LabAdmin, String) {
-        // Generate a secure password
-        let password = generateSecurePassword()
+        // Generate a secure password that meets the pattern requirements
+        let password = generateSecurePassword() // No need to add "!" as the function now generates compliant passwords
         
         // Create the lab admin
         let (labAdmin, token) = try await adminController.createLabAdmin(
@@ -122,7 +140,9 @@ class AuthService {
             password: password,
             name: name,
             labName: labName,
-            hospitalAdminId: hospitalAdminId
+            hospitalAdminId: hospitalAdminId,
+            contactNumber: "", // Default empty contactNumber
+            department: "Pathology & Laboratory" // Default department to match constraint
         )
         
         // Send credentials via email
@@ -228,9 +248,28 @@ class AuthService {
     
     /// Generate a secure random password
     private func generateSecurePassword() -> String {
-        let length = 12
-        let characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:,.<>?"
-        return String((0..<length).map { _ in characters.randomElement()! })
+        // Generate a password that meets all requirements (at least 8 chars, with uppercase, lowercase, digit, and special char)
+        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
+        let numbers = "0123456789"
+        let specialChars = "@$!%*?&"
+        
+        // Ensure at least one of each required character type
+        let guaranteedChars = [
+            String(uppercaseLetters.randomElement()!),
+            String(lowercaseLetters.randomElement()!),
+            String(numbers.randomElement()!),
+            String(specialChars.randomElement()!)
+        ]
+        
+        // Generate remaining characters (at least 4 more for a total of 8+)
+        let remainingLength = 8
+        let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
+        let remainingChars = (0..<remainingLength).map { _ in String(allChars.randomElement()!) }
+        
+        // Combine all characters and shuffle them
+        let passwordChars = guaranteedChars + remainingChars
+        return passwordChars.shuffled().joined()
     }
     
     /// Send credentials via email

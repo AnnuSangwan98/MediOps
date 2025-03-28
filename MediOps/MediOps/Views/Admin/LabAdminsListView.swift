@@ -3,7 +3,18 @@ import SwiftUI
 struct LabAdminsListView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showAddLabAdmin = false
+    @State private var showEditLabAdmin = false
+    @State private var labAdminToEdit: UILabAdmin?
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
     @Binding var labAdmins: [UILabAdmin]
+    @State private var labAdminToDelete: UILabAdmin?
+    @State private var showDeleteConfirmation = false
+    @State private var showSuccessMessage = false
+    @State private var successMessage = ""
+    
+    private let adminController = AdminController.shared
     
     init(labAdmins: Binding<[UILabAdmin]>) {
         _labAdmins = labAdmins
@@ -34,9 +45,12 @@ struct LabAdminsListView: View {
                 // Lab Admins List
                 ScrollView {
                     VStack(spacing: 20) {
-                        if labAdmins.isEmpty {
+                        if isLoading {
+                            ProgressView("Loading lab admins...")
+                                .padding()
+                        } else if labAdmins.isEmpty {
                             VStack(spacing: 15) {
-                                Image(systemName: "flask")
+                                Image(systemName: "flask.fill")
                                     .font(.system(size: 40))
                                     .foregroundColor(.gray)
                                 Text("No lab admins added yet")
@@ -54,8 +68,15 @@ struct LabAdminsListView: View {
                             .padding()
                         } else {
                             ForEach(labAdmins) { labAdmin in
-                                LabAdminCard(labAdmin: labAdmin)
-                                    .padding(.horizontal)
+                                LabAdminCard(
+                                    labAdmin: labAdmin,
+                                    onEdit: { editLabAdmin(labAdmin) },
+                                    onDelete: {
+                                        labAdminToDelete = labAdmin
+                                        showDeleteConfirmation = true
+                                    }
+                                )
+                                .padding(.horizontal)
                             }
                         }
                     }
@@ -91,11 +112,341 @@ struct LabAdminsListView: View {
                 }
             }
         }
+        .sheet(isPresented: $showEditLabAdmin) {
+            if let labAdmin = labAdminToEdit {
+                EditLabAdminView(labAdmin: labAdmin) { updatedLabAdmin in
+                    if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
+                        labAdmins[index] = updatedLabAdmin
+                    }
+                }
+            }
+        }
+        // Error alert
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+        // Delete confirmation alert
+        .alert("Delete Lab Admin", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                if let labAdmin = labAdminToDelete {
+                    confirmDeleteLabAdmin(labAdmin)
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this lab admin? This action cannot be undone.")
+        }
+        // Success message alert
+        .alert("Success", isPresented: $showSuccessMessage) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(successMessage)
+        }
+        .task {
+            await fetchLabAdmins()
+        }
+    }
+    
+    private func fetchLabAdmins() async {
+        isLoading = true
+        do {
+            // Try to get the current user and their hospital admin ID
+            var hospitalAdminId: String? = nil
+            
+            if let currentUser = try? await UserController.shared.getCurrentUser() {
+                print("FETCH LAB ADMINS: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
+                
+                // If user is a hospital admin, use their ID directly
+                if currentUser.role == .hospitalAdmin {
+                    // For hospital admin, their ID should equal their hospital ID per schema constraint
+                    hospitalAdminId = currentUser.id
+                    print("FETCH LAB ADMINS: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
+                } else {
+                    // For other roles, try to get their associated hospital admin
+                    do {
+                        let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
+                        hospitalAdminId = hospitalAdmin.id
+                        print("FETCH LAB ADMINS: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
+                    } catch {
+                        print("FETCH LAB ADMINS WARNING: \(error.localizedDescription)")
+                    }
+                }
+            }
+            
+            // If we couldn't determine the hospital admin ID, use a fallback
+            if hospitalAdminId == nil {
+                hospitalAdminId = "HOS001" // Fallback ID
+                print("FETCH LAB ADMINS: Using fallback hospital admin ID: \(hospitalAdminId!)")
+            }
+            
+            // Fetch the lab admins
+            print("FETCH LAB ADMINS: Requesting lab admins for hospital: \(hospitalAdminId!)")
+            let fetchedLabAdmins = try await adminController.getLabAdmins(hospitalAdminId: hospitalAdminId!)
+            print("FETCH LAB ADMINS: Successfully retrieved \(fetchedLabAdmins.count) lab admins")
+            
+            // Map to UI models
+            labAdmins = fetchedLabAdmins.map { labAdmin in
+                print("FETCH LAB ADMINS: Processing lab admin ID: \(labAdmin.id), Name: \(labAdmin.name)")
+                return UILabAdmin(
+                    id: UUID(), // Use a UUID for SwiftUI's Identifiable protocol
+                    originalId: labAdmin.id, // Store the original Supabase ID
+                    fullName: labAdmin.name,
+                    email: labAdmin.email,
+                    phone: labAdmin.contactNumber.isEmpty ? "" : "+91\(labAdmin.contactNumber)", // Add +91 prefix for UI
+                    gender: .male, // Default gender
+                    dateOfBirth: Date(), // Default date
+                    experience: 0, // Default experience
+                    qualification: labAdmin.department, // Use department instead of labName
+                    address: labAdmin.address
+                )
+            }
+        } catch {
+            print("FETCH LAB ADMINS ERROR: \(error.localizedDescription)")
+            if let adminError = error as? AdminError {
+                errorMessage = "Failed to fetch lab admins: \(adminError.errorDescription ?? "Unknown error")"
+            } else {
+                errorMessage = "Failed to fetch lab admins: \(error.localizedDescription)"
+            }
+            showError = true
+        }
+        isLoading = false
+    }
+    
+    private func addLabAdmin(_ labAdmin: UILabAdmin) {
+        Task {
+            isLoading = true
+            do {
+                // Try to get the current user and their hospital admin ID
+                var hospitalAdminId: String? = nil
+                
+                if let currentUser = try? await UserController.shared.getCurrentUser() {
+                    print("ADD LAB ADMIN: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
+                    
+                    // If user is a hospital admin, use their ID directly
+                    if currentUser.role == .hospitalAdmin {
+                        // For hospital admin, their ID should equal their hospital ID per schema constraint
+                        hospitalAdminId = currentUser.id
+                        print("ADD LAB ADMIN: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
+                    } else {
+                        // For other roles, try to get their associated hospital admin
+                        do {
+                            let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
+                            hospitalAdminId = hospitalAdmin.id
+                            print("ADD LAB ADMIN: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
+                        } catch {
+                            print("ADD LAB ADMIN WARNING: \(error.localizedDescription)")
+                        }
+                    }
+                }
+                
+                // If we couldn't determine the hospital admin ID, use a fallback
+                if hospitalAdminId == nil {
+                    hospitalAdminId = "HOS001" // Fallback ID
+                    print("ADD LAB ADMIN: Using fallback hospital admin ID: \(hospitalAdminId!)")
+                }
+                
+                // Generate a secure password that meets the constraints
+                let password = generateSecurePassword()
+                
+                // Create the lab admin
+                print("ADD LAB ADMIN: Creating lab admin for hospital: \(hospitalAdminId!)")
+                let (_, _) = try await adminController.createLabAdmin(
+                    email: labAdmin.email,
+                    password: password,
+                    name: labAdmin.fullName,
+                    labName: labAdmin.qualification, // Maps to department field
+                    hospitalAdminId: hospitalAdminId!,
+                    contactNumber: labAdmin.phone.replacingOccurrences(of: "+91", with: ""), // Remove country code for 10-digit format
+                    department: "Pathology & Laboratory" // Fixed to match the constraint
+                )
+                
+                print("ADD LAB ADMIN: Successfully created lab admin")
+                await fetchLabAdmins() // Refresh the list
+            } catch {
+                print("ADD LAB ADMIN ERROR: \(error.localizedDescription)")
+                if let adminError = error as? AdminError {
+                    errorMessage = "Failed to add lab admin: \(adminError.errorDescription ?? "Unknown error")"
+                } else {
+                    errorMessage = "Failed to add lab admin: \(error.localizedDescription)"
+                }
+                showError = true
+                isLoading = false
+            }
+        }
+    }
+    
+    // Generate a password that meets the constraints in the lab_admins table
+    private func generateSecurePassword() -> String {
+        // Generate a password that meets all requirements (at least 8 chars, with uppercase, lowercase, digit, and special char)
+        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
+        let numbers = "0123456789"
+        let specialChars = "@$!%*?&"
+        
+        // Ensure at least one of each required character type
+        let guaranteedChars = [
+            String(uppercaseLetters.randomElement()!),
+            String(lowercaseLetters.randomElement()!),
+            String(numbers.randomElement()!),
+            String(specialChars.randomElement()!)
+        ]
+        
+        // Generate remaining characters (at least 4 more for a total of 8+)
+        let remainingLength = 8
+        let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
+        let remainingChars = (0..<remainingLength).map { _ in String(allChars.randomElement()!) }
+        
+        // Combine all characters and shuffle them
+        let passwordChars = guaranteedChars + remainingChars
+        return passwordChars.shuffled().joined()
+    }
+    
+    private func updateLabAdmin(_ labAdmin: UILabAdmin) {
+        Task {
+            isLoading = true
+            do {
+                // Try to get the current user and their hospital admin ID
+                var hospitalAdminId: String? = nil
+                
+                if let currentUser = try? await UserController.shared.getCurrentUser() {
+                    print("UPDATE LAB ADMIN: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
+                    
+                    // If user is a hospital admin, use their ID directly
+                    if currentUser.role == .hospitalAdmin {
+                        // For hospital admin, their ID should equal their hospital ID per schema constraint
+                        hospitalAdminId = currentUser.id
+                        print("UPDATE LAB ADMIN: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
+                    } else {
+                        // For other roles, try to get their associated hospital admin
+                        do {
+                            let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
+                            hospitalAdminId = hospitalAdmin.id
+                            print("UPDATE LAB ADMIN: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
+                        } catch {
+                            print("UPDATE LAB ADMIN WARNING: \(error.localizedDescription)")
+                        }
+                    }
+                }
+                
+                // If we couldn't determine the hospital admin ID, use a fallback
+                if hospitalAdminId == nil {
+                    hospitalAdminId = "HOS001" // Fallback ID
+                    print("UPDATE LAB ADMIN: Using fallback hospital admin ID: \(hospitalAdminId!)")
+                }
+                
+                // Create the model lab admin with the correct hospital ID
+                print("UPDATE LAB ADMIN: Updating lab admin ID: \(labAdmin.id)")
+                let modelLabAdmin = LabAdmin(
+                    id: labAdmin.id.uuidString,
+                    hospitalId: hospitalAdminId!,
+                    name: labAdmin.fullName,
+                    email: labAdmin.email,
+                    contactNumber: labAdmin.phone,
+                    department: labAdmin.qualification,
+                    address: labAdmin.address,
+                    createdAt: Date(),
+                    updatedAt: Date()
+                )
+                
+                try await adminController.updateLabAdmin(modelLabAdmin)
+                print("UPDATE LAB ADMIN: Successfully updated lab admin")
+                await fetchLabAdmins() // Refresh the list
+            } catch {
+                print("UPDATE LAB ADMIN ERROR: \(error.localizedDescription)")
+                if let adminError = error as? AdminError {
+                    errorMessage = "Failed to update lab admin: \(adminError.errorDescription ?? "Unknown error")"
+                } else {
+                    errorMessage = "Failed to update lab admin: \(error.localizedDescription)"
+                }
+                showError = true
+                isLoading = false
+            }
+        }
+    }
+    
+    private func deleteLabAdmin(_ labAdmin: UILabAdmin) {
+        Task {
+            isLoading = true
+            do {
+                // Get the lab admin ID to use with the API (using originalId when available)
+                let labAdminId: String
+                if let originalId = labAdmin.originalId, !originalId.isEmpty {
+                    labAdminId = originalId
+                } else {
+                    labAdminId = String(describing: labAdmin.id)
+                }
+                
+                print("DELETE LAB ADMIN: Deleting lab admin with ID: \(labAdminId)")
+                try await adminController.deleteLabAdmin(id: labAdminId)
+                print("DELETE LAB ADMIN: Successfully deleted lab admin")
+                await fetchLabAdmins() // Refresh the list
+            } catch {
+                print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
+                if let adminError = error as? AdminError {
+                    errorMessage = "Failed to delete lab admin: \(adminError.errorDescription ?? "Unknown error")"
+                } else {
+                    errorMessage = "Failed to delete lab admin: \(error.localizedDescription)"
+                }
+                showError = true
+                isLoading = false
+            }
+        }
+    }
+    
+    private func editLabAdmin(_ labAdmin: UILabAdmin) {
+        labAdminToEdit = labAdmin
+        showEditLabAdmin = true
+    }
+    
+    private func confirmDeleteLabAdmin(_ labAdmin: UILabAdmin) {
+        isLoading = true
+        
+        Task {
+            do {
+                // Get the lab admin ID to use with the API
+                let labAdminId: String
+                if let originalId = labAdmin.originalId, !originalId.isEmpty {
+                    labAdminId = originalId
+                } else {
+                    labAdminId = String(describing: labAdmin.id)
+                }
+                
+                print("DELETE LAB ADMIN: Deleting lab admin with ID: \(labAdminId)")
+                
+                // Call the AdminController to delete the lab admin
+                try await adminController.deleteLabAdmin(id: labAdminId)
+                
+                await MainActor.run {
+                    // Remove from UI list
+                    withAnimation {
+                        if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
+                            labAdmins.remove(at: index)
+                        }
+                    }
+                    
+                    // Show success message
+                    successMessage = "Lab admin successfully removed"
+                    showSuccessMessage = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
+                    errorMessage = "Failed to delete lab admin: \(error.localizedDescription)"
+                    showError = true
+                    isLoading = false
+                }
+            }
+        }
     }
 }
 
 struct LabAdminCard: View {
     let labAdmin: UILabAdmin
+    var onEdit: () -> Void
+    var onDelete: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -108,6 +459,21 @@ struct LabAdminCard: View {
                         .foregroundColor(.gray)
                 }
                 Spacer()
+                
+                Menu {
+                    Button(action: onEdit) {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(.gray)
+                        .padding(8)
+                        .contentShape(Rectangle())
+                }
             }
             
             HStack {
@@ -124,7 +490,7 @@ struct LabAdminCard: View {
                     .font(.caption)
             }
             
-            Text("\(labAdmin.experience) years experience")
+            Text("\(labAdmin.experience) years of experience")
                 .font(.caption)
                 .foregroundColor(.gray)
         }

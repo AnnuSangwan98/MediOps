@@ -10,11 +10,16 @@ struct LabLoginView: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var isPasswordVisible: Bool = false
+    @State private var isLoading: Bool = false
+    @State private var currentLabAdmin: LabAdmin? = nil
+    
+    private let adminController = AdminController.shared
+    private let supabase = SupabaseController.shared
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
         return !labId.isEmpty && !password.isEmpty &&
-               isValidLabId(labId) && isValidPassword(password)
+               isValidLabId(labId) && password.count >= 6 // Simplified password check for login
     }
     
     var body: some View {
@@ -100,36 +105,38 @@ struct LabLoginView: View {
                     // Login Button
                     Button(action: handleLogin) {
                         HStack {
-                            Text("Login")
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            Image(systemName: "arrow.right")
-                                .font(.title3)
+                            if isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                            } else {
+                                Text("Login")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                                Image(systemName: "arrow.right")
+                                    .font(.title3)
+                            }
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 55)
                         .background(
                             LinearGradient(gradient: Gradient(colors: [
-                                isValidLoginInput ? Color.teal : Color.gray.opacity(0.5),
-                                isValidLoginInput ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
+                                isValidLoginInput && !isLoading ? Color.teal : Color.gray.opacity(0.5),
+                                isValidLoginInput && !isLoading ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
                             ]),
                             startPoint: .leading,
                             endPoint: .trailing)
                         )
                         .cornerRadius(15)
-                        .shadow(color: isValidLoginInput ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
+                        .shadow(color: isValidLoginInput && !isLoading ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
                     }
-                    .disabled(!isValidLoginInput)
+                    .disabled(!isValidLoginInput || isLoading)
                     .padding(.top, 10)
                 }
                 .padding(.horizontal, 30)
                 
                 Spacer()
-            }
-            
-            NavigationLink(destination: LabDashboardView(), isActive: $isLoggedIn) {
-                EmptyView()
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -139,22 +146,83 @@ struct LabLoginView: View {
         } message: {
             Text(errorMessage)
         }
+        .overlay(
+            NavigationLink(destination: Group {
+                if let labAdmin = currentLabAdmin {
+                    LabDashboardView(labAdmin: labAdmin)
+                } else {
+                    EmptyView()
+                }
+            }, isActive: $isLoggedIn) {
+                EmptyView()
+            }
+        )
     }
     
     private func handleLogin() {
         guard isValidLoginInput else { return }
+        isLoading = true
         
-        // Simulate authentication process
-        // In a real app, this would call your authentication service
-        
-        // Mock login verification
-        if labId.starts(with: "LAB") && isValidPassword(password) {
-            // Successful login
-            isLoggedIn = true
-        } else {
-            // Failed login
-            errorMessage = "Invalid lab ID or password. Please try again."
-            showError = true
+        // Perform authentication against Supabase
+        Task {
+            do {
+                // Query the lab_admins table for the matching lab ID
+                print("Attempting to authenticate lab admin with ID: \(labId)")
+                let labAdmins = try await supabase.select(
+                    from: "lab_admins",
+                    where: "id",
+                    equals: labId
+                )
+                
+                guard let labAdmin = labAdmins.first else {
+                    print("Lab admin not found with ID: \(labId)")
+                    throw LabAuthError.invalidCredentials
+                }
+                
+                // Verify password
+                guard let storedPassword = labAdmin["password"] as? String,
+                      storedPassword == password else {
+                    print("Invalid password for lab admin: \(labId)")
+                    throw LabAuthError.invalidCredentials
+                }
+                
+                print("Lab admin authenticated successfully: \(labId)")
+                
+                // Use the public getLabAdmin method
+                let admin = try await adminController.getLabAdmin(id: labId)
+                print("Lab admin details retrieved: \(admin.name), \(admin.id)")
+                
+                // Update UI on main thread
+                await MainActor.run {
+                    print("Setting currentLabAdmin and activating navigation")
+                    self.currentLabAdmin = admin
+                    self.isLoading = false
+                    self.isLoggedIn = true
+                    
+                    // Force UI update
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        if !self.isLoggedIn {
+                            print("Navigation didn't activate, forcing again")
+                            self.isLoggedIn = true
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Login failed: \(error.localizedDescription)"
+                    if let authError = error as? LabAuthError {
+                        switch authError {
+                        case .invalidCredentials:
+                            errorMessage = "Invalid lab ID or password. Please try again."
+                        default:
+                            errorMessage = "Authentication failed. Please try again."
+                        }
+                    }
+                    showError = true
+                }
+                print("Lab login error: \(error)")
+            }
         }
     }
     
@@ -164,7 +232,7 @@ struct LabLoginView: View {
         return NSPredicate(format: "SELF MATCHES %@", labIdRegex).evaluate(with: id)
     }
     
-    // Validates password complexity
+    // Validates password complexity (only used for form validation, not login)
     private func isValidPassword(_ password: String) -> Bool {
         // At least 8 characters
         guard password.count >= 8 else { return false }
@@ -210,6 +278,24 @@ struct LabBackButton: View {
                 .padding(10)
                 .background(Circle().fill(Color.white))
                 .shadow(color: .gray.opacity(0.2), radius: 3)
+        }
+    }
+}
+
+// Authentication Error
+enum LabAuthError: Error, LocalizedError {
+    case invalidCredentials
+    case networkError
+    case serverError
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidCredentials:
+            return "Invalid username or password"
+        case .networkError:
+            return "Network error. Check your connection"
+        case .serverError:
+            return "Server error. Please try again later"
         }
     }
 }

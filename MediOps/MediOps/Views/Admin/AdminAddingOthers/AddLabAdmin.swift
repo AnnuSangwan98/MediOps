@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+// Using SwiftUI's import approach to access QualificationToggle from another file
 
 struct AddLabAdminView: View {
     @Environment(\.dismiss) private var dismiss
@@ -15,7 +16,7 @@ struct AddLabAdminView: View {
     @State private var gender: UILabAdmin.Gender = .male
     @State private var dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
     @State private var experience = 0
-    @State private var qualification = ""
+    @State private var selectedQualifications: Set<String> = ["MBBS"] // Default to MBBS
     @State private var license = ""
     @State private var address = ""
     @State private var showAlert = false
@@ -23,6 +24,12 @@ struct AddLabAdminView: View {
     @State private var isLoading = false
     @State private var errorMessage = ""
     var onSave: (UIActivity) -> Void
+    
+    // Add reference to AdminController
+    private let adminController = AdminController.shared
+    
+    // Add allowed qualifications
+    private let availableQualifications = ["MBBS", "MD", "MS"]
     
     // Calculate maximum experience based on age
     private var maximumExperience: Int {
@@ -37,7 +44,7 @@ struct AddLabAdminView: View {
         !fullName.isEmpty &&
         isValidEmail(email) &&
         phoneNumber.count == 10 &&
-        !qualification.isEmpty &&
+        !selectedQualifications.isEmpty &&
         isValidLicense(license) &&
         !address.isEmpty
     }
@@ -66,7 +73,38 @@ struct AddLabAdminView: View {
                 }
                 
                 Section(header: Text("Professional Information")) {
-                    TextField("Qualification", text: $qualification)
+                    // Qualifications picker
+                    VStack(alignment: .leading) {
+                        Text("Qualifications")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                            .padding(.bottom, 5)
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(availableQualifications, id: \.self) { qualification in
+                                    QualificationToggle(
+                                        title: qualification,
+                                        isSelected: selectedQualifications.contains(qualification),
+                                        action: {
+                                            if selectedQualifications.contains(qualification) {
+                                                selectedQualifications.remove(qualification)
+                                            } else {
+                                                selectedQualifications.insert(qualification)
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        
+                        if selectedQualifications.isEmpty {
+                            Text("Select at least one qualification")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    }
+                    .padding(.vertical, 5)
                     
                     TextField("License (XX12345)", text: $license)
                         .onChange(of: license) { _, newValue in
@@ -155,7 +193,7 @@ struct AddLabAdminView: View {
             gender: gender,
             dateOfBirth: dateOfBirth,
             experience: experience,
-            qualification: qualification,
+            qualification: selectedQualifications.joined(separator: ", "),
             address: address
         )
 
@@ -168,10 +206,81 @@ struct AddLabAdminView: View {
             labAdminDetails: labAdmin
         )
 
-        sendLabCredentials(activity: activity)
+        // First save to database, then send credentials
+        saveToDatabase(labAdmin: labAdmin, activity: activity)
     }
     
-    private func sendLabCredentials(activity: UIActivity) {
+    private func saveToDatabase(labAdmin: UILabAdmin, activity: UIActivity) {
+        Task {
+            do {
+                // Generate a secure password that meets the Supabase constraints:
+                // - At least 8 characters
+                // - At least one uppercase letter
+                // - At least one lowercase letter
+                // - At least one digit
+                // - At least one special character (@$!%*?&)
+                let password = generateSecurePassword()
+                
+                // Use a valid hospital ID format
+                let hospitalAdminId = "HOS001"
+                
+                // Save to database using AdminController
+                let (_, _) = try await adminController.createLabAdmin(
+                    email: labAdmin.email,
+                    password: password,
+                    name: labAdmin.fullName,
+                    labName: labAdmin.qualification, // This is actually mapped to department
+                    hospitalAdminId: hospitalAdminId,
+                    contactNumber: labAdmin.phone.replacingOccurrences(of: "+91", with: ""), // Remove country code for 10-digit format
+                    department: "Pathology & Laboratory" // Fixed to match the constraint
+                )
+                
+                // If successful, send credentials email
+                await MainActor.run {
+                    sendLabCredentials(activity: activity, password: password)
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    alertMessage = "Failed to save lab admin: \(error.localizedDescription)"
+                    showAlert = true
+                }
+            }
+        }
+    }
+    
+    // Generate a password that meets the Supabase constraints:
+    // - At least 8 characters
+    // - At least one uppercase letter
+    // - At least one lowercase letter
+    // - At least one digit
+    // - At least one special character (@$!%*?&)
+    private func generateSecurePassword() -> String {
+        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
+        let numbers = "0123456789"
+        let specialChars = "@$!%*?&" // Only allowed special characters per constraint
+        
+        // Ensure at least one character from each required category
+        var passwordChars: [String] = []
+        passwordChars.append(String(uppercaseLetters.randomElement()!))
+        passwordChars.append(String(lowercaseLetters.randomElement()!))
+        passwordChars.append(String(numbers.randomElement()!))
+        passwordChars.append(String(specialChars.randomElement()!))
+        
+        // Add more random characters to reach at least 8 characters
+        let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
+        let additionalLength = 8 // Will give us a 12-character password
+        
+        for _ in 0..<additionalLength {
+            passwordChars.append(String(allChars.randomElement()!))
+        }
+        
+        // Shuffle and join the characters
+        return passwordChars.shuffled().joined()
+    }
+    
+    private func sendLabCredentials(activity: UIActivity, password: String) {
         guard let url = URL(string: "http://localhost:8082/send-credentials") else {
             alertMessage = "Invalid server URL"
             showAlert = true
@@ -190,10 +299,11 @@ struct AddLabAdminView: View {
                 "fullName": fullName,
                 "email": email,
                 "phone": "+91\(phoneNumber)",
-                "qualification": qualification,
+                "qualification": selectedQualifications.joined(separator: ", "),
                 "license": license,
-                "labName": "Main Laboratory",
-                "labId": "LAB001"
+                "labName": selectedQualifications.joined(separator: ", "),
+                "labId": "LAB001",
+                "password": password // Include the password in the email
             ]
         ]
         
@@ -202,6 +312,8 @@ struct AddLabAdminView: View {
             
             URLSession.shared.dataTask(with: request) { data, response, error in
                 DispatchQueue.main.async {
+                    self.isLoading = false
+                    
                     if let error = error as NSError? {
                         switch error.code {
                         case NSURLErrorTimedOut:
@@ -220,15 +332,18 @@ struct AddLabAdminView: View {
                     if let httpResponse = response as? HTTPURLResponse {
                         if httpResponse.statusCode == 200 {
                             // Show success message
-                            self.alertMessage = "Credentials sent successfully to \(email)"
+                            self.alertMessage = "Lab admin created and credentials sent successfully to \(email)"
                             self.showAlert = true
                             // Call onSave callback with the new activity
                             self.onSave(activity)
-                            // Dismiss the view immediately after successful save
+                            // Dismiss the view after successful save
                             self.dismiss()
                         } else {
-                            self.alertMessage = "Failed to send credentials email (Status: \(httpResponse.statusCode))"
+                            // Lab admin was created in database, but email failed
+                            self.alertMessage = "Lab admin created, but failed to send credentials email (Status: \(httpResponse.statusCode))"
                             self.showAlert = true
+                            // Still call onSave as the database operation was successful
+                            self.onSave(activity)
                         }
                     }
                 }
@@ -246,7 +361,7 @@ struct AddLabAdminView: View {
         gender = .male
         dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
         experience = 0
-        qualification = ""
+        selectedQualifications = ["MBBS"]
         license = ""
         address = ""
     }

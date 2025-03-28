@@ -3,7 +3,19 @@ import SwiftUI
 struct DoctorsListView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showAddDoctor = false
+    @State private var showEditDoctor = false
+    @State private var doctorToEdit: UIDoctor?
     @Binding var doctors: [UIDoctor]
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var doctorToDelete: UIDoctor?
+    @State private var showDeleteConfirmation = false
+    @State private var showSuccessMessage = false
+    @State private var successMessage = ""
+    
+    private let adminController = AdminController.shared
+    private let userController = UserController.shared
     
     init(doctors: Binding<[UIDoctor]>) {
         _doctors = doctors
@@ -34,7 +46,10 @@ struct DoctorsListView: View {
                 // Doctors List
                 ScrollView {
                     VStack(spacing: 20) {
-                        if doctors.isEmpty {
+                        if isLoading {
+                            ProgressView("Loading doctors...")
+                                .padding()
+                        } else if doctors.isEmpty {
                             VStack(spacing: 15) {
                                 Image(systemName: "stethoscope")
                                     .font(.system(size: 40))
@@ -54,8 +69,15 @@ struct DoctorsListView: View {
                             .padding()
                         } else {
                             ForEach(doctors) { doctor in
-                                DoctorCard(doctor: doctor)
-                                    .padding(.horizontal)
+                                DoctorCard(
+                                    doctor: doctor,
+                                    onEdit: { editDoctor(doctor) },
+                                    onDelete: {
+                                        doctorToDelete = doctor
+                                        showDeleteConfirmation = true
+                                    }
+                                )
+                                .padding(.horizontal)
                             }
                         }
                     }
@@ -91,11 +113,149 @@ struct DoctorsListView: View {
                 }
             }
         }
+        .sheet(isPresented: $showEditDoctor) {
+            if let doctor = doctorToEdit {
+                EditDoctorView(doctor: doctor) { updatedDoctor in
+                    if let index = doctors.firstIndex(where: { $0.id == doctor.id }) {
+                        doctors[index] = updatedDoctor
+                    }
+                }
+            }
+        }
+        // Error alert
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+        // Delete confirmation alert
+        .alert("Delete Doctor", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                if let doctor = doctorToDelete {
+                    confirmDeleteDoctor(doctor)
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this doctor? This action cannot be undone.")
+        }
+        // Success message alert
+        .alert("Success", isPresented: $showSuccessMessage) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(successMessage)
+        }
+        .task {
+            await fetchDoctors()
+        }
+    }
+    
+    private func fetchDoctors() async {
+        isLoading = true
+        do {
+            // Try to get the current user and their hospital admin ID
+            var hospitalAdminId: String? = nil
+            
+            if let currentUser = try? await userController.getCurrentUser() {
+                print("FETCH DOCTORS: Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
+                
+                // If user is a hospital admin, use their ID directly
+                if currentUser.role == .hospitalAdmin {
+                    hospitalAdminId = currentUser.id
+                    print("FETCH DOCTORS: User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
+                } else {
+                    // For other roles, try to get their associated hospital admin
+                    do {
+                        let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
+                        hospitalAdminId = hospitalAdmin.id
+                        print("FETCH DOCTORS: Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
+                    } catch {
+                        print("FETCH DOCTORS WARNING: \(error.localizedDescription)")
+                    }
+                }
+            }
+            
+            // If we couldn't determine the hospital admin ID, use a fallback
+            if hospitalAdminId == nil {
+                hospitalAdminId = "HOS001" // Fallback ID
+                print("FETCH DOCTORS: Using fallback hospital admin ID: \(hospitalAdminId!)")
+            }
+            
+            // Fetch the doctors
+            print("FETCH DOCTORS: Requesting doctors for hospital admin: \(hospitalAdminId!)")
+            let fetchedDoctors = try await adminController.getDoctorsByHospitalAdmin(hospitalAdminId: hospitalAdminId!)
+            print("FETCH DOCTORS: Successfully retrieved \(fetchedDoctors.count) doctors")
+            
+            // Filter only active doctors
+            let activeDoctors = fetchedDoctors.filter { $0.doctorStatus == "active" }
+            print("FETCH DOCTORS: Filtered to \(activeDoctors.count) active doctors")
+            
+            // Map to UI models
+            doctors = activeDoctors.map { doctor in
+                print("FETCH DOCTORS: Processing doctor ID: \(doctor.id), Name: \(doctor.name)")
+                return UIDoctor(
+                    id: doctor.id,
+                    fullName: doctor.name,
+                    specialization: doctor.specialization,
+                    email: doctor.email,
+                    phone: doctor.contactNumber ?? "",
+                    gender: .male, // Default gender
+                    dateOfBirth: Date(), // Default date
+                    experience: doctor.experience,
+                    qualification: doctor.qualifications.joined(separator: ", "),
+                    license: doctor.licenseNo,
+                    address: doctor.addressLine
+                )
+            }
+        } catch {
+            print("FETCH DOCTORS ERROR: \(error.localizedDescription)")
+            errorMessage = "Failed to fetch doctors: \(error.localizedDescription)"
+            showError = true
+        }
+        isLoading = false
+    }
+    
+    private func editDoctor(_ doctor: UIDoctor) {
+        doctorToEdit = doctor
+        showEditDoctor = true
+    }
+    
+    private func confirmDeleteDoctor(_ doctor: UIDoctor) {
+        isLoading = true
+        
+        Task {
+            do {
+                // Call the AdminController to mark the doctor as inactive
+                try await adminController.deleteDoctor(id: doctor.id)
+                
+                await MainActor.run {
+                    // Remove from UI list
+                    withAnimation {
+                        if let index = doctors.firstIndex(where: { $0.id == doctor.id }) {
+                            doctors.remove(at: index)
+                        }
+                    }
+                    
+                    // Show success message
+                    successMessage = "Doctor successfully removed"
+                    showSuccessMessage = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to delete doctor: \(error.localizedDescription)"
+                    showError = true
+                    isLoading = false
+                }
+            }
+        }
     }
 }
 
 struct DoctorCard: View {
     let doctor: UIDoctor
+    var onEdit: () -> Void
+    var onDelete: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -108,23 +268,38 @@ struct DoctorCard: View {
                         .foregroundColor(.gray)
                 }
                 Spacer()
+                
+                Menu {
+                    Button(action: onEdit) {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(.gray)
+                        .padding(8)
+                        .contentShape(Rectangle())
+                }
             }
             
             HStack {
                 Image(systemName: "phone.fill")
                     .font(.caption)
                     .foregroundColor(.gray)
-                Text(doctor.phone)
+                Text(doctor.phone.isEmpty ? "No phone" : doctor.phone)
                     .font(.caption)
                 Spacer()
                 Image(systemName: "envelope.fill")
                     .font(.caption)
                     .foregroundColor(.gray)
-                Text(doctor.email)
+                Text(doctor.email.isEmpty ? "No email" : doctor.email)
                     .font(.caption)
             }
             
-            Text("License: \(doctor.license)")
+            Text("License: \(doctor.license.isEmpty ? "Unknown" : doctor.license)")
                 .font(.caption)
                 .foregroundColor(.gray)
         }
