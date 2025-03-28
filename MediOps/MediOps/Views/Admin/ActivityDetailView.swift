@@ -132,6 +132,7 @@ struct DetailRow: View {
         doctorDetails: nil,
         labAdminDetails: nil,
         hospitalDetails: UIHospital(
+            id: UUID(),
             name: "City General Hospital",
             adminName: "John Doe",
             licenseNumber: "AB12345",
@@ -140,7 +141,10 @@ struct DetailRow: View {
             state: "Maharashtra",
             zipCode: "400001",
             phone: "+919876543210",
-            email: "admin@cityhospital.com"
+            email: "admin@cityhospital.com",
+            status: .active,
+            hospitalPhone: "+919876543210",
+            imageData: nil
         )
     ))
 } 

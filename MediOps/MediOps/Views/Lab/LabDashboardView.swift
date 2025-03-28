@@ -68,6 +68,35 @@ struct TestReportCard: View {
     }
 }
 
+// Dashboard Card for Quick Actions
+struct LabDashboardCard: View {
+    let title: String
+    let icon: String
+    let color: Color
+    var action: () -> Void = {}
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 15) {
+                Image(systemName: icon)
+                    .font(.system(size: 30))
+                    .foregroundColor(color)
+                
+                Text(title)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(height: 120)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.white)
+            .cornerRadius(15)
+            .shadow(color: .gray.opacity(0.2), radius: 5)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
 // MARK: - Test Report Detail View
 struct TestReportDetailView: View {
     @Environment(\.dismiss) private var dismiss
@@ -239,8 +268,14 @@ struct LabDashboardView: View {
     @State private var selectedReport: TestReport?
     @State private var showReportDetail = false
     @State private var reports: [TestReport]
+    @State private var showLogoutAlert = false
     
-    init() {
+    // Lab admin information
+    var labAdmin: LabAdmin
+    
+    init(labAdmin: LabAdmin) {
+        self.labAdmin = labAdmin
+        
         // Initialize with dummy data
         let dummyReports = [
             TestReport(id: "T001", patientName: "John Doe", testType: "",
@@ -279,97 +314,97 @@ struct LabDashboardView: View {
                     // Header
                     HStack {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Welcome, Lab")
+                            Text("Welcome, \(labAdmin.name)")
                                 .font(.title)
                                 .fontWeight(.bold)
-                            Text("Laboratory Dashboard")
+                            Text("\(labAdmin.department) - \(labAdmin.id)")
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
                         }
                         Spacer()
                         
-//                        Button(action: {
-//                            // TODO: Implement profile action
-//                        }) {
-//                            Image(systemName: "person.circle.fill")
-//                                .resizable()
-//                                .frame(width: 40, height: 40)
-//                                .foregroundColor(.teal)
-//                        }
+                        Button(action: {
+                            showLogoutAlert = true
+                        }) {
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .frame(width: 40, height: 40)
+                                .foregroundColor(.teal)
+                        }
                     }
                     .padding(.horizontal)
                     .padding(.top)
                     
                     // Search Bar
-//                    HStack {
-//                        Image(systemName: "magnifyingglass")
-//                            .foregroundColor(.gray)
-//                        TextField("Search by patient name, test ID or type", text: $searchText)
-//                            .textFieldStyle(RoundedBorderTextFieldStyle())
-//                    }
-//                    .padding(.horizontal)
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.gray)
+                        TextField("Search by patient name, test ID or type", text: $searchText)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
+                    .padding(.horizontal)
                     
                     // Quick Actions Grid
-//                    LazyVGrid(columns: [
-//                        GridItem(.flexible()),
-//                        GridItem(.flexible())
-//                    ], spacing: 20) {
-//                        // Test Reports
-//                        DashboardCard(
-//                            title: "Test Reports",
-//                            icon: "doc.text",
-//                            color: .blue
-//                        )
-//                        
-//                        // Sample Collection
-//                        DashboardCard(
-//                            title: "Sample Collection",
-//                            icon: "cross.case",
-//                            color: .green
-//                        )
-//                        
-//                        // Test Results
-//                        DashboardCard(
-//                            title: "Test Results",
-//                            icon: "checkmark.circle",
-//                            color: .purple
-//                        )
-//                        
-//                        // Analytics
-//                        DashboardCard(
-//                            title: "Analytics",
-//                            icon: "chart.bar",
-//                            color: .orange
-//                        )
-//                    }
-//                    .padding()
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 20) {
+                        // Test Reports
+                        LabDashboardCard(
+                            title: "Test Reports",
+                            icon: "doc.text",
+                            color: .blue
+                        )
+                        
+                        // Sample Collection
+                        LabDashboardCard(
+                            title: "Sample Collection",
+                            icon: "cross.case",
+                            color: .green
+                        )
+                        
+                        // Test Results
+                        LabDashboardCard(
+                            title: "Test Results",
+                            icon: "checkmark.circle",
+                            color: .purple
+                        )
+                        
+                        // Analytics
+                        LabDashboardCard(
+                            title: "Analytics",
+                            icon: "chart.bar",
+                            color: .orange
+                        )
+                    }
+                    .padding()
                     
                     // Recent Tests
-//                    VStack(alignment: .leading, spacing: 15) {
-//                        Text("Recent Tests")
-//                            .font(.title2)
-//                            .fontWeight(.bold)
-//                            .padding(.horizontal)
-//                        
-//                        if filteredReports.isEmpty {
-//                            Text("No tests found")
-//                                .foregroundColor(.gray)
-//                                .frame(maxWidth: .infinity)
-//                                .padding()
-//                                .background(Color.white)
-//                                .cornerRadius(10)
-//                                .shadow(color: .gray.opacity(0.1), radius: 5)
-//                        } else {
-//                            ForEach(filteredReports) { report in
-//                                TestReportCard(report: report) {
-//                                    selectedReport = report
-//                                    showReportDetail = true
-//                                }
-//                                .padding(.horizontal)
-//                            }
-//                        }
-//                    }
-//                    .padding()
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("Recent Tests")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .padding(.horizontal)
+                        
+                        if filteredReports.isEmpty {
+                            Text("No tests found")
+                                .foregroundColor(.gray)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.white)
+                                .cornerRadius(10)
+                                .shadow(color: .gray.opacity(0.1), radius: 5)
+                        } else {
+                            ForEach(filteredReports) { report in
+                                TestReportCard(report: report) {
+                                    selectedReport = report
+                                    showReportDetail = true
+                                }
+                                .padding(.horizontal)
+                            }
+                        }
+                    }
+                    .padding()
                 }
             }
         }
@@ -384,9 +419,44 @@ struct LabDashboardView: View {
                 }
             }
         }
+        .alert("Logout", isPresented: $showLogoutAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Logout", role: .destructive) {
+                // Handle logout - return to login screen
+                NavigationUtil.popToRootView()
+            }
+        } message: {
+            Text("Are you sure you want to logout?")
+        }
     }
 }
 
+// Utility to pop to root view
+struct NavigationUtil {
+    static func popToRootView() {
+        let keyWindow = UIApplication.shared.connectedScenes
+            .filter({$0.activationState == .foregroundActive})
+            .compactMap({$0 as? UIWindowScene})
+            .first?.windows
+            .filter({$0.isKeyWindow}).first
+        
+        keyWindow?.rootViewController?.dismiss(animated: true, completion: nil)
+    }
+}
+
+// Preview with a sample lab admin
 #Preview {
-    LabDashboardView()
+    let sampleLabAdmin = LabAdmin(
+        id: "LAB123",
+        hospitalId: "HOS123",
+        name: "Lab Technician",
+        email: "lab@example.com",
+        contactNumber: "1234567890",
+        department: "Pathology & Laboratory",
+        address: "Hospital Address",
+        createdAt: Date(),
+        updatedAt: Date()
+    )
+    
+    return LabDashboardView(labAdmin: sampleLabAdmin)
 }

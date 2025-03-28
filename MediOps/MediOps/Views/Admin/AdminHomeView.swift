@@ -24,6 +24,7 @@ struct UIDoctor: Identifiable {
 
 struct UILabAdmin: Identifiable {
     var id = UUID()
+    var originalId: String? // Store the original Supabase ID (e.g., LAB001)
     var fullName: String
     var email: String
     var phone: String // This will store the full phone number including +91
@@ -97,13 +98,15 @@ struct AdminHomeView: View {
     @State private var showAddLabAdmin = false
     @State private var showProfile = false
     @State private var recentActivities: [UIActivity] = []
-    @State private var doctorCount = 0
-    @State private var labAdminCount = 0
+    @State private var doctors: [UIDoctor] = []
+    @State private var labAdmins: [UILabAdmin] = []
     
-    private func updateStatistics() {
-        // Update counts based on activities
-        doctorCount = recentActivities.filter { $0.type == .doctorAdded && $0.status != .rejected }.count
-        labAdminCount = recentActivities.filter { $0.type == .labAdminAdded && $0.status != .rejected }.count
+    private var doctorCount: Int {
+        doctors.count
+    }
+    
+    private var labAdminCount: Int {
+        labAdmins.count
     }
     
     var body: some View {
@@ -116,9 +119,6 @@ struct AdminHomeView: View {
                             Text("Admin Dashboard")
                                 .font(.title)
                                 .fontWeight(.bold)
-                            Text("Hospital Management System")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
                         }
                         Spacer()
                         
@@ -134,38 +134,27 @@ struct AdminHomeView: View {
                     .padding(.horizontal)
                     .padding(.top)
                     
-                    // Statistics Summary
+                    // Quick action
                     LazyVGrid(columns: [
                         GridItem(.flexible()),
                         GridItem(.flexible())
                     ], spacing: 15) {
-                        AdminStatCard(title: "Doctors", value: "\(doctorCount)", icon: "stethoscope")
-                        AdminStatCard(title: "Lab Admins", value: "\(labAdminCount)", icon: "flask.fill")
+                        AdminStatCard(
+                            title: "Doctors",
+                            value: "\(doctorCount)",
+                            icon: "stethoscope",
+                            doctors: $doctors
+                        )
+                        AdminStatCard(
+                            title: "Lab Admins",
+                            value: "\(labAdminCount)",
+                            icon: "flask.fill",
+                            labAdmins: $labAdmins
+                        )
                     }
                     .padding(.horizontal)
                     
-                    // Quick Actions Grid
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 15) {
-                        // Add Doctor
-                        AdminDashboardCard(
-                            title: "Add Doctor",
-                            icon: "person.badge.plus",
-                            color: .blue,
-                            action: { showAddDoctor = true }
-                        )
-                        
-                        // Add Lab Admin
-                        AdminDashboardCard(
-                            title: "Add Lab Admin",
-                            icon: "flask.fill",
-                            color: .green,
-                            action: { showAddLabAdmin = true }
-                        )
-                    }
-                    .padding()
+                    
                     
                     // Recent Activity
                     VStack(alignment: .leading, spacing: 15) {
@@ -185,12 +174,10 @@ struct AdminHomeView: View {
                         } else {
                             ForEach(recentActivities) { activity in
                                 ActivityRow(activity: activity) { updatedActivity in
-                                    // Handle edit
                                     if let index = recentActivities.firstIndex(where: { $0.id == activity.id }) {
                                         recentActivities[index] = updatedActivity
                                     }
                                 } onDelete: { deletedActivity in
-                                    // Handle delete
                                     if let index = recentActivities.firstIndex(where: { $0.id == deletedActivity.id }) {
                                         recentActivities.remove(at: index)
                                     }
@@ -206,13 +193,17 @@ struct AdminHomeView: View {
             .sheet(isPresented: $showAddDoctor) {
                 AddDoctorView { activity in
                     recentActivities.insert(activity, at: 0)
-                    updateStatistics()
+                    if let doctor = activity.doctorDetails {
+                        doctors.append(doctor)
+                    }
                 }
             }
             .sheet(isPresented: $showAddLabAdmin) {
                 AddLabAdminView { activity in
                     recentActivities.insert(activity, at: 0)
-                    updateStatistics()
+                    if let labAdmin = activity.labAdminDetails {
+                        labAdmins.append(labAdmin)
+                    }
                 }
             }
             .sheet(isPresented: $showProfile) {
@@ -226,24 +217,49 @@ struct AdminStatCard: View {
     let title: String
     let value: String
     let icon: String
+    var doctors: Binding<[UIDoctor]>? = nil
+    var labAdmins: Binding<[UILabAdmin]>? = nil
     
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundColor(.teal)
-            Text(value)
-                .font(.title2)
-                .fontWeight(.bold)
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.gray)
+        NavigationLink(destination: destinationView) {
+            VStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 24))
+                    .foregroundColor(.teal)
+                Text(value)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.white)
+            .cornerRadius(15)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
         }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(Color.white)
-        .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    @ViewBuilder
+    private var destinationView: some View {
+        switch title {
+        case "Doctors":
+            if let doctorsBinding = doctors {
+                DoctorsListView(doctors: doctorsBinding)
+            } else {
+                DoctorsListView(doctors: .constant([]))
+            }
+        case "Lab Admins":
+            if let labAdminsBinding = labAdmins {
+                LabAdminsListView(labAdmins: labAdminsBinding)
+            } else {
+                LabAdminsListView(labAdmins: .constant([]))
+            }
+        default:
+            EmptyView()
+        }
     }
 }
 

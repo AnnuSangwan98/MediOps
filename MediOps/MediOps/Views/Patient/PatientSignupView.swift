@@ -38,7 +38,7 @@ struct PatientSignupView: View {
     
     // MARK: - Validation
     
-    private func isValidInput() -> Bool {
+    private func validateAndShowError() -> Bool {
         // Check all validation conditions
         if name.isEmpty {
             errorMessage = "Name cannot be empty"
@@ -108,9 +108,20 @@ struct PatientSignupView: View {
         
         return true
     }
+
+    private func isValidInput() -> Bool {
+        // Only check validation conditions without modifying state
+        if name.isEmpty || !isValidName { return false }
+        if email.isEmpty || !isValidEmail(email) { return false }
+        if password.isEmpty || !isValidPassword { return false }
+        if confirmPassword.isEmpty || password != confirmPassword { return false }
+        if age.isEmpty || !isValidAge { return false }
+        if gender.isEmpty { return false }
+        return true
+    }
     
     private var isSubmitButtonEnabled: Bool {
-        return isValidInput()
+        isValidInput()
     }
     
     private func isValidEmail(_ email: String) -> Bool {
@@ -407,7 +418,7 @@ struct PatientSignupView: View {
     }
     
     private func handleSignup() {
-        guard isValidInput() else { return }
+        guard validateAndShowError() else { return }
         isLoading = true
         
         // Normalize email for consistency

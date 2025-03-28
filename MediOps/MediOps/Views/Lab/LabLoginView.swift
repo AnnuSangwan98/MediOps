@@ -1,4 +1,6 @@
 import SwiftUI
+// Import custom components from the app
+import SwiftUI
 
 struct LabLoginView: View {
     @Environment(\.dismiss) private var dismiss
@@ -8,19 +10,16 @@ struct LabLoginView: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var isPasswordVisible: Bool = false
-    @State private var showChangePasswordSheet: Bool = false
-    @State private var newPassword: String = ""
-    @State private var confirmPassword: String = ""
+    @State private var isLoading: Bool = false
+    @State private var currentLabAdmin: LabAdmin? = nil
+    
+    private let adminController = AdminController.shared
+    private let supabase = SupabaseController.shared
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
         return !labId.isEmpty && !password.isEmpty &&
-               isValidLabId(labId) && isValidPassword(password)
-    }
-    
-    private var isValidPasswordChange: Bool {
-        return !newPassword.isEmpty && !confirmPassword.isEmpty &&
-               newPassword == confirmPassword && isValidPassword(newPassword)
+               isValidLabId(labId) && password.count >= 6 // Simplified password check for login
     }
     
     var body: some View {
@@ -62,7 +61,7 @@ struct LabLoginView: View {
                             .foregroundColor(.gray)
                         
                         TextField("Enter lab ID (e.g. LAB001)", text: $labId)
-                            .textFieldStyle(CustomTextFieldStyle())
+                            .textFieldStyle(LabTextFieldStyle())
                             .onChange(of: labId) { _, newValue in
                                 // Automatically format to uppercase for "LAB" part
                                 if newValue.count >= 3 {
@@ -84,10 +83,10 @@ struct LabLoginView: View {
                         ZStack {
                             if isPasswordVisible {
                                 TextField("Enter your password", text: $password)
-                                    .textFieldStyle(CustomTextFieldStyle())
+                                    .textFieldStyle(LabTextFieldStyle())
                             } else {
                                 SecureField("Enter your password", text: $password)
-                                    .textFieldStyle(CustomTextFieldStyle())
+                                    .textFieldStyle(LabTextFieldStyle())
                             }
                             
                             HStack {
@@ -106,65 +105,125 @@ struct LabLoginView: View {
                     // Login Button
                     Button(action: handleLogin) {
                         HStack {
-                            Text("Login")
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            Image(systemName: "arrow.right")
-                                .font(.title3)
+                            if isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                            } else {
+                                Text("Login")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                                Image(systemName: "arrow.right")
+                                    .font(.title3)
+                            }
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 55)
                         .background(
                             LinearGradient(gradient: Gradient(colors: [
-                                isValidLoginInput ? Color.teal : Color.gray.opacity(0.5),
-                                isValidLoginInput ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
+                                isValidLoginInput && !isLoading ? Color.teal : Color.gray.opacity(0.5),
+                                isValidLoginInput && !isLoading ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
                             ]),
                             startPoint: .leading,
                             endPoint: .trailing)
                         )
                         .cornerRadius(15)
-                        .shadow(color: isValidLoginInput ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
+                        .shadow(color: isValidLoginInput && !isLoading ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
                     }
-                    .disabled(!isValidLoginInput)
+                    .disabled(!isValidLoginInput || isLoading)
                     .padding(.top, 10)
                 }
                 .padding(.horizontal, 30)
                 
                 Spacer()
             }
-            
-            NavigationLink(destination: LabDashboardView(), isActive: $isLoggedIn) {
-                EmptyView()
-            }
         }
         .navigationBarBackButtonHidden(true)
-        .navigationBarItems(leading: CustomBackButton())
+        .navigationBarItems(leading: LabBackButton())
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage)
         }
-        .sheet(isPresented: $showChangePasswordSheet) {
-            ChangePasswordSheet(
-                newPassword: $newPassword,
-                confirmPassword: $confirmPassword,
-                isValidInput: isValidPasswordChange,
-                onSubmit: handlePasswordChange
-            )
-        }
+        .overlay(
+            NavigationLink(destination: Group {
+                if let labAdmin = currentLabAdmin {
+                    LabDashboardView(labAdmin: labAdmin)
+                } else {
+                    EmptyView()
+                }
+            }, isActive: $isLoggedIn) {
+                EmptyView()
+            }
+        )
     }
     
     private func handleLogin() {
-        // Show change password sheet instead of direct login
-        showChangePasswordSheet = true
-    }
-    
-    private func handlePasswordChange() {
-        // All validation is now handled by the isValidPasswordChange computed property
-        // Close the sheet and proceed to login
-        showChangePasswordSheet = false
-        isLoggedIn = true
+        guard isValidLoginInput else { return }
+        isLoading = true
+        
+        // Perform authentication against Supabase
+        Task {
+            do {
+                // Query the lab_admins table for the matching lab ID
+                print("Attempting to authenticate lab admin with ID: \(labId)")
+                let labAdmins = try await supabase.select(
+                    from: "lab_admins",
+                    where: "id",
+                    equals: labId
+                )
+                
+                guard let labAdmin = labAdmins.first else {
+                    print("Lab admin not found with ID: \(labId)")
+                    throw LabAuthError.invalidCredentials
+                }
+                
+                // Verify password
+                guard let storedPassword = labAdmin["password"] as? String,
+                      storedPassword == password else {
+                    print("Invalid password for lab admin: \(labId)")
+                    throw LabAuthError.invalidCredentials
+                }
+                
+                print("Lab admin authenticated successfully: \(labId)")
+                
+                // Use the public getLabAdmin method
+                let admin = try await adminController.getLabAdmin(id: labId)
+                print("Lab admin details retrieved: \(admin.name), \(admin.id)")
+                
+                // Update UI on main thread
+                await MainActor.run {
+                    print("Setting currentLabAdmin and activating navigation")
+                    self.currentLabAdmin = admin
+                    self.isLoading = false
+                    self.isLoggedIn = true
+                    
+                    // Force UI update
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        if !self.isLoggedIn {
+                            print("Navigation didn't activate, forcing again")
+                            self.isLoggedIn = true
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Login failed: \(error.localizedDescription)"
+                    if let authError = error as? LabAuthError {
+                        switch authError {
+                        case .invalidCredentials:
+                            errorMessage = "Invalid lab ID or password. Please try again."
+                        default:
+                            errorMessage = "Authentication failed. Please try again."
+                        }
+                    }
+                    showError = true
+                }
+                print("Lab login error: \(error)")
+            }
+        }
     }
     
     // Validates that the lab ID is in format LAB followed by numbers
@@ -173,7 +232,7 @@ struct LabLoginView: View {
         return NSPredicate(format: "SELF MATCHES %@", labIdRegex).evaluate(with: id)
     }
     
-    // Validates password complexity
+    // Validates password complexity (only used for form validation, not login)
     private func isValidPassword(_ password: String) -> Bool {
         // At least 8 characters
         guard password.count >= 8 else { return false }
@@ -194,122 +253,8 @@ struct LabLoginView: View {
     }
 }
 
-struct ChangePasswordSheetForLab: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var newPassword: String
-    @Binding var confirmPassword: String
-    @State private var isNewPasswordVisible: Bool = false
-    @State private var isConfirmPasswordVisible: Bool = false
-    var isValidInput: Bool
-    var onSubmit: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            // Header
-            Text("Change Password")
-                .font(.system(size: 24, weight: .bold))
-                .foregroundColor(.teal)
-                .padding(.top, 20)
-            
-            // Form fields
-            VStack(spacing: 20) {
-                // New Password field with toggle
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("New Password")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    
-                    ZStack {
-                        if isNewPasswordVisible {
-                            TextField("Enter new password", text: $newPassword)
-                                .textFieldStyle(CustomTextFieldStyle())
-                        } else {
-                            SecureField("Enter new password", text: $newPassword)
-                                .textFieldStyle(CustomTextFieldStyle())
-                        }
-                        
-                        HStack {
-                            Spacer()
-                            Button(action: {
-                                isNewPasswordVisible.toggle()
-                            }) {
-                                Image(systemName: isNewPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                                    .foregroundColor(.gray)
-                                    .padding(.trailing, 16)
-                            }
-                        }
-                    }
-                    
-                    Text("Must contain at least 8 characters, one uppercase letter, one number, and one special character")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .padding(.top, 4)
-                }
-                
-                // Confirm Password field with toggle
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Confirm Password")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    
-                    ZStack {
-                        if isConfirmPasswordVisible {
-                            TextField("Confirm new password", text: $confirmPassword)
-                                .textFieldStyle(CustomTextFieldStyle())
-                        } else {
-                            SecureField("Confirm new password", text: $confirmPassword)
-                                .textFieldStyle(CustomTextFieldStyle())
-                        }
-                        
-                        HStack {
-                            Spacer()
-                            Button(action: {
-                                isConfirmPasswordVisible.toggle()
-                            }) {
-                                Image(systemName: isConfirmPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                                    .foregroundColor(.gray)
-                                    .padding(.trailing, 16)
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            
-            // Submit Button
-            Button(action: onSubmit) {
-                Text("Submit")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 55)
-                    .background(
-                        LinearGradient(gradient: Gradient(colors: [
-                            isValidInput ? Color.teal : Color.gray.opacity(0.5),
-                            isValidInput ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
-                        ]),
-                        startPoint: .leading,
-                        endPoint: .trailing)
-                    )
-                    .cornerRadius(15)
-                    .shadow(color: isValidInput ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
-            }
-            .disabled(!isValidInput)
-            .padding(.horizontal, 20)
-            .padding(.top, 10)
-            
-            Spacer()
-        }
-        .padding(.top, 20)
-        .background(Color.white)
-        .cornerRadius(20)
-        .shadow(radius: 10)
-    }
-}
-
 // Custom TextField Style
-struct CustomTextFieldStyleForLab: TextFieldStyle {
+struct LabTextFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .padding()
@@ -320,7 +265,7 @@ struct CustomTextFieldStyleForLab: TextFieldStyle {
 }
 
 // Custom Back Button
-struct CustomBackButtonForLab: View {
+struct LabBackButton: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -333,6 +278,24 @@ struct CustomBackButtonForLab: View {
                 .padding(10)
                 .background(Circle().fill(Color.white))
                 .shadow(color: .gray.opacity(0.2), radius: 3)
+        }
+    }
+}
+
+// Authentication Error
+enum LabAuthError: Error, LocalizedError {
+    case invalidCredentials
+    case networkError
+    case serverError
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidCredentials:
+            return "Invalid username or password"
+        case .networkError:
+            return "Network error. Check your connection"
+        case .serverError:
+            return "Server error. Please try again later"
         }
     }
 }
