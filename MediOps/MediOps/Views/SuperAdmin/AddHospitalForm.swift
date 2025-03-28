@@ -37,15 +37,15 @@ struct AddHospitalForm: View {
         let hospital_id: String
         let admin_name: String
         let email: String
-        let contact_number: String
+        let contact_number: String?
         let id: String
         let password: String
-        let role: String
-        let status: String
-        let street: String
-        let city: String
-        let state: String
-        let pincode: String
+        let role: String = "HOSPITAL_ADMIN"
+        let status: String = "active"
+        let street: String?
+        let city: String?
+        let state: String?
+        let pincode: String?
     }
     
     private struct EmailDetails: Encodable {
@@ -311,7 +311,7 @@ struct AddHospitalForm: View {
                 
                 print("Inserting hospital with data:", hospitalData)
                 
-                // Insert hospital
+                // Insert hospital first
                 try await supabase.insert(into: "hospitals", data: hospitalData)
                 
                 // Create admin data using the same hospitalID and generated password
@@ -319,15 +319,13 @@ struct AddHospitalForm: View {
                     hospital_id: hospitalID,
                     admin_name: adminName,
                     email: email,
-                    contact_number: phone,
-                    id: hospitalID,
+                    contact_number: phone.isEmpty ? nil : phone,
+                    id: hospitalID, // Must match hospital_id per constraint
                     password: generatedPassword,  // Use the generated password
-                    role: "HOSPITAL_ADMIN",
-                    status: "active",
-                    street: adminLocality,
-                    city: adminCity,
-                    state: selectedAdminState,
-                    pincode: adminPinCode
+                    street: adminLocality.isEmpty ? nil : adminLocality,
+                    city: adminCity.isEmpty ? nil : adminCity,
+                    state: selectedAdminState.isEmpty ? nil : selectedAdminState,
+                    pincode: adminPinCode.isEmpty ? nil : adminPinCode
                 )
                 
                 print("Inserting admin with data:", adminData)
@@ -499,49 +497,28 @@ struct AddHospitalForm: View {
                     content: {
                         TextField("Admin Name", text: $adminName)
                         
+                        Text("Admin Contact")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                            .padding(.top, 10)
+                            
                         HStack {
                             Text("+91")
                                 .foregroundColor(.gray)
-                            TextField("Contact Number", text: $phone)
+                            TextField("Admin Phone", text: $phone)
                                 .keyboardType(.numberPad)
-                                .onChange(of: phone) { _, newValue in
-                                    // Allow only digits and limit to 10 characters
-                                    phone = newValue.filter { $0.isNumber }.prefix(10).description
-                                }
-                        }
-                        if !phoneError.isEmpty {
-                            Text(phoneError)
-                                .font(.caption)
-                                .foregroundColor(.red)
                         }
                         
                         TextField("Email", text: $email)
                             .keyboardType(.emailAddress)
                             .autocapitalization(.none)
-                        if !emailError.isEmpty {
-                            Text(emailError)
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                    },
-                    label: {
-                        HStack {
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.teal)
-                            Text("ADMIN INFORMATION")
-                                .font(.headline)
-                                .foregroundColor(.teal)
-                        }
-                    }
-                )
-            }
-            
-            // Admin Address Section
-            Section {
-                DisclosureGroup(
-                    isExpanded: $adminAddressExpanded,
-                    content: {
-                        TextField("Locality", text: $adminLocality)
+                        
+                        Text("Admin Address")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                            .padding(.top, 10)
+                        
+                        TextField("Street/Locality", text: $adminLocality)
                         TextField("City", text: $adminCity)
                         
                         Picker("State", selection: $selectedAdminState) {
@@ -553,7 +530,7 @@ struct AddHospitalForm: View {
                         TextField("Pin Code", text: $adminPinCode)
                             .keyboardType(.numberPad)
                             .onChange(of: adminPinCode) { _, newValue in
-                                // Allow only digits and limit to 10 characters
+                                // Allow only digits and limit to 6 characters
                                 adminPinCode = newValue.filter { $0.isNumber }.prefix(6).description
                             }
                         if !adminPinCodeError.isEmpty {
@@ -564,9 +541,9 @@ struct AddHospitalForm: View {
                     },
                     label: {
                         HStack {
-                            Image(systemName: "house.fill")
+                            Image(systemName: "person.fill")
                                 .foregroundColor(.teal)
-                            Text("ADMIN ADDRESS")
+                            Text("ADMIN INFORMATION")
                                 .font(.headline)
                                 .foregroundColor(.teal)
                         }
@@ -757,7 +734,7 @@ struct EditHospitalForm: View {
                 )
             }
             
-            // ADMIN INFORMATION
+            // Admin Information Section
             Section {
                 DisclosureGroup(
                     isExpanded: $adminInfoExpanded,
@@ -779,24 +756,12 @@ struct EditHospitalForm: View {
                         TextField("Email", text: $editedHospital.email)
                             .keyboardType(.emailAddress)
                             .autocapitalization(.none)
-                    },
-                    label: {
-                        HStack {
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.teal)
-                            Text("ADMIN INFORMATION")
-                                .font(.headline)
-                                .foregroundColor(.teal)
-                        }
-                    }
-                )
-            }
-            
-            // ADMIN ADDRESS
-            Section {
-                DisclosureGroup(
-                    isExpanded: $adminAddressExpanded,
-                    content: {
+                        
+                        Text("Admin Address")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                            .padding(.top, 10)
+                        
                         TextField("Street/Locality", text: $adminStreet)
                         TextField("City", text: $adminCity)
                         
@@ -815,9 +780,9 @@ struct EditHospitalForm: View {
                     },
                     label: {
                         HStack {
-                            Image(systemName: "house.fill")
+                            Image(systemName: "person.fill")
                                 .foregroundColor(.teal)
-                            Text("ADMIN ADDRESS")
+                            Text("ADMIN INFORMATION")
                                 .font(.headline)
                                 .foregroundColor(.teal)
                         }
