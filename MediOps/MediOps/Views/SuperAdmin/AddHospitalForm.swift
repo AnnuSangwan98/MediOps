@@ -354,7 +354,7 @@ struct AddHospitalForm: View {
                     Text("Hospital Image")
                     Spacer()
                     PhotosPicker(selection: $imageSelection, matching: .images) {
-                        if let hospitalImage {
+                        if let hospitalImage = hospitalImage {
                             Image(uiImage: hospitalImage)
                                 .resizable()
                                 .scaledToFill()
@@ -539,8 +539,15 @@ struct AddHospitalForm: View {
 }
 
 struct EditHospitalForm: View {
+    private let supabase = SupabaseController.shared
     @State private var editedHospital: Hospital
     let onSave: (Hospital) -> Void
+    
+    // UI states
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @Environment(\.dismiss) private var dismiss
     
     init(hospital: Hospital, onSave: @escaping (Hospital) -> Void) {
         _editedHospital = State(initialValue: hospital)
@@ -596,16 +603,46 @@ struct EditHospitalForm: View {
                     .autocapitalization(.none)
             }
             
+            Section(header: Text("Status")) {
+                Picker("Hospital Status", selection: $editedHospital.status) {
+                    Text("Active").tag(HospitalStatus.active)
+                    Text("Pending").tag(HospitalStatus.pending)
+                    Text("Inactive").tag(HospitalStatus.inactive)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+            }
+            
             Section {
-                Button("Save Changes") {
-                    editedHospital.lastModified = Date()
-                    editedHospital.lastModifiedBy = "Super Admin"
-                    onSave(editedHospital)
+                Button(action: saveChanges) {
+                    if isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                    } else {
+                        Text("Save Changes")
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .foregroundColor(.teal)
+                .disabled(isLoading)
             }
         }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
+        }
+        .interactiveDismissDisabled(isLoading)
+    }
+    
+    private func saveChanges() {
+        isLoading = true
+        
+        // Update the last modified fields
+        editedHospital.lastModified = Date()
+        editedHospital.lastModifiedBy = "Super Admin"
+        
+        // Call the onSave callback which will handle the Supabase update
+        onSave(editedHospital)
     }
 }
 
@@ -625,3 +662,4 @@ struct EditHospitalForm: View {
         onSubmit: {}
     )
 }
+

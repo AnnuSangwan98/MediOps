@@ -33,6 +33,9 @@ struct SuperAdminDashboardView: View {
     @State private var showEditForm = false
     @State private var selectedHospital: Hospital?
     
+    // Loading States
+    @State private var isLoadingAction = false
+    
     private func isValidEmail(_ email: String) -> Bool {
         let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
         return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email)
@@ -266,8 +269,16 @@ struct SuperAdminDashboardView: View {
                         deleteHospital(hospital)
                     }
                 }
+                .disabled(isLoadingAction)
             } message: {
-                Text("Are you sure you want to delete this hospital? This action cannot be undone.")
+                VStack {
+                    Text("Are you sure you want to delete this hospital? This action cannot be undone.")
+                    if isLoadingAction {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                            .padding(.top, 8)
+                    }
+                }
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) { }
@@ -300,20 +311,56 @@ struct SuperAdminDashboardView: View {
     }
     
     private func updateHospital(_ hospital: Hospital) {
-        // The EditHospitalForm will handle the actual Supabase update
-        // This will refresh the list after an update
+        // Set loading indicator
+        isLoadingAction = true
+        
         Task {
-            await refreshData()
+            do {
+                // Update hospital in Supabase through the viewModel
+                try await viewModel.updateHospital(hospital)
+                
+                await MainActor.run {
+                    // Update UI state on success
+                    showEditForm = false
+                    isLoadingAction = false
+                    errorMessage = "Hospital updated successfully"
+                    showError = true
+                }
+            } catch {
+                await MainActor.run {
+                    // Handle error
+                    isLoadingAction = false
+                    errorMessage = "Failed to update hospital: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
         }
-        showEditForm = false
-        showSuccessAlert = true
     }
     
     private func deleteHospital(_ hospital: Hospital) {
-        viewModel.deleteHospital(hospital)
-        hospitalToDelete = nil
-        errorMessage = "Hospital deleted successfully"
-        showError = true
+        // Set loading and disable the button
+        isLoadingAction = true
+        
+        Task {
+            do {
+                // Delete from Supabase using the viewModel
+                try await viewModel.deleteHospital(hospital)
+                
+                await MainActor.run {
+                    // Update UI state
+                    hospitalToDelete = nil
+                    isLoadingAction = false
+                    errorMessage = "Hospital deleted successfully"
+                    showError = true
+                }
+            } catch {
+                await MainActor.run {
+                    isLoadingAction = false
+                    errorMessage = "Failed to delete hospital: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
     }
     
     private func refreshData() async {
@@ -376,6 +423,7 @@ struct HospitalListItem: View {
                             .font(.headline)
                             .foregroundColor(.black)
                         Spacer()
+                        
                         Text(hospital.status.rawValue)
                             .font(.caption)
                             .padding(.horizontal, 8)
@@ -386,6 +434,24 @@ struct HospitalListItem: View {
                                     .opacity(0.2)
                             )
                             .foregroundColor(statusColor)
+                        
+                        // Three-dot menu
+                        Menu {
+                            Button(action: onEdit) {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            
+                            Button(action: onDelete) {
+                                Label("Delete", systemImage: "trash")
+                                    .foregroundColor(.red)
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .foregroundColor(.gray)
+                                .padding(8)
+                                .background(Color.gray.opacity(0.1))
+                                .clipShape(Circle())
+                        }
                     }
                     
                     // IDs
@@ -440,9 +506,6 @@ struct HospitalListItem: View {
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
         .contentShape(Rectangle())
-        .onTapGesture {
-            onEdit()
-        }
     }
     
     private var statusColor: Color {

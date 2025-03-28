@@ -88,64 +88,50 @@ class SuperAdminDashboardViewModel: ObservableObject {
         hospitals.append(hospital)
     }
     
-    func updateHospital(_ hospital: Hospital) {
+    func updateHospital(_ hospital: Hospital) async throws {
         // For Supabase updates, we'll use the existing SupabaseController methods
-        Task {
-            do {
-                // Create a simple struct for encoding hospital data
-                struct HospitalUpdateData: Encodable {
-                    let hospital_name: String
-                    let hospital_address: String
-                    let hospital_state: String
-                    let hospital_city: String
-                    let area_pincode: String
-                    let email: String
-                    let contact_number: String
-                    let emergency_contact_number: String
-                    let licence: String
-                    let status: String
-                }
-                
-                // Create the update data
-                let updateData = HospitalUpdateData(
-                    hospital_name: hospital.name,
-                    hospital_address: hospital.street,
-                    hospital_state: hospital.state,
-                    hospital_city: hospital.city,
-                    area_pincode: hospital.zipCode,
-                    email: hospital.email,
-                    contact_number: hospital.phone,
-                    emergency_contact_number: hospital.hospitalPhone,
-                    licence: hospital.licenseNumber,
-                    status: hospital.status.rawValue.lowercased()
-                )
-                
-                // Update in Supabase
-                try await supabase.update(table: "hospitals", data: updateData, where: "id", equals: hospital.id)
-                
-                // Update local state
-                await MainActor.run {
-                    if let index = hospitals.firstIndex(where: { $0.id == hospital.id }) {
-                        hospitals[index] = hospital
-                    }
-                }
-            } catch {
-                print("Failed to update hospital in Supabase: \(error.localizedDescription)")
-            }
+        // Create a simple struct for encoding hospital data
+        struct HospitalUpdateData: Encodable {
+            let hospital_name: String
+            let hospital_address: String
+            let hospital_state: String
+            let hospital_city: String
+            let area_pincode: String
+            let email: String
+            let contact_number: String
+            let emergency_contact_number: String
+            let licence: String
+            let status: String
+        }
+        
+        // Create the update data
+        let updateData = HospitalUpdateData(
+            hospital_name: hospital.name,
+            hospital_address: hospital.street,
+            hospital_state: hospital.state,
+            hospital_city: hospital.city,
+            area_pincode: hospital.zipCode,
+            email: hospital.email,
+            contact_number: hospital.phone,
+            emergency_contact_number: hospital.hospitalPhone,
+            licence: hospital.licenseNumber,
+            status: hospital.status.rawValue.lowercased()
+        )
+        
+        // Update in Supabase
+        try await supabase.update(table: "hospitals", data: updateData, where: "id", equals: hospital.id)
+        
+        // Update local state after successful update
+        if let index = hospitals.firstIndex(where: { $0.id == hospital.id }) {
+            hospitals[index] = hospital
         }
     }
     
-    func deleteHospital(_ hospital: Hospital) {
-        Task {
-            do {
-                try await supabase.delete(from: "hospitals", where: "id", equals: hospital.id)
-                
-                await MainActor.run {
-                    hospitals.removeAll { $0.id == hospital.id }
-                }
-            } catch {
-                print("Failed to delete hospital: \(error.localizedDescription)")
-            }
-        }
+    func deleteHospital(_ hospital: Hospital) async throws {
+        // Delete from Supabase
+        try await supabase.delete(from: "hospitals", where: "id", equals: hospital.id)
+        
+        // After successful deletion, update the local state
+        hospitals.removeAll { $0.id == hospital.id }
     }
 } 
