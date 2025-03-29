@@ -137,8 +137,9 @@ struct AddHospitalForm: View {
     @State private var adminAddressExpanded = false
     
     private var isFormValid: Bool {
-        // Updated validation to match schema requirements
+        // Basic validation to enable the save button
         !hospitalName.isEmpty && 
+        !hospitalID.isEmpty &&
         !licenseNumber.isEmpty && 
         !city.isEmpty &&
         !state.isEmpty && 
@@ -146,8 +147,7 @@ struct AddHospitalForm: View {
         !adminName.isEmpty && 
         !phone.isEmpty &&
         !email.isEmpty &&
-        !emergencyContact.isEmpty &&
-        selectedAccreditation != "Other" // Must be one of the allowed values
+        !emergencyContact.isEmpty
     }
     
     private func validateForm() -> Bool {
@@ -162,52 +162,51 @@ struct AddHospitalForm: View {
         emergencyContactError = ""
         hospitalIdError = ""
         
-        // Validate Hospital ID format (HOSXXX where X is a digit)
-        let hospitalIdRegex = "^HOS\\d{3}$"
-        if !NSPredicate(format: "SELF MATCHES %@", hospitalIdRegex).evaluate(with: hospitalID) {
-            hospitalIdError = "Hospital ID must be 'HOS' followed by 3 digits (e.g., HOS123)"
+        // Basic required field validation
+        if hospitalName.isEmpty || hospitalID.isEmpty || licenseNumber.isEmpty || 
+           city.isEmpty || state.isEmpty || zipCode.isEmpty || 
+           adminName.isEmpty || phone.isEmpty || email.isEmpty || emergencyContact.isEmpty {
             isValid = false
+        }
+        
+        // Validate Hospital ID format (HOSXXX where X is a digit)
+        if !hospitalID.isEmpty {
+            let hospitalIdRegex = "^HOS\\d{3}$"
+            if !NSPredicate(format: "SELF MATCHES %@", hospitalIdRegex).evaluate(with: hospitalID) {
+                hospitalIdError = "Hospital ID must be 'HOS' followed by 3 digits (e.g., HOS123)"
+                isValid = false
+            }
         }
         
         // Validate Email (must be unique due to constraint)
-        let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
-        if !NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email) {
-            emailError = "Please enter a valid email address"
-            isValid = false
+        if !email.isEmpty {
+            let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
+            if !NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email) {
+                emailError = "Please enter a valid email address"
+                isValid = false
+            }
         }
         
         // Validate Phone Numbers (20 chars max per schema)
-        if phone.count != 10 || !phone.allSatisfy({ $0.isNumber }) {
+        if !phone.isEmpty && (phone.count != 10 || !phone.allSatisfy({ $0.isNumber })) {
             phoneError = "Please enter a valid 10-digit phone number"
             isValid = false
         }
         
         // Validate Emergency Contact
-        if emergencyContact.count != 10 || !emergencyContact.allSatisfy({ $0.isNumber }) {
+        if !emergencyContact.isEmpty && (emergencyContact.count != 10 || !emergencyContact.allSatisfy({ $0.isNumber })) {
             emergencyContactError = "Please enter a valid 10-digit emergency number"
             isValid = false
         }
         
         // Validate Pin Codes (10 chars max per schema)
-        if zipCode.count != 6 || !zipCode.allSatisfy({ $0.isNumber }) {
+        if !zipCode.isEmpty && (zipCode.count != 6 || !zipCode.allSatisfy({ $0.isNumber })) {
             hospitalPinCodeError = "Please enter a valid 6-digit pin code"
             isValid = false
         }
         
-        if adminPinCode.count != 6 || !adminPinCode.allSatisfy({ $0.isNumber }) {
+        if !adminPinCode.isEmpty && (adminPinCode.count != 6 || !adminPinCode.allSatisfy({ $0.isNumber })) {
             adminPinCodeError = "Please enter a valid 6-digit pin code"
-            isValid = false
-        }
-        
-        // Validate Hospital License Number
-        let licenseRegex = "^[A-Z]{2}\\d{5}$"
-        if !NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: licenseNumber) {
-            hospitalLicenseError = "License number must be 2 capital letters followed by 4 digits (e.g., XX12345)"
-            isValid = false
-        }
-        
-        // Validate Accreditation (must match check constraint)
-        if !["NABH", "JCI", "NABL", "ISO"].contains(selectedAccreditation) {
             isValid = false
         }
         
@@ -216,68 +215,16 @@ struct AddHospitalForm: View {
     }
     
     private func handleSubmit() {
-        guard !hasSubmitted && validateForm() else { return }
+        guard validateForm() else { return }
         
         hasSubmitted = true
         isEmailSending = true
         
         Task {
             do {
-                // First send email to get the generated credentials
-                let url = URL(string: "http://localhost:8082/send-credentials")!
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                
-                let emailDetails = EmailDetails(
-                    fullName: adminName,
-                    hospitalName: hospitalName,
-                    hospitalId: hospitalID,
-                    licenseNumber: licenseNumber,
-                    accreditation: selectedAccreditation,
-                    emergencyContact: emergencyContact,
-                    street: street,
-                    city: city,
-                    state: state,
-                    zipCode: zipCode,
-                    adminLocality: adminLocality,
-                    adminCity: adminCity,
-                    adminState: selectedAdminState,
-                    adminPinCode: adminPinCode,
-                    adminPhone: phone,
-                    password: ""  // Password will be generated by the server
-                )
-                
-                let emailPayload = EmailPayload(
-                    to: email,
-                    accountType: "hospital",
-                    details: emailDetails
-                )
-                
-                let jsonData = try JSONEncoder().encode(emailPayload)
-                request.httpBody = jsonData
-                
-                let (data, response) = try await URLSession.shared.data(for: request)
-                
-                // Print the raw response for debugging
-                if let responseString = String(data: data, encoding: .utf8) {
-                    print("Raw server response:", responseString)
-                }
-                
-                guard let httpResponse = response as? HTTPURLResponse,
-                      httpResponse.statusCode == 200 else {
-                    throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Server returned error status"])
-                }
-                
-                // Decode the response using the proper structure
-                let serverResponse = try JSONDecoder().decode(EmailServerResponse.self, from: data)
-                guard serverResponse.status == "success",
-                      !serverResponse.password.isEmpty else {
-                    throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid response from server"])
-                }
-                
-                let generatedPassword = serverResponse.password
-                print("Generated password from server:", generatedPassword)
+                // Generate a secure password locally instead of relying on the email server
+                let generatedPassword = generateSecurePassword()
+                print("Generated password: \(generatedPassword)")
                 
                 // Convert hospital image to base64 if available
                 let imageBase64: String = {
@@ -288,7 +235,7 @@ struct AddHospitalForm: View {
                     return ""
                 }()
                 
-                // Create hospital data with the provided hospitalID and generated password
+                // Create hospital data
                 let hospitalData = HospitalData(
                     id: hospitalID,
                     hospital_name: hospitalName,
@@ -306,7 +253,7 @@ struct AddHospitalForm: View {
                     status: "active",
                     hospital_profile_image: imageBase64,
                     description: "Hospital created by Super Admin",
-                    password: generatedPassword  // Use the generated password
+                    password: generatedPassword
                 )
                 
                 print("Inserting hospital with data:", hospitalData)
@@ -314,14 +261,14 @@ struct AddHospitalForm: View {
                 // Insert hospital first
                 try await supabase.insert(into: "hospitals", data: hospitalData)
                 
-                // Create admin data using the same hospitalID and generated password
+                // Create admin data using the same hospitalID
                 let adminData = AdminData(
                     hospital_id: hospitalID,
                     admin_name: adminName,
                     email: email,
                     contact_number: phone.isEmpty ? nil : phone,
                     id: hospitalID, // Must match hospital_id per constraint
-                    password: generatedPassword,  // Use the generated password
+                    password: generatedPassword,
                     street: adminLocality.isEmpty ? nil : adminLocality,
                     city: adminCity.isEmpty ? nil : adminCity,
                     state: selectedAdminState.isEmpty ? nil : selectedAdminState,
@@ -332,6 +279,9 @@ struct AddHospitalForm: View {
                 
                 // Insert admin data
                 try await supabase.insert(into: "hospital_admins", data: adminData)
+                
+                // Try to send email after data is saved successfully
+                await sendCredentialsEmail(password: generatedPassword)
                 
                 await MainActor.run {
                     onSubmit()
@@ -354,6 +304,78 @@ struct AddHospitalForm: View {
                     }
                 }
             }
+        }
+    }
+    
+    // Helper function to generate a secure password locally
+    private func generateSecurePassword() -> String {
+        let length = 12
+        let characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()"
+        var password = ""
+        
+        for _ in 0..<length {
+            let randomIndex = Int.random(in: 0..<characters.count)
+            let character = characters[characters.index(characters.startIndex, offsetBy: randomIndex)]
+            password.append(character)
+        }
+        
+        return password
+    }
+    
+    // Helper function to send credentials email
+    private func sendCredentialsEmail(password: String) async {
+        do {
+            let url = URL(string: "http://localhost:8082/send-credentials")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            let emailDetails = EmailDetails(
+                fullName: adminName,
+                hospitalName: hospitalName,
+                hospitalId: hospitalID,
+                licenseNumber: licenseNumber,
+                accreditation: selectedAccreditation,
+                emergencyContact: emergencyContact,
+                street: street,
+                city: city,
+                state: state,
+                zipCode: zipCode,
+                adminLocality: adminLocality,
+                adminCity: adminCity,
+                adminState: selectedAdminState,
+                adminPinCode: adminPinCode,
+                adminPhone: phone,
+                password: password
+            )
+            
+            let emailPayload = EmailPayload(
+                to: email,
+                accountType: "hospital",
+                details: emailDetails
+            )
+            
+            let jsonData = try JSONEncoder().encode(emailPayload)
+            request.httpBody = jsonData
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            // Print the raw response for debugging
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("Raw server response:", responseString)
+            }
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("Invalid HTTP response")
+                return
+            }
+            
+            if httpResponse.statusCode != 200 {
+                print("Email server returned status code: \(httpResponse.statusCode)")
+            }
+        } catch {
+            // Log error but don't prevent hospital creation
+            print("Error sending email (non-critical): \(error.localizedDescription)")
         }
     }
     
