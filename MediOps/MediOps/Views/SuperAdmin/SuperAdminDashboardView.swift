@@ -221,10 +221,6 @@ struct SuperAdminDashboardView: View {
                         .padding()
                     }
                 }
-                
-                NavigationLink(destination: RoleSelectionView(), isActive: $navigateToRoleSelection) {
-                    EmptyView()
-                }
             }
             .navigationBarHidden(true)
             .sheet(isPresented: $showHospitalForm) {
@@ -292,6 +288,11 @@ struct SuperAdminDashboardView: View {
                 }
             } message: {
                 Text("Are you sure you want to logout?")
+            }
+            
+            // Use modern navigation API
+            .navigationDestination(isPresented: $navigateToRoleSelection) {
+                RoleSelectionView()
             }
         }
         .navigationBarBackButtonHidden(true)

@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 enum AppView {
     case roleSelection
@@ -15,9 +16,9 @@ enum AppView {
 class AppNavigationState: ObservableObject {
     @Published var currentView: AppView = .roleSelection
     @Published var isLoggedIn: Bool = false
-    @Published private(set) var userRole: UserRole = .patient
+    @Published private(set) var userRole: Models.UserRole = .patient
     
-    func signIn(as role: UserRole) {
+    func signIn(as role: Models.UserRole) {
         self.userRole = role
         self.isLoggedIn = true
         
@@ -37,7 +38,7 @@ class AppNavigationState: ObservableObject {
         self.currentView = .roleSelection
     }
     
-    func selectRole(_ role: UserRole) {
+    func selectRole(_ role: Models.UserRole) {
         switch role {
         case .patient:
             self.currentView = .patientLogin

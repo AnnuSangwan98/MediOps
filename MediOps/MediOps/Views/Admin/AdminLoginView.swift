@@ -147,8 +147,9 @@ struct AdminLoginView: View {
                 Spacer()
             }
             
-            NavigationLink(destination: AdminHomeView(), isActive: $navigateToAdminHome) {
-                EmptyView()
+            // Modern navigation API
+            .navigationDestination(isPresented: $navigateToAdminHome) {
+                AdminHomeView()
             }
         }
         .navigationBarBackButtonHidden(true)

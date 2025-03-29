@@ -379,7 +379,7 @@ struct AddHospitalForm: View {
                                 }
                             }
                         }
-                        .onChange(of: imageSelection) { newValue in
+                        .onChange(of: imageSelection) { oldValue, newValue in
                             Task {
                                 if let data = try? await newValue?.loadTransferable(type: Data.self) {
                                     if let image = UIImage(data: data) {

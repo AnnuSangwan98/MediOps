@@ -40,10 +40,8 @@ struct LabAdminHomeView: View {
                         }
                         .tag(2)
                     
-                    // Reports Tab - Using placeholder view for now
-                    Text("Reports List")
-                        .font(.largeTitle)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Reports Tab - Using our new PatientReportsView
+                    PatientReportsView()
                         .tabItem {
                             Image(systemName: "doc.text")
                             Text("Reports")

@@ -59,7 +59,7 @@ struct PatientOTPVerificationView: View {
                 .frame(maxWidth: .infinity)
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(10)
-                .onChange(of: otpInput) { newValue in
+                .onChange(of: otpInput) { oldValue, newValue in
                     // Limit to 6 digits
                     if newValue.count > 6 {
                         otpInput = String(newValue.prefix(6))
@@ -119,7 +119,8 @@ struct PatientOTPVerificationView: View {
         .navigationBarBackButtonHidden(true)
         .navigationBarItems(leading: Button(action: {
             // Pop to PatientLoginView
-            if let window = UIApplication.shared.windows.first {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first {
                 window.rootViewController = UIHostingController(rootView: PatientLoginView()
                     .environmentObject(navigationState))
                 window.makeKeyAndVisible()
@@ -149,8 +150,17 @@ struct PatientOTPVerificationView: View {
             
             Task {
                 do {
-                    // Verify OTP with the email service
-                    let isValid = EmailService.shared.verifyOTP(email: email, otp: otpInput)
+                    // Verify OTP with the email service - make this capable of throwing
+                    let isValid = try await Task {
+                        // Simulating an async operation that might throw
+                        let valid = EmailService.shared.verifyOTP(email: email, otp: otpInput)
+                        if !valid {
+                            // If the EmailService says it's not valid but our check passed,
+                            // we can still proceed but log it
+                            print("OTP VERIFICATION: Warning - EmailService verification returned false")
+                        }
+                        return valid
+                    }.value
                     
                     if isValid {
                         print("OTP VERIFICATION: Verification successful via EmailService")
@@ -170,7 +180,8 @@ struct PatientOTPVerificationView: View {
                         // Delay for a moment to show the success message, then navigate
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                             // Clear navigation stack and set root to home view
-                            if let window = UIApplication.shared.windows.first {
+                            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                               let window = windowScene.windows.first {
                                 window.rootViewController = UIHostingController(rootView: PatientHomeView()
                                     .environmentObject(self.navigationState))
                                 window.makeKeyAndVisible()
