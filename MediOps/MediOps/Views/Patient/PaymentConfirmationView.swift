@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PaymentFinalView: View {
-    let doctor: Doctor
+    let doctor: HospitalDoctor
     let appointmentDate: Date
     let appointmentTime: Date
     

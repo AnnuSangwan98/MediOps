@@ -444,7 +444,7 @@ struct HomeView: View {
             // Create local appointment object
             let appointment = Appointment(
                 id: appointmentId,
-                doctor: doctor,
+                doctor: doctor.toModelDoctor(),
                 date: appointmentDate,
                 time: appointmentDate,
                 status: .upcoming

@@ -99,8 +99,24 @@ struct DoctorListView: View {
         }
     }
     
-    private var filteredDoctors: [Doctor] {
-        var doctors = viewModel.doctors
+    private var filteredDoctors: [HospitalDoctor] {
+        var doctors = viewModel.doctors.map { doctor in
+            // Convert LocalDoctor model to HospitalDoctor model
+            return HospitalDoctor(
+                id: doctor.id,
+                hospitalId: doctor.hospitalId,
+                name: doctor.name,
+                specialization: doctor.specialization,
+                qualifications: doctor.qualifications,
+                licenseNo: doctor.licenseNo,
+                experience: doctor.experience,
+                email: doctor.email,
+                contactNumber: doctor.contactNumber,
+                doctorStatus: doctor.doctorStatus,
+                rating: doctor.rating,
+                consultationFee: doctor.consultationFee
+            )
+        }
         
         if !searchText.isEmpty {
             doctors = doctors.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
@@ -115,7 +131,7 @@ struct DoctorListView: View {
 }
 
 struct DoctorCard: View {
-    let doctor: Doctor
+    let doctor: HospitalDoctor
     @State private var showAppointment = false
     
     var body: some View {

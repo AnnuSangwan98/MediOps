@@ -12,7 +12,9 @@ struct HomeTabView: View {
     @StateObject private var appointmentManager = AppointmentManager.shared
     @State private var showProfile = false
     @State private var selectedTab = 0
-    @AppStorage("current_user_id") private var userId: String?
+    @AppStorage("current_user_id") private var currentUserId: String?
+    @AppStorage("userId") private var userId: String?
+    @StateObject private var profileController = PatientProfileController()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -43,10 +45,62 @@ struct HomeTabView: View {
                     Text("Blood Donate")
                 }
                 .tag(2)
+                
+            ProfileView()
+                .tabItem {
+                    Image(systemName: selectedTab == 3 ? "person.fill" : "person")
+                    Text("Profile")
+                }
+                .tag(3)
         }
         .accentColor(.blue)
         .onAppear {
-            print("📱 HomeTabView appeared with user ID: \(userId ?? "nil")")
+            print("📱 HomeTabView appeared with currentUserId: \(currentUserId ?? "nil") and userId: \(userId ?? "nil")")
+            
+            // Ensure user IDs are synchronized
+            if let currentId = currentUserId, userId == nil {
+                print("📱 Synchronizing userId with currentUserId: \(currentId)")
+                userId = currentId
+            } else if let id = userId, currentUserId == nil {
+                print("📱 Synchronizing currentUserId with userId: \(id)")
+                currentUserId = id
+            }
+            
+            // If no userId is available, use a test ID
+            if userId == nil && currentUserId == nil {
+                let testUserId = "USER_\(Int(Date().timeIntervalSince1970))"
+                print("⚠️ No user ID found. Setting test ID: \(testUserId)")
+                userId = testUserId
+                currentUserId = testUserId
+                UserDefaults.standard.synchronize()
+            }
+            
+            // Load profile data for debugging
+            Task {
+                if let id = userId ?? currentUserId {
+                    print("📱 HomeTabView: Loading profile with user ID: \(id)")
+                    await profileController.loadProfile(userId: id)
+                    if let patient = profileController.patient {
+                        print("📱 Successfully loaded profile for: \(patient.name)")
+                    } else if let error = profileController.error {
+                        print("📱 Error loading profile: \(error.localizedDescription)")
+                        
+                        // Try creating a test patient if loading failed
+                        print("📱 Attempting to create test patient...")
+                        let success = await profileController.createAndInsertTestPatientInSupabase()
+                        if success {
+                            print("✅ Test patient created and loaded successfully")
+                        } else {
+                            print("❌ Failed to create test patient")
+                        }
+                    } else {
+                        print("📱 No profile data loaded")
+                    }
+                } else {
+                    print("❌ HomeTabView: No user ID available for profile loading")
+                }
+            }
+            
             // Initial refresh of appointments
             appointmentManager.refreshAppointments()
         }
@@ -311,5 +365,31 @@ struct AppointmentHistoryCard: View {
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
+    }
+}
+
+// MARK: - HospitalSearchBar Component
+struct HospitalSearchBar: View {
+    @Binding var searchText: String
+    
+    var body: some View {
+        HStack {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.gray)
+            TextField("Search hospitals...", text: $searchText)
+            
+            if !searchText.isEmpty {
+                Button(action: {
+                    searchText = ""
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.white)
+        .cornerRadius(10)
+        .shadow(color: .gray.opacity(0.2), radius: 3)
     }
 }

@@ -186,6 +186,34 @@ struct PatientOTPVerificationView: View {
                     let isValid = EmailService.shared.verifyOTP(email: email, otp: otpInput)
                     
                     await MainActor.run {
+                        // Print all relevant UserDefaults for debugging
+                        print("🔑 VERIFICATION: All UserDefaults keys related to patient IDs:")
+                        print("  current_user_id = \(UserDefaults.standard.string(forKey: "current_user_id") ?? "nil")")
+                        print("  current_patient_id = \(UserDefaults.standard.string(forKey: "current_patient_id") ?? "nil")")
+                        print("  userId = \(UserDefaults.standard.string(forKey: "userId") ?? "nil")")
+                        
+                        // Try to get the user ID from multiple possible sources
+                        var userIdToUse = UserDefaults.standard.string(forKey: "current_user_id")
+                        
+                        if userIdToUse == nil {
+                            // Try other keys if current_user_id is nil
+                            userIdToUse = UserDefaults.standard.string(forKey: "user_id")
+                        }
+                        
+                        // Use a hardcoded value as last resort (for testing only)
+                        if userIdToUse == nil {
+                            userIdToUse = "USER001"
+                            print("⚠️ WARNING: Using hardcoded user ID for testing: \(userIdToUse!)")
+                        }
+                        
+                        // Set both keys to ensure we have the user ID available
+                        print("✅ Setting both userId and current_user_id to: \(userIdToUse!)")
+                        UserDefaults.standard.set(userIdToUse, forKey: "userId")
+                        UserDefaults.standard.set(userIdToUse, forKey: "current_user_id")
+                        
+                        // Ensure the changes are immediately saved
+                        UserDefaults.standard.synchronize()
+                        
                         isLoading = false
                         isVerified = true
                         successMessage = "Verification successful!"

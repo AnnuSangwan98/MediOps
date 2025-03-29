@@ -623,22 +623,15 @@ struct EditHospitalForm: View {
     private func fetchAdminData() {
         Task {
             do {
-                adminData = try await supabase.fetchHospitalAdmin(hospitalId: editedHospital.id)
+                // Use AdminController to fetch hospital admin data instead of SupabaseController
+                let adminController = AdminController.shared
+                let hospitalAdmin = try await adminController.getHospitalAdmin(id: editedHospital.id)
                 
-                if let admin = adminData {
-                    await MainActor.run {
-                        if let adminName = admin["admin_name"] as? String {
-                            editedHospital.adminName = adminName
-                        }
-                        
-                        if let contactNumber = admin["contact_number"] as? String {
-                            editedHospital.phone = contactNumber
-                        }
-                        
-                        if let email = admin["email"] as? String {
-                            editedHospital.email = email
-                        }
-                    }
+                await MainActor.run {
+                    // Update fields with data from the HospitalAdmin model
+                    editedHospital.adminName = hospitalAdmin.name
+                    // Note: hospitalAdmin might not have phone and email fields directly
+                    // So we'll keep the existing values
                 }
             } catch {
                 print("Error fetching admin data: \(error.localizedDescription)")

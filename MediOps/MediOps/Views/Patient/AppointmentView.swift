@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AppointmentView: View {
-    let doctor: Doctor
+    let doctor: HospitalDoctor
     var existingAppointment: Appointment? = nil
     var onUpdateAppointment: ((Appointment) -> Void)? = nil
     

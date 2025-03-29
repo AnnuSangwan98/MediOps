@@ -1,33 +1,23 @@
 import SwiftUI
 
-// CardView reusable style
-struct CardView<Content: View>: View {
-    let content: Content
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-    var body: some View {
-        VStack {
-            content
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
-    }
-}
-
-// Reusable row
-struct InfoRow: View {
+// QualificationToggle component for selecting qualifications
+struct QualificationToggle: View {
     var title: String
-    var value: String
+    var isSelected: Bool
+    var action: () -> Void
+    
     var body: some View {
-        HStack {
+        Button(action: action) {
             Text(title)
+                .font(.footnote)
                 .fontWeight(.medium)
-            Spacer()
-            Text(value)
-                .foregroundColor(.gray)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(isSelected ? Color.teal : Color.gray.opacity(0.2))
+                .foregroundColor(isSelected ? .white : .primary)
+                .cornerRadius(20)
         }
+        .buttonStyle(PlainButtonStyle())
+        .padding(.trailing, 4)
     }
 } 

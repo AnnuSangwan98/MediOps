@@ -34,7 +34,7 @@ struct HospitalModel: Identifiable, Codable, Hashable {
     }
 }
 
-struct Doctor: Identifiable, Codable, Hashable {
+struct HospitalDoctor: Identifiable, Codable, Hashable {
     let id: String
     let hospitalId: String
     let name: String
@@ -53,7 +53,7 @@ struct Doctor: Identifiable, Codable, Hashable {
         hasher.combine(id)
     }
     
-    static func == (lhs: Doctor, rhs: Doctor) -> Bool {
+    static func == (lhs: HospitalDoctor, rhs: HospitalDoctor) -> Bool {
         lhs.id == rhs.id
     }
 }
@@ -82,8 +82,8 @@ class HospitalViewModel: ObservableObject {
     @Published var selectedCity: String? = nil
     @Published var selectedHospital: HospitalModel? = nil
     @Published var selectedSpecialization: String? = nil
-    @Published var doctors: [Doctor] = []
-    @Published var selectedDoctor: Doctor? = nil
+    @Published var doctors: [HospitalDoctor] = []
+    @Published var selectedDoctor: HospitalDoctor? = nil
     @Published var availableSlots: [AppointmentModels.DoctorAvailability] = []
     @Published var isLoading = false
     @Published var error: Error? = nil
@@ -254,7 +254,7 @@ class HospitalViewModel: ObservableObject {
                       let consultationFee = data["consultation_fee"] as? Double
                 else { return nil }
                 
-                return Doctor(
+                return HospitalDoctor(
                     id: id,
                     hospitalId: hospitalId,
                     name: name,
@@ -368,7 +368,7 @@ class HospitalViewModel: ObservableObject {
             // Create and add local appointment object
             let appointment = Appointment(
                 id: appointmentId,
-                doctor: doctor,
+                doctor: doctor.toModelDoctor(),
                 date: date,
                 time: time,
                 status: .upcoming
@@ -484,7 +484,7 @@ class HospitalViewModel: ObservableObject {
                     continue
                 }
                 
-                let doctor = Doctor(
+                let doctor = HospitalDoctor(
                     id: doctorId,
                     hospitalId: doctorData["hospital_id"] as? String ?? "HOSP001",
                     name: doctorName,
@@ -522,7 +522,7 @@ class HospitalViewModel: ObservableObject {
                 
                 let appointment = Appointment(
                     id: id,
-                    doctor: doctor,
+                    doctor: doctor.toModelDoctor(),
                     date: date,
                     time: bookingTime,
                     status: appointmentStatus
@@ -577,9 +577,28 @@ class HospitalViewModel: ObservableObject {
 }
 
 // MARK: - Doctor Model Extensions
-extension Doctor {
-    // Convert to simple Doctor used in Appointment.swift
-    func toAppointmentDoctor() -> Doctor {
-        return self
+extension HospitalDoctor {
+    // Convert HospitalDoctor to Models.Doctor for use in Appointment.swift
+    func toModelDoctor() -> Models.Doctor {
+        return Models.Doctor(
+            id: id,
+            userId: nil,
+            name: name,
+            specialization: specialization,
+            hospitalId: hospitalId,
+            qualifications: qualifications,
+            licenseNo: licenseNo,
+            experience: experience,
+            addressLine: "",
+            state: "",
+            city: "",
+            pincode: "",
+            email: email,
+            contactNumber: contactNumber,
+            emergencyContactNumber: nil,
+            doctorStatus: doctorStatus,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
     }
 }

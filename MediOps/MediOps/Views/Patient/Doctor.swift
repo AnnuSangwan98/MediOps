@@ -1,9 +1,49 @@
 import Foundation
 import SwiftUI
 
+// Local Doctor model that includes rating and consultationFee
+struct LocalDoctor: Identifiable, Codable {
+    let id: String
+    let hospitalId: String
+    let name: String
+    let specialization: String
+    let qualifications: [String]
+    let licenseNo: String
+    let experience: Int
+    let email: String
+    let contactNumber: String?
+    let doctorStatus: String
+    let rating: Double
+    let consultationFee: Double
+    
+    // Convert this LocalDoctor to Models.Doctor for use in appointments
+    func toModelDoctor() -> Models.Doctor {
+        return Models.Doctor(
+            id: id,
+            userId: nil,
+            name: name,
+            specialization: specialization,
+            hospitalId: hospitalId,
+            qualifications: qualifications,
+            licenseNo: licenseNo,
+            experience: experience,
+            addressLine: "",
+            state: "",
+            city: "",
+            pincode: "",
+            email: email,
+            contactNumber: contactNumber,
+            emergencyContactNumber: nil,
+            doctorStatus: doctorStatus,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+    }
+}
+
 @MainActor
 class DoctorViewModel: ObservableObject {
-    @Published var doctors: [Doctor] = []
+    @Published var doctors: [LocalDoctor] = []
     @Published var isLoading = false
     
     private let supabase = SupabaseController.shared
@@ -30,43 +70,39 @@ class DoctorViewModel: ObservableObject {
             }
             
             self.doctors = results.compactMap { data in
-                do {
-                    guard let id = data["id"] as? String,
-                          let name = data["name"] as? String,
-                          let specialization = data["specialization"] as? String,
-                          let experience = data["experience"] as? Int
-                    else {
-                        print("Failed to parse required doctor data: \(data)")
-                        return nil
-                    }
-                    
-                    // Optional fields with default values
-                    let hospitalId = data["hospital_id"] as? String ?? hospital.id
-                    let qualifications = data["qualifications"] as? [String] ?? []
-                    let licenseNo = data["license_no"] as? String ?? "N/A"
-                    let email = data["email"] as? String ?? ""
-                    let status = data["doctor_status"] as? String ?? "active"
-                    let rating = data["rating"] as? Double ?? 4.5
-                    let consultationFee = data["consultation_fee"] as? Double ?? 500.0
-                    
-                    return Doctor(
-                        id: id,
-                        hospitalId: hospitalId,
-                        name: name,
-                        specialization: specialization,
-                        qualifications: qualifications,
-                        licenseNo: licenseNo,
-                        experience: experience,
-                        email: email,
-                        contactNumber: data["contact_number"] as? String,
-                        doctorStatus: status,
-                        rating: rating,
-                        consultationFee: consultationFee
-                    )
-                } catch {
-                    print("Error parsing doctor data: \(error)")
+                // Instead of using do-catch here, we'll handle errors differently
+                guard let id = data["id"] as? String,
+                      let name = data["name"] as? String,
+                      let specialization = data["specialization"] as? String,
+                      let experience = data["experience"] as? Int
+                else {
+                    print("Failed to parse required doctor data: \(data)")
                     return nil
                 }
+                
+                // Optional fields with default values
+                let hospitalId = data["hospital_id"] as? String ?? hospital.id
+                let qualifications = data["qualifications"] as? [String] ?? []
+                let licenseNo = data["license_no"] as? String ?? "N/A"
+                let email = data["email"] as? String ?? ""
+                let status = data["doctor_status"] as? String ?? "active"
+                let rating = data["rating"] as? Double ?? 4.5
+                let consultationFee = data["consultation_fee"] as? Double ?? 500.0
+                
+                return LocalDoctor(
+                    id: id,
+                    hospitalId: hospitalId,
+                    name: name,
+                    specialization: specialization,
+                    qualifications: qualifications,
+                    licenseNo: licenseNo,
+                    experience: experience,
+                    email: email,
+                    contactNumber: data["contact_number"] as? String,
+                    doctorStatus: status,
+                    rating: rating,
+                    consultationFee: consultationFee
+                )
             }
             
             print("Successfully parsed \(self.doctors.count) doctors")
@@ -79,7 +115,7 @@ class DoctorViewModel: ObservableObject {
 }
 
 struct DoctorView: View {
-    let doctor: Doctor
+    let doctor: HospitalDoctor
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

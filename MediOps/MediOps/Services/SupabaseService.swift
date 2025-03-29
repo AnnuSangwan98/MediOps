@@ -7,16 +7,17 @@ import CommonCrypto
 class SupabaseController {
     static let shared = SupabaseController()
     
-    private let supabaseURL = URL(string: "https://cwahmqodmutorxkoxtyz.supabase.co")!
-    private let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk"
+    public let supabaseURL = URL(string: "https://cwahmqodmutorxkoxtyz.supabase.co")!
+    public let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk"
     
     private let client: SupabaseClient
     private let session: URLSession
     
     private init() {
         client = SupabaseClient(
-            supabaseURL: URL(string: "https://cwahmqodmutorxkoxtyz.supabase.co")!,
-            supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk"
+            supabaseURL: supabaseURL,
+            
+            supabaseKey: supabaseAnonKey
         )
         
         let config = URLSessionConfiguration.default
@@ -97,7 +98,7 @@ class SupabaseController {
     
     /// Generic method to retrieve data with a filter
     func select(from table: String, columns: String = "*", where column: String, equals value: String) async throws -> [[String: Any]] {
-        print("SUPABASE: Selecting from \(table) where \(column) = \(value)")
+        print("🔍 SUPABASE: Selecting from \(table) where \(column) = \(value)")
         
         // Use direct URL session with headers
         let escapedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
@@ -114,8 +115,16 @@ class SupabaseController {
         request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
         request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
         
+        // Print request headers for debugging
+        print("📋 SUPABASE REQUEST HEADERS:")
+        request.allHTTPHeaderFields?.forEach { key, value in
+            print("  \(key): \(value)")
+        }
+        
         do {
             print("🔄 SUPABASE: Starting request to \(table) at \(Date().formatted(date: .numeric, time: .standard))")
+            print("🔍 SUPABASE QUERY: SELECT \(columns) FROM \(table) WHERE \(column) = '\(value)'")
+            
             let (data, response) = try await session.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
@@ -132,24 +141,42 @@ class SupabaseController {
                 return []
             }
             
-            if table == "appointments" {
-                // Log raw data for appointments to debug
-                if let rawJSON = String(data: data, encoding: .utf8) {
-                    print("📋 SUPABASE RAW APPOINTMENTS DATA: \(rawJSON)")
+            // Log raw response data for debugging
+            if let rawJSON = String(data: data, encoding: .utf8) {
+                print("📋 SUPABASE RAW DATA (\(table), \(data.count) bytes):")
+                print(rawJSON.prefix(500)) // Show first 500 chars to avoid huge logs
+                if rawJSON.count > 500 {
+                    print("... (truncated)")
                 }
             }
             
             guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
                 print("❌ SUPABASE ERROR: Failed to parse JSON data")
+                if let jsonStr = String(data: data, encoding: .utf8) {
+                    print("❌ SUPABASE ERROR: Raw JSON: \(jsonStr)")
+                }
                 return []
             }
             
             print("✅ SUPABASE: Successfully retrieved \(jsonArray.count) records from \(table)")
             
-            // Extra logging for appointments table
-            if table == "appointments" && jsonArray.isEmpty {
-                print("⚠️ SUPABASE WARNING: No appointments found for \(column) = \(value)")
-                print("🔍 Double check if this patient ID exists in the database or if there might be formatting issues")
+            // Extra logging for table key information if records exist
+            if !jsonArray.isEmpty && jsonArray.count <= 5 { // Limit detailed logging to small result sets
+                print("🔑 SUPABASE: Sample data keys:")
+                for (index, item) in jsonArray.enumerated() {
+                    print("  Record #\(index + 1) keys: \(item.keys.joined(separator: ", "))")
+                }
+            }
+            
+            // Special case for important tables
+            if table == "patients" && column == "user_id" {
+                print("👤 PATIENT DATA CHECK:")
+                for (index, patient) in jsonArray.enumerated() {
+                    print("  Patient #\(index + 1):")
+                    print("    ID: \(patient["id"] ?? "nil")")
+                    print("    User ID: \(patient["user_id"] ?? "nil")")
+                    print("    Name: \(patient["name"] ?? "nil")")
+                }
             }
             
             return jsonArray

@@ -6,7 +6,7 @@ struct BookAppointmentView: View {
     @StateObject private var appointmentManager = AppointmentManager.shared
     @AppStorage("current_user_id") private var userId: String?
     
-    @State private var selectedDoctor: Doctor? = nil
+    @State private var selectedDoctor: HospitalDoctor? = nil
     @State private var selectedHospital: HospitalModel? = nil
     @State private var selectedDate = Date()
     @State private var selectedSlot: AppointmentModels.DoctorAvailability?
@@ -61,9 +61,9 @@ struct BookAppointmentView: View {
                             Text("No doctors available at this hospital")
                         } else {
                             Picker("Select Doctor", selection: $selectedDoctor) {
-                                Text("Select a Doctor").tag(nil as Doctor?)
+                                Text("Select a Doctor").tag(nil as HospitalDoctor?)
                                 ForEach(hospitalVM.doctors) { doctor in
-                                    Text(doctor.name).tag(doctor as Doctor?)
+                                    Text(doctor.name).tag(doctor as HospitalDoctor?)
                                 }
                             }
                             .onChange(of: selectedDoctor) { newDoctor in
@@ -296,7 +296,7 @@ struct BookAppointmentView: View {
             
             let appointment = Appointment(
                 id: appointmentId,
-                doctor: doctor,
+                doctor: doctor.toModelDoctor(),
                 date: selectedDate,
                 time: appointmentTime,
                 status: .upcoming

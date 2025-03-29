@@ -6,6 +6,40 @@
 //
 import SwiftUI
 
+// Temporarily define these components until proper importing is resolved
+fileprivate struct CardView<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
+    var body: some View {
+        VStack {
+            content
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+}
+
+fileprivate struct InfoRow: View {
+    var title: String
+    var value: String
+    
+    var body: some View {
+        HStack {
+            Text(title)
+                .fontWeight(.medium)
+            Spacer()
+            Text(value)
+                .foregroundColor(.gray)
+        }
+    }
+}
+
 struct FamilyMemberListView: View {
     @ObservedObject var profileController: PatientProfileController
     @Environment(\.dismiss) var dismiss
@@ -14,10 +48,14 @@ struct FamilyMemberListView: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(profileController.patient.familyMembers) { member in
-                    NavigationLink(destination: FamilyMemberDetailView(member: member)) {
-                        FamilyMemberRow(member: member)
+                if let patient = profileController.patient {
+                    ForEach(profileController.familyMembers) { member in
+                        NavigationLink(destination: FamilyMemberDetailView(member: member)) {
+                            FamilyMemberRow(member: member)
+                        }
                     }
+                } else {
+                    Text("No patient information available")
                 }
             }
             .navigationTitle("Family Members")
@@ -51,7 +89,7 @@ struct FamilyMemberRow: View {
             HStack {
                 Text("Age: \(member.age)")
                 Spacer()
-                Text("Relation: \(member.emergencyRelationship)")
+                Text("Relation: \(member.relationship)")
             }
             .font(.subheadline)
             .foregroundColor(.gray)
@@ -81,7 +119,7 @@ struct FamilyMemberDetailView: View {
                 HStack(spacing: 25) {
                     VStack {
                         Image(systemName: "calendar")
-                        Text(member.age)
+                        Text("\(member.age)")
                     }
                     VStack {
                         Image(systemName: "person.fill")
@@ -101,23 +139,11 @@ struct FamilyMemberDetailView: View {
                             .font(.headline)
                             .padding(.bottom, 5)
                         InfoRow(title: "Name", value: member.name)
-                        InfoRow(title: "Age", value: member.age)
+                        InfoRow(title: "Age", value: "\(member.age)")
                         InfoRow(title: "Gender", value: member.gender)
                         InfoRow(title: "Blood Group", value: member.bloodGroup)
-                        InfoRow(title: "Phone Number", value: member.phoneNumber)
-                        InfoRow(title: "Address", value: member.address)
-                    }
-                }
-                
-                // Emergency Contact
-                CardView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Emergency Contact")
-                            .font(.headline)
-                            .padding(.bottom, 5)
-                        InfoRow(title: "Name", value: member.emergencyContactName)
-                        InfoRow(title: "Contact No.", value: member.emergencyContactNumber)
-                        InfoRow(title: "Relationship", value: member.emergencyRelationship)
+                        InfoRow(title: "Phone Number", value: member.phone)
+                        InfoRow(title: "Relationship", value: member.relationship)
                     }
                 }
             }
@@ -148,7 +174,7 @@ struct FamilyMemberProfileView: View {
                 HStack(spacing: 25) {
                     VStack {
                         Image(systemName: "calendar")
-                        Text(member.age)
+                        Text("\(member.age)")
                     }
                     VStack {
                         Image(systemName: "person.fill")
@@ -167,20 +193,9 @@ struct FamilyMemberProfileView: View {
                             Text("Personal Information")
                                 .font(.headline)
                                 .padding(.bottom, 5)
-                            InfoRow(title: "Address", value: member.address)
-                            InfoRow(title: "Phone Number", value: member.phoneNumber)
+                            InfoRow(title: "Phone Number", value: member.phone)
                             InfoRow(title: "Blood Group", value: member.bloodGroup)
-                        }
-                    }
-                    
-                    CardView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Emergency Contact")
-                                .font(.headline)
-                                .padding(.bottom, 5)
-                            InfoRow(title: "Name", value: member.emergencyContactName)
-                            InfoRow(title: "Contact No.", value: member.emergencyContactNumber)
-                            InfoRow(title: "Relationship", value: member.emergencyRelationship)
+                            InfoRow(title: "Relationship", value: member.relationship)
                         }
                     }
                 }
@@ -195,6 +210,94 @@ struct FamilyMemberProfileView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close") {
                     dismiss()
+                }
+            }
+        }
+    }
+}
+
+struct AddFamilyMemberView: View {
+    @ObservedObject var profileController: PatientProfileController
+    @Binding var isPresented: Bool
+    @State private var member = FamilyMember.empty()
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    
+    private let genders = ["Male", "Female", "Other"]
+    private let relationships = ["Spouse", "Parent", "Child", "Sibling", "Other"]
+    private let bloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text("Personal Information")) {
+                    TextField("Name", text: $member.name)
+                    
+                    Stepper("Age: \(member.age)", value: $member.age, in: 1...120)
+                    
+                    Picker("Gender", selection: $member.gender) {
+                        ForEach(genders, id: \.self) { gender in
+                            Text(gender).tag(gender)
+                        }
+                    }
+                    
+                    Picker("Relationship", selection: $member.relationship) {
+                        ForEach(relationships, id: \.self) { relationship in
+                            Text(relationship).tag(relationship)
+                        }
+                    }
+                    
+                    Picker("Blood Group", selection: $member.bloodGroup) {
+                        ForEach(bloodGroups, id: \.self) { group in
+                            Text(group).tag(group)
+                        }
+                    }
+                }
+                
+                Section(header: Text("Contact Information")) {
+                    TextField("Phone Number", text: $member.phone)
+                        .keyboardType(.phonePad)
+                }
+            }
+            .navigationTitle("Add Family Member")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        isPresented = false
+                    }
+                }
+                
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveMember()
+                    }
+                    .disabled(isLoading || member.name.isEmpty || member.phone.isEmpty)
+                }
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
+        }
+    }
+    
+    private func saveMember() {
+        isLoading = true
+        
+        Task {
+            let success = await profileController.addFamilyMember(member)
+            
+            await MainActor.run {
+                isLoading = false
+                
+                if success {
+                    isPresented = false
+                } else {
+                    errorMessage = "Failed to add family member"
+                    showError = true
                 }
             }
         }

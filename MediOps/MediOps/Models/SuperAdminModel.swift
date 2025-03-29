@@ -66,7 +66,7 @@ class SuperAdminDashboardViewModel: ObservableObject {
         
         Task {
             do {
-                let fetchedHospitals = try await supabase.fetchHospitals()
+                let fetchedHospitals = try await HospitalController.shared.getAllHospitals()
                 
                 await MainActor.run {
                     self.hospitals = fetchedHospitals

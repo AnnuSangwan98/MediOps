@@ -2,7 +2,7 @@ import SwiftUI
 import EventKit
 
 struct BookingSuccessView: View {
-    let doctor: Doctor
+    let doctor: HospitalDoctor
     let appointmentDate: Date
     let appointmentTime: Date
     
@@ -222,7 +222,7 @@ struct BookingSuccessView: View {
                 // Once successfully saved to Supabase, create and add local appointment object
                 let appointment = Appointment(
                     id: appointmentId,
-                    doctor: doctor,
+                    doctor: doctor.toModelDoctor(),
                     date: appointmentDate,
                     time: appointmentTime,
                     status: .upcoming
@@ -260,7 +260,7 @@ struct BookingSuccessView: View {
                     // Create local appointment anyway since it exists in database
                     let appointment = Appointment(
                         id: appointmentId,
-                        doctor: doctor,
+                        doctor: doctor.toModelDoctor(),
                         date: appointmentDate,
                         time: appointmentTime, 
                         status: .upcoming
