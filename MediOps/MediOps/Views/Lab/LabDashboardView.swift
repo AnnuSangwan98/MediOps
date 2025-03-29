@@ -131,7 +131,7 @@ struct TestReportDetailView: View {
                     
                     if updatedReport.status == .pending {
                         TextField("Enter Test Type", text: $updatedReport.testType)
-                    } else {
+                        } else {
                         HStack {
                             Text("Test Type")
                             Spacer()
@@ -142,11 +142,11 @@ struct TestReportDetailView: View {
                     
                     HStack {
                         Text("Date")
-                        Spacer()
+                    Spacer()
                         Text(updatedReport.date, style: .date)
                             .foregroundColor(.gray)
-                    }
-                    
+                }
+                
                     HStack {
                         Text("Status")
                         Spacer()
@@ -312,24 +312,24 @@ struct LabDashboardView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     // Header
-                    HStack {
+            HStack {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Welcome, \(labAdmin.name)")
                                 .font(.title)
                                 .fontWeight(.bold)
                             Text("\(labAdmin.department) - \(labAdmin.id)")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
                         }
-                        Spacer()
-                        
+                Spacer()
+                
                         Button(action: {
                             showLogoutAlert = true
                         }) {
                             Image(systemName: "person.circle.fill")
                                 .resizable()
                                 .frame(width: 40, height: 40)
-                                .foregroundColor(.teal)
+                        .foregroundColor(.teal)
                         }
                     }
                     .padding(.horizontal)
@@ -390,8 +390,8 @@ struct LabDashboardView: View {
                             Text("No tests found")
                                 .foregroundColor(.gray)
                                 .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
+        .padding()
+        .background(Color.white)
                                 .cornerRadius(10)
                                 .shadow(color: .gray.opacity(0.1), radius: 5)
                         } else {

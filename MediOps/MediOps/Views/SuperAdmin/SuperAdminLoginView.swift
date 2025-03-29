@@ -8,7 +8,7 @@ struct SuperAdminLoginView: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var isPasswordVisible: Bool = false
-    private let SuperAdminId = "SUPER1"
+     let SuperAdminId = "SUPER1"
     private let SuperAdminPassword = "Super@123"
     
     // Computed properties for validation
