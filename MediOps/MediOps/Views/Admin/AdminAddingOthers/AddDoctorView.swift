@@ -259,36 +259,20 @@ struct AddDoctorView: View {
         
         Task {
             do {
-                // Try to get the current user and their hospital admin ID
-                var hospitalAdminId: String? = nil
-                
-                if let currentUser = try? await userController.getCurrentUser() {
-                    print("Current user ID: \(currentUser.id), role: \(currentUser.role.rawValue)")
-                    
-                    // If user is a hospital admin, use their ID directly
-                    if currentUser.role == .hospitalAdmin {
-                        hospitalAdminId = currentUser.id
-                        print("User is a hospital admin, using ID: \(hospitalAdminId ?? "unknown")")
-                    } else {
-                        // For other roles, try to get their associated hospital admin
-                        do {
-                            let hospitalAdmin = try await adminController.getHospitalAdminByUserId(userId: currentUser.id)
-                            hospitalAdminId = hospitalAdmin.id
-                            print("Retrieved hospital admin ID: \(hospitalAdminId ?? "unknown")")
-                        } catch {
-                            print("Warning: \(error.localizedDescription)")
-                        }
+                // Get hospital ID from UserDefaults
+                guard let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") else {
+                    await MainActor.run {
+                        alertMessage = "Failed to create doctor: Hospital ID not found. Please login again."
+                        showAlert = true
+                        isLoading = false
                     }
+                    return
                 }
                 
-                // If we couldn't determine the hospital admin ID, use a fallback
-                if hospitalAdminId == nil {
-                    hospitalAdminId = "HOS001" // Fallback ID
-                    print("Using fallback hospital admin ID: \(hospitalAdminId!)")
-                }
+                print("SAVE DOCTOR: Using hospital ID from UserDefaults: \(hospitalId)")
                 
                 // Prepare the doctor data
-                print("Creating doctor with hospital admin ID: \(hospitalAdminId!)")
+                print("Creating doctor with hospital admin ID: \(hospitalId)")
                 
                 // Convert qualifications for API
                 let qualificationsArray = Array(selectedQualifications)
@@ -299,7 +283,7 @@ struct AddDoctorView: View {
                     password: securePassword,
                     name: fullName,
                     specialization: specialization.rawValue,
-                    hospitalId: hospitalAdminId!,
+                    hospitalId: hospitalId,
                     qualifications: qualificationsArray,
                     licenseNo: license,
                     experience: experience,

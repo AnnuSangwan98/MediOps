@@ -76,7 +76,7 @@ class AdminController {
     /// Get hospital admin by ID
     func getHospitalAdmin(id: String) async throws -> HospitalAdmin {
         let admins = try await supabase.select(
-            from: "hospital_admins", 
+            from: "hospitals", 
             where: "id", 
             equals: id
         )
@@ -94,8 +94,8 @@ class AdminController {
         
         // First try to find the admin in the hospital_admins table
         let admins = try await supabase.select(
-            from: "hospital_admins", 
-            where: "user_id", 
+            from: "hospitals",
+            where: "user_id",
             equals: userId
         )
         
@@ -114,7 +114,7 @@ class AdminController {
             
             // Now try to find admin by email
             let adminsByEmail = try await supabase.select(
-                from: "hospital_admins",
+                from: "hospitals",
                 where: "email",
                 equals: email
             )

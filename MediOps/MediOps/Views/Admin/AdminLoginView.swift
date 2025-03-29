@@ -10,6 +10,12 @@ struct AdminLoginView: View {
     @State private var newPassword: String = ""
     @State private var confirmPassword: String = ""
     @State private var isPasswordVisible: Bool = false
+    @State private var isLoading: Bool = false
+    @State private var navigateToAdminHome: Bool = false
+    
+    // Services
+    private let supabase = SupabaseController.shared
+    @EnvironmentObject private var navigationState: AppNavigationState
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
@@ -108,27 +114,32 @@ struct AdminLoginView: View {
                     // Login Button
                     Button(action: handleLogin) {
                         HStack {
-                            Text("Login")
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            Image(systemName: "arrow.right")
-                                .font(.title3)
+                            if isLoading {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Text("Login")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                                Image(systemName: "arrow.right")
+                                    .font(.title3)
+                            }
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 55)
                         .background(
                             LinearGradient(gradient: Gradient(colors: [
-                                isValidLoginInput ? Color.teal : Color.gray.opacity(0.5),
-                                isValidLoginInput ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
+                                isValidLoginInput && !isLoading ? Color.teal : Color.gray.opacity(0.5),
+                                isValidLoginInput && !isLoading ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
                             ]),
                             startPoint: .leading,
                             endPoint: .trailing)
                         )
                         .cornerRadius(15)
-                        .shadow(color: isValidLoginInput ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
+                        .shadow(color: isValidLoginInput && !isLoading ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
                     }
-                    .disabled(!isValidLoginInput)
+                    .disabled(!isValidLoginInput || isLoading)
                     .padding(.top, 10)
                 }
                 .padding(.horizontal, 30)
@@ -136,7 +147,7 @@ struct AdminLoginView: View {
                 Spacer()
             }
             
-            NavigationLink(destination: AdminHomeView(), isActive: $isLoggedIn) {
+            NavigationLink(destination: AdminHomeView(), isActive: $navigateToAdminHome) {
                 EmptyView()
             }
         }
@@ -147,24 +158,77 @@ struct AdminLoginView: View {
         } message: {
             Text(errorMessage)
         }
-        
+        .overlay {
+            if isLoading {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                VStack {
+                    ProgressView()
+                        .tint(.white)
+                    Text("Authenticating...")
+                        .foregroundColor(.white)
+                        .padding(.top, 10)
+                }
+                .padding(20)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.gray.opacity(0.7)))
+            }
+        }
     }
     
     
     private func handleLogin() {
         guard isValidLoginInput else { return }
         
-        // Simulate authentication process
-        // In a real app, this would call your authentication service
+        isLoading = true
         
-        // Mock login verification
-        if adminId.starts(with: "HOS") && isValidPassword(password) {
-            // Successful login
-            isLoggedIn = true
-        } else {
-            // Failed login
-            errorMessage = "Invalid admin ID or password. Please try again."
-            showError = true
+        Task {
+            do {
+                // Query the hospital_admins table directly to find the admin with the matching ID
+                let admins = try await supabase.select(
+                    from: "hospitals",
+                    where: "id",
+                    equals: adminId
+                )
+                
+                // Check if admin exists
+                guard let admin = admins.first else {
+                    print("Login failed: No admin found with ID \(adminId)")
+                    throw AuthError.userNotFound
+                }
+                
+                // Verify password
+                guard let storedPassword = admin["password"] as? String,
+                      storedPassword == password else {
+                    print("Login failed: Invalid password for admin \(adminId)")
+                    throw AuthError.invalidCredentials
+                }
+                
+                print("Admin authentication successful for ID: \(adminId)")
+                
+                // Store hospital ID in UserDefaults
+                UserDefaults.standard.set(adminId, forKey: "hospital_id")
+                print("Saved hospital ID to UserDefaults: \(adminId)")
+                
+                await MainActor.run {
+                    isLoading = false
+                    // Update navigation state and sign in as hospital admin
+                    navigationState.signIn(as: .hospitalAdmin)
+                    // Navigate to admin dashboard
+                    navigateToAdminHome = true
+                }
+            } catch let error as AuthError {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "An unexpected error occurred"
+                    showError = true
+                }
+            }
         }
     }
     
