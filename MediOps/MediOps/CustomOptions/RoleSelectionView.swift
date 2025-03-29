@@ -82,10 +82,10 @@ struct RoleSelectionView: View {
                     })
                     
                     // Lab Button
-                    NavigationLink(destination: LabLoginView()) {
+                    NavigationLink(destination: LabAdminLoginView()) {
                         RoleButton(
-                            icon: "document",
-                            title: "Lab",
+                            icon: "flask.fill",
+                            title: "Lab Admin",
                             isHighlighted: selectedRole == .lab
                         )
                     }
