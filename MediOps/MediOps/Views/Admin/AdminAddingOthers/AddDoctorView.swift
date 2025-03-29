@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-// Using SwiftUI's import approach to access QualificationToggle from another file
+// QualificationToggle is defined in SharedComponents.swift
 
 struct AddDoctorView: View {
     @Environment(\.dismiss) private var dismiss

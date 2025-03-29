@@ -69,7 +69,7 @@ struct DoctorsListView: View {
                             .padding()
                         } else {
                             ForEach(doctors) { doctor in
-                                DoctorCard(
+                                AdminDoctorCard(
                                     doctor: doctor,
                                     onEdit: { editDoctor(doctor) },
                                     onDelete: {
@@ -244,7 +244,7 @@ struct DoctorsListView: View {
     }
 }
 
-struct DoctorCard: View {
+struct AdminDoctorCard: View {
     let doctor: UIDoctor
     var onEdit: () -> Void
     var onDelete: () -> Void

@@ -30,8 +30,14 @@ class AdminController {
         let adminData: [String: String] = [
             "id": adminId,
             "user_id": authResponse.user.id,
-            "name": name,
+            "admin_name": name,
             "hospital_name": hospitalName,
+            "email": email,
+            "contact_number": "",
+            "street": "",
+            "city": "",
+            "state": "",
+            "pincode": "",
             "created_at": createdAt,
             "updated_at": createdAt
         ]
@@ -67,7 +73,13 @@ class AdminController {
             name: name,
             hospitalName: hospitalName,
             createdAt: now,
-            updatedAt: now
+            updatedAt: now,
+            email: email,
+            contact_number: "",
+            street: "",
+            city: "",
+            state: "",
+            pincode: ""
         )
         
         return (admin, authResponse.token)
@@ -76,7 +88,7 @@ class AdminController {
     /// Get hospital admin by ID
     func getHospitalAdmin(id: String) async throws -> HospitalAdmin {
         let admins = try await supabase.select(
-            from: "hospitals", 
+            from: "hospital_admins", 
             where: "id", 
             equals: id
         )
@@ -94,7 +106,7 @@ class AdminController {
         
         // First try to find the admin in the hospital_admins table
         let admins = try await supabase.select(
-            from: "hospitals",
+            from: "hospital_admins",
             where: "user_id",
             equals: userId
         )
@@ -114,7 +126,7 @@ class AdminController {
             
             // Now try to find admin by email
             let adminsByEmail = try await supabase.select(
-                from: "hospitals",
+                from: "hospital_admins",
                 where: "email",
                 equals: email
             )
@@ -752,90 +764,167 @@ class AdminController {
     // MARK: - Helper Methods
     
     private func parseHospitalAdminData(_ data: [String: Any]) throws -> HospitalAdmin {
-        print("PARSE HOSPITAL ADMIN: Raw data: \(data)")
+        print("===== PARSE HOSPITAL ADMIN =====")
+        print("Raw data: \(data)")
         
-        // The schema states that id and hospital_id should be the same
-        var id: String
-        var hospitalId: String
-        var userId: String = ""
-        
-        // Check for id field
-        if let adminId = data["id"] as? String, !adminId.isEmpty {
-            id = adminId
+        // Check for id
+        if let id = data["id"] as? String {
+            print("ID: \(id)")
         } else {
-            print("PARSE HOSPITAL ADMIN ERROR: Missing id field")
+            print("ERROR: Missing id field")
+        }
+        
+        // Check for hospital_id
+        if let hospitalId = data["hospital_id"] as? String {
+            print("Hospital ID: \(hospitalId)")
+        } else {
+            print("ERROR: Missing hospital_id field")
+        }
+        
+        // Check for admin_name
+        if let adminName = data["admin_name"] as? String {
+            print("Admin Name: \(adminName)")
+        } else {
+            print("ERROR: Missing admin_name field")
+        }
+        
+        // Check for email
+        if let email = data["email"] as? String {
+            print("Email: \(email)")
+        } else {
+            print("ERROR: Missing email field")
+        }
+        
+        // Check date fields
+        if let createdAtString = data["created_at"] as? String {
+            print("Created At: \(createdAtString)")
+        } else {
+            print("ERROR: Missing created_at field")
+        }
+        
+        if let updatedAtString = data["updated_at"] as? String {
+            print("Updated At: \(updatedAtString)")
+        } else {
+            print("ERROR: Missing updated_at field")
+        }
+        
+        // Required fields
+        guard let id = data["id"] as? String,
+              let hospitalId = data["hospital_id"] as? String else {
+            print("CRITICAL ERROR: Missing id or hospital_id fields")
             throw AdminError.invalidData
         }
         
-        // Check for hospital_id field - according to the schema, this should match the id
-        if let hId = data["hospital_id"] as? String, !hId.isEmpty {
-            hospitalId = hId
-            
-            // Validate that id and hospital_id match as per the schema constraint
-            if hospitalId != id {
-                print("PARSE HOSPITAL ADMIN WARNING: hospital_id (\(hospitalId)) doesn't match id (\(id))")
-                // Use id as the definitive value to satisfy constraint
-                hospitalId = id
+        guard let adminName = data["admin_name"] as? String else {
+            print("CRITICAL ERROR: Missing admin_name field")
+            throw AdminError.invalidData
+        }
+        
+        guard let email = data["email"] as? String else {
+            print("CRITICAL ERROR: Missing email field")
+            throw AdminError.invalidData
+        }
+        
+        // Handle date fields with maximum resilience
+        var createdAt = Date()
+        var updatedAt = Date()
+        
+        if let createdAtString = data["created_at"] as? String {
+            // Try ISO8601 format first
+            let isoFormatter = ISO8601DateFormatter()
+            if let parsedDate = isoFormatter.date(from: createdAtString) {
+                createdAt = parsedDate
+            } else {
+                // Try other formats
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+                if let parsedDate = dateFormatter.date(from: createdAtString) {
+                    createdAt = parsedDate
+                } else {
+                    // Try another format
+                    dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                    if let parsedDate = dateFormatter.date(from: createdAtString) {
+                        createdAt = parsedDate
+                    } else {
+                        print("WARNING: Could not parse created_at date, using current date")
+                    }
+                }
             }
         } else {
-            // If hospital_id is missing, use id as per schema constraint
-            print("PARSE HOSPITAL ADMIN WARNING: Missing hospital_id field, using id instead")
-            hospitalId = id
+            print("WARNING: Missing created_at field, using current date")
         }
         
-        // Get user_id if available
-        if let uId = data["user_id"] as? String {
-            userId = uId
-        }
-        
-        // Name field (admin_name in schema)
-        let name: String
-        if let adminName = data["admin_name"] as? String, !adminName.isEmpty {
-            name = adminName
-        } else if let userName = data["name"] as? String, !userName.isEmpty {
-            name = userName
+        if let updatedAtString = data["updated_at"] as? String {
+            // Try ISO8601 format first
+            let isoFormatter = ISO8601DateFormatter()
+            if let parsedDate = isoFormatter.date(from: updatedAtString) {
+                updatedAt = parsedDate
+            } else {
+                // Try other formats
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+                if let parsedDate = dateFormatter.date(from: updatedAtString) {
+                    updatedAt = parsedDate
+                } else {
+                    // Try another format
+                    dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                    if let parsedDate = dateFormatter.date(from: updatedAtString) {
+                        updatedAt = parsedDate
+                    } else {
+                        print("WARNING: Could not parse updated_at date, using current date")
+                    }
+                }
+            }
         } else {
-            print("PARSE HOSPITAL ADMIN ERROR: Missing name field")
-            throw AdminError.invalidData
+            print("WARNING: Missing updated_at field, using current date")
         }
         
-        // Email field
-        guard let email = data["email"] as? String, !email.isEmpty else {
-            print("PARSE HOSPITAL ADMIN ERROR: Missing email field")
-            throw AdminError.invalidData
+        // Verify id and hospital_id match (schema constraint)
+        if id != hospitalId {
+            print("WARNING: id (\(id)) and hospital_id (\(hospitalId)) don't match")
         }
         
-        // Hospital name field - this could be missing in the schema
+        // Optional fields with defaults
+        let userId = data["user_id"] as? String ?? ""
+        print("User ID: \(userId)")
+        
+        let contactNumber = data["contact_number"] as? String ?? ""
+        print("Contact Number: \(contactNumber)")
+        
+        let street = data["street"] as? String ?? ""
+        print("Street: \(street)")
+        
+        let city = data["city"] as? String ?? ""
+        print("City: \(city)")
+        
+        let state = data["state"] as? String ?? ""
+        print("State: \(state)")
+        
+        let pincode = data["pincode"] as? String ?? ""
+        print("Pincode: \(pincode)")
+        
+        // Parse hospital name - query the hospitals table to get the name if needed
         var hospitalName = "Unknown Hospital"
         if let hName = data["hospital_name"] as? String, !hName.isEmpty {
             hospitalName = hName
         }
+        print("Hospital Name: \(hospitalName)")
         
-        // Handle date fields with better error recovery
-        let dateFormatter = ISO8601DateFormatter()
-        let now = Date() // Default to current date if parsing fails
-        
-        var createdAt = now
-        if let createdAtString = data["created_at"] as? String {
-            createdAt = dateFormatter.date(from: createdAtString) ?? now
-        } else {
-            print("PARSE HOSPITAL ADMIN WARNING: Missing created_at field, using current date")
-        }
-        
-        var updatedAt = now
-        if let updatedAtString = data["updated_at"] as? String {
-            updatedAt = dateFormatter.date(from: updatedAtString) ?? now
-        } else {
-            print("PARSE HOSPITAL ADMIN WARNING: Missing updated_at field, using current date")
-        }
+        print("PARSE HOSPITAL ADMIN: Successfully parsed admin with id: \(id), name: \(adminName)")
         
         return HospitalAdmin(
             id: id,
             userId: userId,
-            name: name,
+            name: adminName,
             hospitalName: hospitalName,
             createdAt: createdAt,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            email: email,
+            contact_number: contactNumber,
+            street: street,
+            city: city,
+            state: state,
+            pincode: pincode
         )
     }
     
@@ -950,61 +1039,22 @@ class AdminController {
     }
     
     private func parseLabAdminData(_ data: [String: Any]) throws -> LabAdmin {
-        // Print the raw data for debugging
-        print("PARSE LAB ADMIN: Raw data: \(data)")
-        
-        // Check for required fields
-        guard let id = data["id"] as? String else {
-            print("PARSE LAB ADMIN ERROR: Missing id field")
-            throw AdminError.invalidData
+        guard let id = data["id"] as? String,
+              let hospitalId = data["hospital_id"] as? String,
+              let name = data["name"] as? String,
+              let email = data["email"] as? String,
+              let contactNumber = data["contact_number"] as? String,
+              let department = data["department"] as? String,
+              let createdAtString = data["created_at"] as? String,
+              let updatedAtString = data["updated_at"] as? String else {
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing required fields in lab admin data"])
         }
         
-        guard let hospitalId = data["hospital_id"] as? String else {
-            print("PARSE LAB ADMIN ERROR: Missing hospital_id field")
-            throw AdminError.invalidData
-        }
-        
-        guard let name = data["name"] as? String else {
-            print("PARSE LAB ADMIN ERROR: Missing name field")
-            throw AdminError.invalidData
-        }
-        
-        guard let email = data["email"] as? String else {
-            print("PARSE LAB ADMIN ERROR: Missing email field")
-            throw AdminError.invalidData
-        }
-        
-        // Department might be stored as lab_name in some records
-        let department: String
-        if let dept = data["department"] as? String {
-            department = dept
-        } else if let labName = data["lab_name"] as? String {
-            department = labName
-        } else {
-            print("PARSE LAB ADMIN ERROR: Missing department/lab_name field")
-            department = "Unknown Department" // Provide a default value
-        }
-        
-        // Handle date fields with better error recovery
         let dateFormatter = ISO8601DateFormatter()
-        let now = Date() // Default to current date if parsing fails
-        
-        var createdAt = now
-        if let createdAtString = data["created_at"] as? String {
-            createdAt = dateFormatter.date(from: createdAtString) ?? now
-        } else {
-            print("PARSE LAB ADMIN WARNING: Missing created_at field, using current date")
+        guard let createdAt = dateFormatter.date(from: createdAtString),
+              let updatedAt = dateFormatter.date(from: updatedAtString) else {
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid date format"])
         }
-        
-        var updatedAt = now
-        if let updatedAtString = data["updated_at"] as? String {
-            updatedAt = dateFormatter.date(from: updatedAtString) ?? now
-        } else {
-            print("PARSE LAB ADMIN WARNING: Missing updated_at field, using current date")
-        }
-        
-        // Optional fields
-        let contactNumber = data["contact_number"] as? String ?? ""
         
         // Handle address field which might have inconsistent capitalization
         let address: String

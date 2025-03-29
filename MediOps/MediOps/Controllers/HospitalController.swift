@@ -17,40 +17,54 @@ class HospitalController {
         
         struct HospitalData: Encodable {
             let id: String
-            let name: String
+            let hospital_name: String
             let admin_name: String
-            let license_number: String
-            let hospital_phone: String
-            let street: String
-            let city: String
-            let state: String
-            let zip_code: String
-            let phone: String
+            let licence: String
+            let contact_number: String
+            let hospital_address: String
+            let hospital_city: String
+            let hospital_state: String
+            let area_pincode: String
             let email: String
             let status: String
-            let registration_date: String
-            let last_modified: String
-            let last_modified_by: String
-            let image_data: Data?
+            let created_at: String
+            let updated_at: String
+            let description: String?
+            let hospital_profile_image: String?
+            let last_modified_by: String?
+            let hospital_accreditation: String?
+            let type: String?
+            let departments: [String]?
         }
+        
+        // Convert image data to base64 string if available
+        let imageBase64: String? = {
+            if let imageData = hospital.imageData {
+                return imageData.base64EncodedString()
+            }
+            return nil
+        }()
         
         let hospitalData = HospitalData(
             id: hospital.id,
-            name: hospital.name,
+            hospital_name: hospital.name,
             admin_name: hospital.adminName,
-            license_number: hospital.licenseNumber,
-            hospital_phone: hospital.hospitalPhone,
-            street: hospital.street,
-            city: hospital.city,
-            state: hospital.state,
-            zip_code: hospital.zipCode,
-            phone: hospital.phone,
+            licence: hospital.licenseNumber,
+            contact_number: hospital.hospitalPhone,
+            hospital_address: hospital.street,
+            hospital_city: hospital.city,
+            hospital_state: hospital.state,
+            area_pincode: hospital.zipCode,
             email: hospital.email,
-            status: hospital.status.rawValue,
-            registration_date: dateFormatter.string(from: hospital.registrationDate),
-            last_modified: dateFormatter.string(from: now),
+            status: hospital.status.rawValue.lowercased(),
+            created_at: dateFormatter.string(from: now),
+            updated_at: dateFormatter.string(from: now),
+            description: "Hospital created by Super Admin",
+            hospital_profile_image: imageBase64,
             last_modified_by: hospital.lastModifiedBy,
-            image_data: hospital.imageData
+            hospital_accreditation: "General",
+            type: "General",
+            departments: ["General"]
         )
         
         try await supabase.insert(into: "hospitals", data: hospitalData)
@@ -77,37 +91,43 @@ class HospitalController {
         let now = Date()
         
         struct HospitalUpdateData: Encodable {
-            let name: String
+            let hospital_name: String
             let admin_name: String
-            let license_number: String
-            let hospital_phone: String
-            let street: String
-            let city: String
-            let state: String
-            let zip_code: String
-            let phone: String
+            let licence: String
+            let contact_number: String
+            let hospital_address: String
+            let hospital_city: String
+            let hospital_state: String
+            let area_pincode: String
             let email: String
             let status: String
-            let last_modified: String
-            let last_modified_by: String
-            let image_data: Data?
+            let updated_at: String
+            let last_modified_by: String?
+            let hospital_profile_image: String?
         }
         
+        // Convert image data to base64 string if available
+        let imageBase64: String? = {
+            if let imageData = hospital.imageData {
+                return imageData.base64EncodedString()
+            }
+            return nil
+        }()
+        
         let hospitalData = HospitalUpdateData(
-            name: hospital.name,
+            hospital_name: hospital.name,
             admin_name: hospital.adminName,
-            license_number: hospital.licenseNumber,
-            hospital_phone: hospital.hospitalPhone,
-            street: hospital.street,
-            city: hospital.city,
-            state: hospital.state,
-            zip_code: hospital.zipCode,
-            phone: hospital.phone,
+            licence: hospital.licenseNumber,
+            contact_number: hospital.hospitalPhone,
+            hospital_address: hospital.street,
+            hospital_city: hospital.city,
+            hospital_state: hospital.state,
+            area_pincode: hospital.zipCode,
             email: hospital.email,
-            status: hospital.status.rawValue,
-            last_modified: dateFormatter.string(from: now),
+            status: hospital.status.rawValue.lowercased(),
+            updated_at: dateFormatter.string(from: now),
             last_modified_by: hospital.lastModifiedBy,
-            image_data: hospital.imageData
+            hospital_profile_image: imageBase64
         )
         
         try await supabase.update(
@@ -146,37 +166,55 @@ class HospitalController {
     // MARK: - Helper Methods
     
     private func parseHospitalData(_ data: [String: Any]) throws -> Hospital {
+        // Print raw data for debugging
+        print("Raw hospital data: \(data)")
+        
         guard
             let id = data["id"] as? String,
-            let name = data["name"] as? String,
+            let name = data["hospital_name"] as? String,
             let adminName = data["admin_name"] as? String,
-            let licenseNumber = data["license_number"] as? String,
-            let hospitalPhone = data["hospital_phone"] as? String,
-            let street = data["street"] as? String,
-            let city = data["city"] as? String,
-            let state = data["state"] as? String,
-            let zipCode = data["zip_code"] as? String,
-            let phone = data["phone"] as? String,
+            let licenseNumber = data["licence"] as? String,
+            let hospitalPhone = data["contact_number"] as? String,
+            let street = data["hospital_address"] as? String,
+            let city = data["hospital_city"] as? String,
+            let state = data["hospital_state"] as? String,
+            let zipCode = data["area_pincode"] as? String,
             let email = data["email"] as? String,
             let statusString = data["status"] as? String,
-            let registrationDateString = data["registration_date"] as? String,
-            let lastModifiedString = data["last_modified"] as? String,
-            let lastModifiedBy = data["last_modified_by"] as? String
+            let createdAtString = data["created_at"] as? String,
+            let updatedAtString = data["updated_at"] as? String
         else {
+            print("Missing required fields in hospital data")
             throw HospitalError.invalidData
         }
         
         let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         
         guard
-            let registrationDate = dateFormatter.date(from: registrationDateString),
-            let lastModified = dateFormatter.date(from: lastModifiedString),
-            let status = HospitalStatus(rawValue: statusString)
+            let registrationDate = dateFormatter.date(from: createdAtString),
+            let lastModified = dateFormatter.date(from: updatedAtString)
         else {
+            print("Invalid date format in hospital data")
             throw HospitalError.invalidData
         }
         
-        let imageData = data["image_data"] as? Data
+        // Status validation with case-insensitive comparison
+        let status: HospitalStatus
+        switch statusString.lowercased() {
+        case "active":
+            status = .active
+        case "pending":
+            status = .pending
+        case "inactive":
+            status = .inactive
+        default:
+            print("Invalid status value: \(statusString)")
+            throw HospitalError.invalidData
+        }
+        
+        let lastModifiedBy = data["last_modified_by"] as? String ?? "System"
+        let imageData = data["hospital_profile_image"] as? Data
         
         return Hospital(
             id: id,
@@ -188,7 +226,7 @@ class HospitalController {
             city: city,
             state: state,
             zipCode: zipCode,
-            phone: phone,
+            phone: hospitalPhone, // Use the same phone number
             email: email,
             status: status,
             registrationDate: registrationDate,

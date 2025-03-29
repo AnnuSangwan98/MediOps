@@ -37,11 +37,15 @@ struct AddHospitalForm: View {
         let hospital_id: String
         let admin_name: String
         let email: String
-        let contact_number: String
+        let contact_number: String?
         let id: String
         let password: String
-        let role: String
-        let status: String
+        let role: String = "HOSPITAL_ADMIN"
+        let status: String = "active"
+        let street: String?
+        let city: String?
+        let state: String?
+        let pincode: String?
     }
     
     private struct EmailDetails: Encodable {
@@ -133,8 +137,9 @@ struct AddHospitalForm: View {
     @State private var adminAddressExpanded = false
     
     private var isFormValid: Bool {
-        // Updated validation to match schema requirements
+        // Basic validation to enable the save button
         !hospitalName.isEmpty && 
+        !hospitalID.isEmpty &&
         !licenseNumber.isEmpty && 
         !city.isEmpty &&
         !state.isEmpty && 
@@ -142,8 +147,7 @@ struct AddHospitalForm: View {
         !adminName.isEmpty && 
         !phone.isEmpty &&
         !email.isEmpty &&
-        !emergencyContact.isEmpty &&
-        selectedAccreditation != "Other" // Must be one of the allowed values
+        !emergencyContact.isEmpty
     }
     
     private func validateForm() -> Bool {
@@ -158,52 +162,51 @@ struct AddHospitalForm: View {
         emergencyContactError = ""
         hospitalIdError = ""
         
-        // Validate Hospital ID format (HOSXXX where X is a digit)
-        let hospitalIdRegex = "^HOS\\d{3}$"
-        if !NSPredicate(format: "SELF MATCHES %@", hospitalIdRegex).evaluate(with: hospitalID) {
-            hospitalIdError = "Hospital ID must be 'HOS' followed by 3 digits (e.g., HOS123)"
+        // Basic required field validation
+        if hospitalName.isEmpty || hospitalID.isEmpty || licenseNumber.isEmpty || 
+           city.isEmpty || state.isEmpty || zipCode.isEmpty || 
+           adminName.isEmpty || phone.isEmpty || email.isEmpty || emergencyContact.isEmpty {
             isValid = false
+        }
+        
+        // Validate Hospital ID format (HOSXXX where X is a digit)
+        if !hospitalID.isEmpty {
+            let hospitalIdRegex = "^HOS\\d{3}$"
+            if !NSPredicate(format: "SELF MATCHES %@", hospitalIdRegex).evaluate(with: hospitalID) {
+                hospitalIdError = "Hospital ID must be 'HOS' followed by 3 digits (e.g., HOS123)"
+                isValid = false
+            }
         }
         
         // Validate Email (must be unique due to constraint)
-        let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
-        if !NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email) {
-            emailError = "Please enter a valid email address"
-            isValid = false
+        if !email.isEmpty {
+            let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
+            if !NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email) {
+                emailError = "Please enter a valid email address"
+                isValid = false
+            }
         }
         
         // Validate Phone Numbers (20 chars max per schema)
-        if phone.count != 10 || !phone.allSatisfy({ $0.isNumber }) {
+        if !phone.isEmpty && (phone.count != 10 || !phone.allSatisfy({ $0.isNumber })) {
             phoneError = "Please enter a valid 10-digit phone number"
             isValid = false
         }
         
         // Validate Emergency Contact
-        if emergencyContact.count != 10 || !emergencyContact.allSatisfy({ $0.isNumber }) {
+        if !emergencyContact.isEmpty && (emergencyContact.count != 10 || !emergencyContact.allSatisfy({ $0.isNumber })) {
             emergencyContactError = "Please enter a valid 10-digit emergency number"
             isValid = false
         }
         
         // Validate Pin Codes (10 chars max per schema)
-        if zipCode.count != 6 || !zipCode.allSatisfy({ $0.isNumber }) {
+        if !zipCode.isEmpty && (zipCode.count != 6 || !zipCode.allSatisfy({ $0.isNumber })) {
             hospitalPinCodeError = "Please enter a valid 6-digit pin code"
             isValid = false
         }
         
-        if adminPinCode.count != 6 || !adminPinCode.allSatisfy({ $0.isNumber }) {
+        if !adminPinCode.isEmpty && (adminPinCode.count != 6 || !adminPinCode.allSatisfy({ $0.isNumber })) {
             adminPinCodeError = "Please enter a valid 6-digit pin code"
-            isValid = false
-        }
-        
-        // Validate Hospital License Number
-        let licenseRegex = "^[A-Z]{2}\\d{5}$"
-        if !NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: licenseNumber) {
-            hospitalLicenseError = "License number must be 2 capital letters followed by 4 digits (e.g., XX12345)"
-            isValid = false
-        }
-        
-        // Validate Accreditation (must match check constraint)
-        if !["NABH", "JCI", "NABL", "ISO"].contains(selectedAccreditation) {
             isValid = false
         }
         
@@ -212,68 +215,16 @@ struct AddHospitalForm: View {
     }
     
     private func handleSubmit() {
-        guard !hasSubmitted && validateForm() else { return }
+        guard validateForm() else { return }
         
         hasSubmitted = true
         isEmailSending = true
         
         Task {
             do {
-                // First send email to get the generated credentials
-                let url = URL(string: "http://localhost:8082/send-credentials")!
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                
-                let emailDetails = EmailDetails(
-                    fullName: adminName,
-                    hospitalName: hospitalName,
-                    hospitalId: hospitalID,
-                    licenseNumber: licenseNumber,
-                    accreditation: selectedAccreditation,
-                    emergencyContact: emergencyContact,
-                    street: street,
-                    city: city,
-                    state: state,
-                    zipCode: zipCode,
-                    adminLocality: adminLocality,
-                    adminCity: adminCity,
-                    adminState: selectedAdminState,
-                    adminPinCode: adminPinCode,
-                    adminPhone: phone,
-                    password: ""  // Password will be generated by the server
-                )
-                
-                let emailPayload = EmailPayload(
-                    to: email,
-                    accountType: "hospital",
-                    details: emailDetails
-                )
-                
-                let jsonData = try JSONEncoder().encode(emailPayload)
-                request.httpBody = jsonData
-                
-                let (data, response) = try await URLSession.shared.data(for: request)
-                
-                // Print the raw response for debugging
-                if let responseString = String(data: data, encoding: .utf8) {
-                    print("Raw server response:", responseString)
-                }
-                
-                guard let httpResponse = response as? HTTPURLResponse,
-                      httpResponse.statusCode == 200 else {
-                    throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Server returned error status"])
-                }
-                
-                // Decode the response using the proper structure
-                let serverResponse = try JSONDecoder().decode(EmailServerResponse.self, from: data)
-                guard serverResponse.status == "success",
-                      !serverResponse.password.isEmpty else {
-                    throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid response from server"])
-                }
-                
-                let generatedPassword = serverResponse.password
-                print("Generated password from server:", generatedPassword)
+                // Generate a secure password locally instead of relying on the email server
+                let generatedPassword = generateSecurePassword()
+                print("Generated password: \(generatedPassword)")
                 
                 // Convert hospital image to base64 if available
                 let imageBase64: String = {
@@ -284,7 +235,7 @@ struct AddHospitalForm: View {
                     return ""
                 }()
                 
-                // Create hospital data with the provided hospitalID and generated password
+                // Create hospital data
                 let hospitalData = HospitalData(
                     id: hospitalID,
                     hospital_name: hospitalName,
@@ -302,30 +253,35 @@ struct AddHospitalForm: View {
                     status: "active",
                     hospital_profile_image: imageBase64,
                     description: "Hospital created by Super Admin",
-                    password: generatedPassword  // Use the generated password
+                    password: generatedPassword
                 )
                 
                 print("Inserting hospital with data:", hospitalData)
                 
-                // Insert hospital
+                // Insert hospital first
                 try await supabase.insert(into: "hospitals", data: hospitalData)
                 
-                // Create admin data using the same hospitalID and generated password
+                // Create admin data using the same hospitalID
                 let adminData = AdminData(
                     hospital_id: hospitalID,
                     admin_name: adminName,
                     email: email,
-                    contact_number: phone,
-                    id: hospitalID,
-                    password: generatedPassword,  // Use the generated password from email server
-                    role: "HOSPITAL_ADMIN",
-                    status: "active"
+                    contact_number: phone.isEmpty ? nil : phone,
+                    id: hospitalID, // Must match hospital_id per constraint
+                    password: generatedPassword,
+                    street: adminLocality.isEmpty ? nil : adminLocality,
+                    city: adminCity.isEmpty ? nil : adminCity,
+                    state: selectedAdminState.isEmpty ? nil : selectedAdminState,
+                    pincode: adminPinCode.isEmpty ? nil : adminPinCode
                 )
                 
                 print("Inserting admin with data:", adminData)
                 
                 // Insert admin data
                 try await supabase.insert(into: "hospital_admins", data: adminData)
+                
+                // Try to send email after data is saved successfully
+                await sendCredentialsEmail(password: generatedPassword)
                 
                 await MainActor.run {
                     onSubmit()
@@ -348,6 +304,78 @@ struct AddHospitalForm: View {
                     }
                 }
             }
+        }
+    }
+    
+    // Helper function to generate a secure password locally
+    private func generateSecurePassword() -> String {
+        let length = 12
+        let characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()"
+        var password = ""
+        
+        for _ in 0..<length {
+            let randomIndex = Int.random(in: 0..<characters.count)
+            let character = characters[characters.index(characters.startIndex, offsetBy: randomIndex)]
+            password.append(character)
+        }
+        
+        return password
+    }
+    
+    // Helper function to send credentials email
+    private func sendCredentialsEmail(password: String) async {
+        do {
+            let url = URL(string: "http://localhost:8082/send-credentials")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            let emailDetails = EmailDetails(
+                fullName: adminName,
+                hospitalName: hospitalName,
+                hospitalId: hospitalID,
+                licenseNumber: licenseNumber,
+                accreditation: selectedAccreditation,
+                emergencyContact: emergencyContact,
+                street: street,
+                city: city,
+                state: state,
+                zipCode: zipCode,
+                adminLocality: adminLocality,
+                adminCity: adminCity,
+                adminState: selectedAdminState,
+                adminPinCode: adminPinCode,
+                adminPhone: phone,
+                password: password
+            )
+            
+            let emailPayload = EmailPayload(
+                to: email,
+                accountType: "hospital",
+                details: emailDetails
+            )
+            
+            let jsonData = try JSONEncoder().encode(emailPayload)
+            request.httpBody = jsonData
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            // Print the raw response for debugging
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("Raw server response:", responseString)
+            }
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("Invalid HTTP response")
+                return
+            }
+            
+            if httpResponse.statusCode != 200 {
+                print("Email server returned status code: \(httpResponse.statusCode)")
+            }
+        } catch {
+            // Log error but don't prevent hospital creation
+            print("Error sending email (non-critical): \(error.localizedDescription)")
         }
     }
     
@@ -491,49 +519,28 @@ struct AddHospitalForm: View {
                     content: {
                         TextField("Admin Name", text: $adminName)
                         
+                        Text("Admin Contact")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                            .padding(.top, 10)
+                            
                         HStack {
                             Text("+91")
                                 .foregroundColor(.gray)
-                            TextField("Contact Number", text: $phone)
+                            TextField("Admin Phone", text: $phone)
                                 .keyboardType(.numberPad)
-                                .onChange(of: phone) { _, newValue in
-                                    // Allow only digits and limit to 10 characters
-                                    phone = newValue.filter { $0.isNumber }.prefix(10).description
-                                }
-                        }
-                        if !phoneError.isEmpty {
-                            Text(phoneError)
-                                .font(.caption)
-                                .foregroundColor(.red)
                         }
                         
                         TextField("Email", text: $email)
                             .keyboardType(.emailAddress)
                             .autocapitalization(.none)
-                        if !emailError.isEmpty {
-                            Text(emailError)
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                    },
-                    label: {
-                        HStack {
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.teal)
-                            Text("ADMIN INFORMATION")
-                                .font(.headline)
-                                .foregroundColor(.teal)
-                        }
-                    }
-                )
-            }
-            
-            // Admin Address Section
-            Section {
-                DisclosureGroup(
-                    isExpanded: $adminAddressExpanded,
-                    content: {
-                        TextField("Locality", text: $adminLocality)
+                        
+                        Text("Admin Address")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                            .padding(.top, 10)
+                        
+                        TextField("Street/Locality", text: $adminLocality)
                         TextField("City", text: $adminCity)
                         
                         Picker("State", selection: $selectedAdminState) {
@@ -545,7 +552,7 @@ struct AddHospitalForm: View {
                         TextField("Pin Code", text: $adminPinCode)
                             .keyboardType(.numberPad)
                             .onChange(of: adminPinCode) { _, newValue in
-                                // Allow only digits and limit to 10 characters
+                                // Allow only digits and limit to 6 characters
                                 adminPinCode = newValue.filter { $0.isNumber }.prefix(6).description
                             }
                         if !adminPinCodeError.isEmpty {
@@ -556,9 +563,9 @@ struct AddHospitalForm: View {
                     },
                     label: {
                         HStack {
-                            Image(systemName: "house.fill")
+                            Image(systemName: "person.fill")
                                 .foregroundColor(.teal)
-                            Text("ADMIN ADDRESS")
+                            Text("ADMIN INFORMATION")
                                 .font(.headline)
                                 .foregroundColor(.teal)
                         }
@@ -614,6 +621,22 @@ struct EditHospitalForm: View {
     // Section toggle states
     @State private var hospitalInfoExpanded = true
     @State private var adminInfoExpanded = false
+    @State private var adminAddressExpanded = false
+    
+    // Admin address fields
+    @State private var adminStreet: String = ""
+    @State private var adminCity: String = ""
+    @State private var adminState: String = "Delhi"
+    @State private var adminPincode: String = ""
+    
+    // Constants
+    let indianStates = [
+        "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi",
+        "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+        "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+        "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+        "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
+    ]
     
     init(hospital: Hospital, onSave: @escaping (Hospital) -> Void) {
         _editedHospital = State(initialValue: hospital)
@@ -623,26 +646,100 @@ struct EditHospitalForm: View {
     private func fetchAdminData() {
         Task {
             do {
-                adminData = try await supabase.fetchHospitalAdmin(hospitalId: editedHospital.id)
+                print("==== FETCH ADMIN DATA ====")
+                print("Hospital ID: \(editedHospital.id)")
                 
-                if let admin = adminData {
+                // Fetch admin data with better error catching
+                do {
+                    // Use the AdminController to fetch the hospital admin data
+                    let admin = try await AdminController.shared.getHospitalAdmin(id: editedHospital.id)
+                    
+                    print("Successfully retrieved admin: \(admin.id), Name: \(admin.name), Email: \(admin.email)")
+                    print("Admin Address: Street: \(admin.street ?? "nil"), City: \(admin.city ?? "nil"), State: \(admin.state ?? "nil"), Pincode: \(admin.pincode ?? "nil")")
+                    
                     await MainActor.run {
-                        if let adminName = admin["admin_name"] as? String {
+                        // Set the admin data directly from the HospitalAdmin object
+                        editedHospital.adminName = admin.name
+                        
+                        // Use the correct field names from the HospitalAdmin model
+                        if let contactNum = admin.contact_number {
+                            editedHospital.phone = contactNum
+                        }
+                        editedHospital.email = admin.email
+                        
+                        // Set the admin address fields with proper null handling
+                        adminStreet = admin.street ?? ""
+                        adminCity = admin.city ?? ""
+                        adminState = admin.state ?? "Delhi"
+                        adminPincode = admin.pincode ?? ""
+                        
+                        print("UI Updated with admin data")
+                    }
+                } catch {
+                    // If we fail to get the admin directly, try a direct query
+                    print("ERROR: Failed to load admin with standard method: \(error.localizedDescription)")
+                    print("Trying direct database query...")
+                    
+                    let adminResult = try await supabase.select(
+                        from: "hospital_admins",
+                        where: "id",
+                        equals: editedHospital.id
+                    )
+                    
+                    guard let adminData = adminResult.first else {
+                        print("ERROR: No admin found with ID \(editedHospital.id) in direct query")
+                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Admin not found"])
+                    }
+                    
+                    print("Raw admin data from direct query: \(adminData)")
+                    
+                    await MainActor.run {
+                        if let adminName = adminData["admin_name"] as? String {
                             editedHospital.adminName = adminName
+                            print("Set admin name: \(adminName)")
                         }
                         
-                        if let contactNumber = admin["contact_number"] as? String {
+                        if let contactNumber = adminData["contact_number"] as? String {
                             editedHospital.phone = contactNumber
+                            print("Set contact number: \(contactNumber)")
                         }
                         
-                        if let email = admin["email"] as? String {
+                        if let email = adminData["email"] as? String {
                             editedHospital.email = email
+                            print("Set email: \(email)")
                         }
+                        
+                        // Set the admin address fields
+                        if let street = adminData["street"] as? String {
+                            adminStreet = street
+                            print("Set street: \(street)")
+                        }
+                        
+                        if let city = adminData["city"] as? String {
+                            adminCity = city
+                            print("Set city: \(city)")
+                        }
+                        
+                        if let state = adminData["state"] as? String {
+                            adminState = state
+                            print("Set state: \(state)")
+                        }
+                        
+                        if let pincode = adminData["pincode"] as? String {
+                            adminPincode = pincode
+                            print("Set pincode: \(pincode)")
+                        }
+                        
+                        print("UI Updated with admin data from direct query")
                     }
                 }
             } catch {
-                print("Error fetching admin data: \(error.localizedDescription)")
-                // We'll continue even if admin data fetch fails
+                print("CRITICAL ERROR fetching admin data: \(error.localizedDescription)")
+                // Create a more visible error alert if admin data fetch fails
+                await MainActor.run {
+                    errorMessage = "Failed to load admin information. \(error.localizedDescription)"
+                    showError = true
+                }
             }
         }
     }
@@ -716,7 +813,7 @@ struct EditHospitalForm: View {
                 )
             }
             
-            // ADMIN INFORMATION
+            // Admin Information Section
             Section {
                 DisclosureGroup(
                     isExpanded: $adminInfoExpanded,
@@ -738,6 +835,27 @@ struct EditHospitalForm: View {
                         TextField("Email", text: $editedHospital.email)
                             .keyboardType(.emailAddress)
                             .autocapitalization(.none)
+                        
+                        Text("Admin Address")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                            .padding(.top, 10)
+                        
+                        TextField("Street/Locality", text: $adminStreet)
+                        TextField("City", text: $adminCity)
+                        
+                        Picker("State", selection: $adminState) {
+                            ForEach(indianStates, id: \.self) { state in
+                                Text(state).tag(state)
+                            }
+                        }
+                        
+                        TextField("Pin Code", text: $adminPincode)
+                            .keyboardType(.numberPad)
+                            .onChange(of: adminPincode) { _, newValue in
+                                // Allow only digits and limit to 6 characters
+                                adminPincode = newValue.filter { $0.isNumber }.prefix(6).description
+                            }
                     },
                     label: {
                         HStack {
@@ -783,37 +901,54 @@ struct EditHospitalForm: View {
         editedHospital.lastModified = Date()
         editedHospital.lastModifiedBy = "Super Admin"
         
-        // First call the onSave callback for updating hospital data
-        onSave(editedHospital)
-        
-        // Then update the admin data in the hospital_admins table
         Task {
             do {
+                // First update the hospital data
+                let viewModel = SuperAdminDashboardViewModel()
+                try await viewModel.updateHospital(editedHospital)
+                
+                // Then update the admin data in the hospital_admins table
                 struct AdminUpdateData: Encodable {
                     let admin_name: String
                     let email: String 
                     let contact_number: String
+                    let street: String?
+                    let city: String?
+                    let state: String?
+                    let pincode: String?
                 }
                 
                 let adminUpdate = AdminUpdateData(
                     admin_name: editedHospital.adminName,
                     email: editedHospital.email,
-                    contact_number: editedHospital.phone
+                    contact_number: editedHospital.phone,
+                    street: adminStreet.isEmpty ? nil : adminStreet,
+                    city: adminCity.isEmpty ? nil : adminCity,
+                    state: adminState.isEmpty ? nil : adminState,
+                    pincode: adminPincode.isEmpty ? nil : adminPincode
                 )
+                
+                print("Updating admin data with: \(adminUpdate)")
                 
                 try await supabase.update(
                     table: "hospital_admins",
                     data: adminUpdate,
-                    where: "hospital_id",
+                    where: "id",
                     equals: editedHospital.id
                 )
                 
-                print("SUPABASE: Successfully updated admin data for hospital \(editedHospital.id)")
+                print("Successfully updated hospital and admin data")
                 
-            } catch {
-                print("Error updating admin data: \(error.localizedDescription)")
+                // Call onSave callback after all updates are complete
                 await MainActor.run {
-                    errorMessage = "Failed to update admin information: \(error.localizedDescription)"
+                    isLoading = false
+                    onSave(editedHospital)
+                    dismiss() // Dismiss the form after successful save
+                }
+            } catch {
+                print("Error updating data: \(error.localizedDescription)")
+                await MainActor.run {
+                    errorMessage = "Failed to update information: \(error.localizedDescription)"
                     showError = true
                     isLoading = false
                 }

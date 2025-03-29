@@ -54,19 +54,19 @@ enum Models {
     struct Patient: Codable, Identifiable {
         let id: String
         let userId: String
-        let name: String
-        let age: Int
-        let gender: String
+        var name: String
+        var age: Int
+        var gender: String
         let createdAt: Date
         let updatedAt: Date
-        let email: String?
-        let emailVerified: Bool?
-        let bloodGroup: String
-        let address: String?
-        let phoneNumber: String
-        let emergencyContactName: String?
-        let emergencyContactNumber: String
-        let emergencyRelationship: String
+        var email: String?
+        var emailVerified: Bool?
+        var bloodGroup: String
+        var address: String?
+        var phoneNumber: String
+        var emergencyContactName: String?
+        var emergencyContactNumber: String
+        var emergencyRelationship: String
         
         enum CodingKeys: String, CodingKey {
             case id
@@ -95,14 +95,26 @@ enum Models {
         let hospitalName: String
         let createdAt: Date
         let updatedAt: Date
+        let email: String
+        let contact_number: String?
+        let street: String?
+        let city: String?
+        let state: String?
+        let pincode: String?
         
         enum CodingKeys: String, CodingKey {
             case id
             case userId = "user_id"
-            case name
+            case name = "admin_name"
             case hospitalName = "hospital_name"
             case createdAt = "created_at"
             case updatedAt = "updated_at"
+            case email
+            case contact_number
+            case street
+            case city
+            case state
+            case pincode
         }
     }
 

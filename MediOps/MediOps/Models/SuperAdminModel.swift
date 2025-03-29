@@ -66,19 +66,133 @@ class SuperAdminDashboardViewModel: ObservableObject {
         
         Task {
             do {
-                let fetchedHospitals = try await supabase.fetchHospitals()
+                // First try to fetch hospitals from the controller
+                let fetchedHospitals = try await HospitalController.shared.getAllHospitals()
                 
                 await MainActor.run {
                     self.hospitals = fetchedHospitals
                     self.isLoading = false
                 }
             } catch {
-                await MainActor.run {
-                    self.errorMessage = "Failed to fetch hospitals: \(error.localizedDescription)"
-                    self.isLoading = false
+                // If that fails, try a direct Supabase query with more detailed error handling
+                do {
+                    print("First attempt failed, trying direct query: \(error.localizedDescription)")
+                    
+                    // Direct query to Supabase
+                    let hospitalsData = try await supabase.select(from: "hospitals")
+                    print("Successfully fetched \(hospitalsData.count) hospitals")
+                    
+                    var parsedHospitals: [Hospital] = []
+                    
+                    // Try to parse each hospital separately so one bad record doesn't break everything
+                    for hospitalData in hospitalsData {
+                        do {
+                            let hospital = try parseHospitalData(hospitalData)
+                            parsedHospitals.append(hospital)
+                        } catch {
+                            print("Error parsing hospital: \(error.localizedDescription)")
+                            // Continue with next hospital
+                        }
+                    }
+                    
+                    await MainActor.run {
+                        self.hospitals = parsedHospitals
+                        self.isLoading = false
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.errorMessage = "Failed to fetch hospitals: \(error.localizedDescription)"
+                        self.isLoading = false
+                        print("Fetch hospitals error: \(error)")
+                    }
                 }
             }
         }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func parseHospitalData(_ data: [String: Any]) throws -> Hospital {
+        // Print the raw data for debugging
+        print("Parsing hospital data: \(data)")
+        
+        guard
+            let id = data["id"] as? String,
+            let name = data["hospital_name"] as? String
+        else {
+            throw NSError(domain: "HospitalError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid hospital data"])
+        }
+        
+        // Set defaults for non-critical fields to prevent parsing failures
+        let adminName = data["admin_name"] as? String ?? "Unknown"
+        let licenseNumber = data["licence"] as? String ?? ""
+        let hospitalPhone = data["contact_number"] as? String ?? ""
+        let street = data["hospital_address"] as? String ?? ""
+        let city = data["hospital_city"] as? String ?? ""
+        let state = data["hospital_state"] as? String ?? ""
+        let zipCode = data["area_pincode"] as? String ?? ""
+        let email = data["email"] as? String ?? ""
+        let statusString = data["status"] as? String ?? "pending"
+        
+        // Parse dates with fallback to current date
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        
+        let createdAtString = data["created_at"] as? String
+        let registrationDate: Date
+        if let createdAtString = createdAtString, let date = dateFormatter.date(from: createdAtString) {
+            registrationDate = date
+        } else {
+            registrationDate = Date()
+        }
+        
+        let updatedAtString = data["updated_at"] as? String
+        let lastModified: Date
+        if let updatedAtString = updatedAtString, let date = dateFormatter.date(from: updatedAtString) {
+            lastModified = date
+        } else {
+            lastModified = Date()
+        }
+        
+        // Parse status enum with default value
+        let status: HospitalStatus
+        switch statusString.lowercased() {
+        case "active":
+            status = .active
+        case "inactive":
+            status = .inactive
+        default:
+            status = .pending
+        }
+        
+        let lastModifiedBy = data["last_modified_by"] as? String ?? "System"
+        
+        // Parse image data if available
+        let imageData: Data?
+        if let imageBase64 = data["hospital_profile_image"] as? String, !imageBase64.isEmpty {
+            imageData = Data(base64Encoded: imageBase64)
+        } else {
+            imageData = nil
+        }
+        
+        return Hospital(
+            id: id,
+            name: name,
+            adminName: adminName,
+            licenseNumber: licenseNumber,
+            hospitalPhone: hospitalPhone,
+            street: street,
+            city: city,
+            state: state,
+            zipCode: zipCode,
+            phone: hospitalPhone,
+            email: email,
+            status: status,
+            registrationDate: registrationDate,
+            lastModified: lastModified,
+            lastModifiedBy: lastModifiedBy,
+            imageData: imageData
+        )
     }
     
     func addHospital(_ hospital: Hospital) {
