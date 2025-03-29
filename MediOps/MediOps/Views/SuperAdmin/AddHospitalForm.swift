@@ -646,45 +646,100 @@ struct EditHospitalForm: View {
     private func fetchAdminData() {
         Task {
             do {
-                // Use AdminController to fetch hospital admin data instead of SupabaseController
-                let adminController = AdminController.shared
-                let hospitalAdmin = try await adminController.getHospitalAdmin(id: editedHospital.id)
+                print("==== FETCH ADMIN DATA ====")
+                print("Hospital ID: \(editedHospital.id)")
                 
-                if let admin = adminData {
+                // Fetch admin data with better error catching
+                do {
+                    // Use the AdminController to fetch the hospital admin data
+                    let admin = try await AdminController.shared.getHospitalAdmin(id: editedHospital.id)
+                    
+                    print("Successfully retrieved admin: \(admin.id), Name: \(admin.name), Email: \(admin.email)")
+                    print("Admin Address: Street: \(admin.street ?? "nil"), City: \(admin.city ?? "nil"), State: \(admin.state ?? "nil"), Pincode: \(admin.pincode ?? "nil")")
+                    
                     await MainActor.run {
-                        if let adminName = admin["admin_name"] as? String {
+                        // Set the admin data directly from the HospitalAdmin object
+                        editedHospital.adminName = admin.name
+                        
+                        // Use the correct field names from the HospitalAdmin model
+                        if let contactNum = admin.contact_number {
+                            editedHospital.phone = contactNum
+                        }
+                        editedHospital.email = admin.email
+                        
+                        // Set the admin address fields with proper null handling
+                        adminStreet = admin.street ?? ""
+                        adminCity = admin.city ?? ""
+                        adminState = admin.state ?? "Delhi"
+                        adminPincode = admin.pincode ?? ""
+                        
+                        print("UI Updated with admin data")
+                    }
+                } catch {
+                    // If we fail to get the admin directly, try a direct query
+                    print("ERROR: Failed to load admin with standard method: \(error.localizedDescription)")
+                    print("Trying direct database query...")
+                    
+                    let adminResult = try await supabase.select(
+                        from: "hospital_admins",
+                        where: "id",
+                        equals: editedHospital.id
+                    )
+                    
+                    guard let adminData = adminResult.first else {
+                        print("ERROR: No admin found with ID \(editedHospital.id) in direct query")
+                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Admin not found"])
+                    }
+                    
+                    print("Raw admin data from direct query: \(adminData)")
+                    
+                    await MainActor.run {
+                        if let adminName = adminData["admin_name"] as? String {
                             editedHospital.adminName = adminName
+                            print("Set admin name: \(adminName)")
                         }
                         
-                        if let contactNumber = admin["contact_number"] as? String {
+                        if let contactNumber = adminData["contact_number"] as? String {
                             editedHospital.phone = contactNumber
+                            print("Set contact number: \(contactNumber)")
                         }
                         
-                        if let email = admin["email"] as? String {
+                        if let email = adminData["email"] as? String {
                             editedHospital.email = email
+                            print("Set email: \(email)")
                         }
                         
-                        // Fetch admin address fields
-                        if let street = admin["street"] as? String {
+                        // Set the admin address fields
+                        if let street = adminData["street"] as? String {
                             adminStreet = street
+                            print("Set street: \(street)")
                         }
                         
-                        if let city = admin["city"] as? String {
+                        if let city = adminData["city"] as? String {
                             adminCity = city
+                            print("Set city: \(city)")
                         }
                         
-                        if let state = admin["state"] as? String {
+                        if let state = adminData["state"] as? String {
                             adminState = state
+                            print("Set state: \(state)")
                         }
                         
-                        if let pincode = admin["pincode"] as? String {
+                        if let pincode = adminData["pincode"] as? String {
                             adminPincode = pincode
+                            print("Set pincode: \(pincode)")
                         }
+                        
+                        print("UI Updated with admin data from direct query")
                     }
                 }
             } catch {
-                print("Error fetching admin data: \(error.localizedDescription)")
-                // We'll continue even if admin data fetch fails
+                print("CRITICAL ERROR fetching admin data: \(error.localizedDescription)")
+                // Create a more visible error alert if admin data fetch fails
+                await MainActor.run {
+                    errorMessage = "Failed to load admin information. \(error.localizedDescription)"
+                    showError = true
+                }
             }
         }
     }
@@ -846,45 +901,54 @@ struct EditHospitalForm: View {
         editedHospital.lastModified = Date()
         editedHospital.lastModifiedBy = "Super Admin"
         
-        // First call the onSave callback for updating hospital data
-        onSave(editedHospital)
-        
-        // Then update the admin data in the hospital_admins table
         Task {
             do {
+                // First update the hospital data
+                let viewModel = SuperAdminDashboardViewModel()
+                try await viewModel.updateHospital(editedHospital)
+                
+                // Then update the admin data in the hospital_admins table
                 struct AdminUpdateData: Encodable {
                     let admin_name: String
                     let email: String 
                     let contact_number: String
-                    let street: String
-                    let city: String
-                    let state: String
-                    let pincode: String
+                    let street: String?
+                    let city: String?
+                    let state: String?
+                    let pincode: String?
                 }
                 
                 let adminUpdate = AdminUpdateData(
                     admin_name: editedHospital.adminName,
                     email: editedHospital.email,
                     contact_number: editedHospital.phone,
-                    street: adminStreet,
-                    city: adminCity,
-                    state: adminState,
-                    pincode: adminPincode
+                    street: adminStreet.isEmpty ? nil : adminStreet,
+                    city: adminCity.isEmpty ? nil : adminCity,
+                    state: adminState.isEmpty ? nil : adminState,
+                    pincode: adminPincode.isEmpty ? nil : adminPincode
                 )
+                
+                print("Updating admin data with: \(adminUpdate)")
                 
                 try await supabase.update(
                     table: "hospital_admins",
                     data: adminUpdate,
-                    where: "hospital_id",
+                    where: "id",
                     equals: editedHospital.id
                 )
                 
-                print("SUPABASE: Successfully updated admin data for hospital \(editedHospital.id)")
+                print("Successfully updated hospital and admin data")
                 
-            } catch {
-                print("Error updating admin data: \(error.localizedDescription)")
+                // Call onSave callback after all updates are complete
                 await MainActor.run {
-                    errorMessage = "Failed to update admin information: \(error.localizedDescription)"
+                    isLoading = false
+                    onSave(editedHospital)
+                    dismiss() // Dismiss the form after successful save
+                }
+            } catch {
+                print("Error updating data: \(error.localizedDescription)")
+                await MainActor.run {
+                    errorMessage = "Failed to update information: \(error.localizedDescription)"
                     showError = true
                     isLoading = false
                 }

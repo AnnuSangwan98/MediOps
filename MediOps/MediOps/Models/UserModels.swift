@@ -95,14 +95,26 @@ enum Models {
         let hospitalName: String
         let createdAt: Date
         let updatedAt: Date
+        let email: String
+        let contact_number: String?
+        let street: String?
+        let city: String?
+        let state: String?
+        let pincode: String?
         
         enum CodingKeys: String, CodingKey {
             case id
             case userId = "user_id"
-            case name
+            case name = "admin_name"
             case hospitalName = "hospital_name"
             case createdAt = "created_at"
             case updatedAt = "updated_at"
+            case email
+            case contact_number
+            case street
+            case city
+            case state
+            case pincode
         }
     }
 
