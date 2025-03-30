@@ -37,16 +37,18 @@ struct LabAdminLoginView: View {
             VStack(spacing: 30) {
                 // Logo and Header
                 VStack(spacing: 15) {
-                    Image(systemName: "flask.fill")
-                        .resizable()
-                        .frame(width: 80, height: 80)
-                        .foregroundColor(.teal)
-                        .padding()
-                        .background(
-                            Circle()
-                                .fill(Color.white)
-                                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
-                        )
+                    ZStack {
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 120, height: 120)
+                            .shadow(color: .gray.opacity(0.2), radius: 10)
+                        
+                        Image(systemName: "flask.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 60, height: 60)
+                            .foregroundColor(.teal)
+                    }
                     
                     Text("Lab Admin Login")
                         .font(.system(size: 32, weight: .bold))
@@ -150,7 +152,7 @@ struct LabAdminLoginView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .navigationBarItems(leading: CustomBackButtons())
+        .navigationBarItems(leading: CustomBackButton())
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
         } message: {

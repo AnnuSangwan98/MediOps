@@ -102,7 +102,7 @@ struct DoctorLoginView: View {
                             }
                         }
                         
-                        Text("Must be at least 8 characters with exactly one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)")
+                        Text("Must contain at least 8 characters, one uppercase letter, one number, and one special character")
                             .font(.caption)
                             .foregroundColor(.gray)
                             .padding(.top, 4)

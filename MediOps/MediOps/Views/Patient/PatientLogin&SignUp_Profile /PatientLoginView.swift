@@ -13,6 +13,7 @@ struct PatientLoginView: View {
     @State private var currentOTP: String = ""
     @State private var navigationPath = NavigationPath()
     @State private var isAuthenticated = false
+    @State private var showPassword = false
     
     private var isloginButtonEnabled: Bool {
         !email.isEmpty && !password.isEmpty && isValidEmail(email) && password.count >= 8
@@ -67,9 +68,39 @@ struct PatientLoginView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
                             
-                            SecureField("Enter password (minimum 8 characters)", text: $password)
-                                .textContentType(.password)
-                                .textFieldStyle(CustomTextFieldStyle())
+                            ZStack(alignment: .trailing) {
+                                Group {
+                                    if showPassword {
+                                        TextField("Enter your password", text: $password)
+                                            .textContentType(.password)
+                                            .autocapitalization(.none)
+                                    } else {
+                                        SecureField("Enter your password", text: $password)
+                                            .textContentType(.password)
+                                    }
+                                }
+                                .padding(15)
+                                .padding(.trailing, 30)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color.white)
+                                        .shadow(color: .gray.opacity(0.1), radius: 5, x: 0, y: 2)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                )
+                                
+                                Button(action: {
+                                    showPassword.toggle()
+                                }) {
+                                    Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(.gray)
+                                }
+                                .padding(.trailing, 20)
+                            }
+                            
                             if !password.isEmpty && password.count < 8 {
                                 Text("Password must be at least 8 characters")
                                     .font(.caption)
@@ -89,7 +120,7 @@ struct PatientLoginView: View {
                                     ProgressView()
                                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                 } else {
-                                    Text("Proceed")
+                                    Text("Login")
                                         .font(.title3)
                                         .fontWeight(.semibold)
                                     Image(systemName: "arrow.right")
@@ -100,16 +131,15 @@ struct PatientLoginView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 55)
                             .background(
-                                isloginButtonEnabled ?
-                                LinearGradient(gradient: Gradient(colors: [Color.teal, Color.teal.opacity(0.8)]),
-                                               startPoint: .leading,
-                                               endPoint: .trailing) :
-                                    LinearGradient(gradient: Gradient(colors: [Color.gray, Color.gray]),
-                                                   startPoint: .leading,
-                                                   endPoint: .trailing)
+                                LinearGradient(gradient: Gradient(colors: [
+                                    isloginButtonEnabled ? Color.teal : Color.gray.opacity(0.5),
+                                    isloginButtonEnabled ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
+                                ]),
+                                startPoint: .leading,
+                                endPoint: .trailing)
                             )
                             .cornerRadius(15)
-                            .shadow(color: isloginButtonEnabled ? .teal.opacity(0.3) : .gray.opacity(0.3), radius: 5, x: 0, y: 5)
+                            .shadow(color: isloginButtonEnabled ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
                         }
                         .disabled(!isloginButtonEnabled || isLoading)
                         .padding(.top, 10)
