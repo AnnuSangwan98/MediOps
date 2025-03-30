@@ -155,7 +155,7 @@ struct PatientLoginView: View {
         .onAppear {
             print("PatientLoginView appeared")
         }
-        .onChange(of: isAuthenticated) { newValue in
+        .onChange(of: isAuthenticated) { oldValue, newValue in
             if newValue {
                 navigationState.signIn(as: .patient)
             }

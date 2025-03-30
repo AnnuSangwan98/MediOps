@@ -119,8 +119,9 @@ struct SuperAdminLoginView: View {
                 Spacer()
             }
             
-            NavigationLink(destination: SuperAdminDashboardView(), isActive: $isLoggedIn) {
-                EmptyView()
+            // Use modern navigation API
+            .navigationDestination(isPresented: $isLoggedIn) {
+                SuperAdminDashboardView()
             }
         }
         .navigationBarBackButtonHidden(true)
