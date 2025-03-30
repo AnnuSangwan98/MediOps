@@ -416,14 +416,15 @@ extension SupabaseController {
             print("Creating pat_reports table...")
             // The table doesn't exist or there was another error, let's create the table
             let createTableSQL = """
-            CREATE TABLE IF NOT EXISTS pat_reports (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                patient_name TEXT NOT NULL,
-                patient_id TEXT NOT NULL,
-                summary TEXT,
-                file_url TEXT NOT NULL,
-                uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-            );
+            CREATE TABLE IF NOT EXISTS public.pat_reports (
+              id uuid not null default gen_random_uuid(),
+              patient_name text not null,
+              patient_id text not null,
+              summary text null,
+              file_url text not null,
+              uploaded_at timestamp with time zone not null default timezone('utc'::text, now()),
+              constraint pat_reports_pkey primary key (id)
+            ) TABLESPACE pg_default;
             """
             
             // Execute the SQL through Supabase
@@ -437,9 +438,12 @@ extension SupabaseController {
             let parameters: [String: Any] = ["sql": createTableSQL]
             request.httpBody = try? JSONSerialization.data(withJSONObject: parameters)
             
-            let (_, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                if let errorStr = String(data: data, encoding: .utf8) {
+                    print("SUPABASE ERROR: Failed to create pat_reports table - \(errorStr)")
+                }
                 throw SupabaseError.requestFailed("Failed to create pat_reports table")
             }
             

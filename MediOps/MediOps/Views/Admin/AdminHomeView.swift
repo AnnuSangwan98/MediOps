@@ -207,7 +207,7 @@ struct AdminHomeView: View {
                 }
             }
             .sheet(isPresented: $showProfile) {
-                AdminProfileView()
+                HospitalAdminProfileView()
             }
         }
     }

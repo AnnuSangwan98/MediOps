@@ -12,18 +12,39 @@ struct PatientReport: Identifiable {
     let uploadedAt: Date
     
     init(from data: [String: Any]) {
-        self.id = UUID(uuidString: data["id"] as? String ?? "") ?? UUID()
+        // Extract id as UUID
+        if let idString = data["id"] as? String, let uuid = UUID(uuidString: idString) {
+            self.id = uuid
+        } else {
+            self.id = UUID()
+            print("Warning: Invalid or missing UUID for report")
+        }
+        
+        // Extract required fields with fallbacks
         self.patientName = data["patient_name"] as? String ?? "Unknown"
         self.patientId = data["patient_id"] as? String ?? "Unknown"
+        
+        // Extract optional summary
         self.summary = data["summary"] as? String
+        
+        // Extract required file URL
         self.fileUrl = data["file_url"] as? String ?? ""
         
-        // Parse the date
+        // Parse uploaded_at timestamp
         if let dateString = data["uploaded_at"] as? String {
             let formatter = ISO8601DateFormatter()
-            self.uploadedAt = formatter.date(from: dateString) ?? Date()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            
+            if let date = formatter.date(from: dateString) {
+                self.uploadedAt = date
+            } else {
+                // Try without fractional seconds if first attempt fails
+                formatter.formatOptions = [.withInternetDateTime]
+                self.uploadedAt = formatter.date(from: dateString) ?? Date()
+            }
         } else {
             self.uploadedAt = Date()
+            print("Warning: No uploaded_at date for report")
         }
     }
 }
@@ -32,51 +53,77 @@ struct PatientReport: Identifiable {
 struct PatientReportCard: View {
     let report: PatientReport
     var onTap: () -> Void
+    var onEdit: () -> Void
+    var onDelete: () -> Void
+    
+    @State private var showOptions = false
     
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(report.patientName)
-                            .font(.headline)
-                        Text("Patient ID: \(report.patientId)")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                    Spacer()
-                    Text(formatDate(report.uploadedAt))
-                        .font(.caption)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(report.patientName)
+                        .font(.headline)
+                    Text("Patient ID: \(report.patientId)")
+                        .font(.subheadline)
                         .foregroundColor(.gray)
                 }
+                Spacer()
                 
-                if let summary = report.summary, !summary.isEmpty {
-                    Text(summary)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .padding(.top, 4)
-                }
-                
-                HStack {
-                    Image(systemName: "doc.text")
-                        .foregroundColor(.blue)
-                    Text("View Report")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                .padding(.top, 8)
+                Text(formatDate(report.uploadedAt))
+                    .font(.caption)
+                    .foregroundColor(.gray)
             }
-            .padding()
-            .background(Color.white)
-            .cornerRadius(12)
-            .shadow(color: .gray.opacity(0.2), radius: 5)
+            
+            if let summary = report.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .padding(.top, 4)
+            }
+            
+            HStack {
+                Button(action: onTap) {
+                    HStack {
+                        Image(systemName: "doc.text")
+                            .foregroundColor(.blue)
+                        Text("View Report")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Spacer()
+                
+                // Three dots menu button
+                Menu {
+                    Button(action: onEdit) {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 18))
+                        .foregroundColor(.gray)
+                }
+                .padding(.horizontal, 8)
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            .padding(.top, 8)
         }
-        .buttonStyle(PlainButtonStyle())
+        .padding()
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
     }
     
     private func formatDate(_ date: Date) -> String {
@@ -282,13 +329,24 @@ struct PatientReportDetailView: View {
                 Text(errorMessage)
             }
             .onAppear {
-                generatePDF()
+                loadReport()
             }
         }
     }
     
+    private func loadReport() {
+        // If the report's fileUrl starts with "generated_pdf", we'll generate a PDF
+        // Otherwise, we'll try to load the PDF from the URL
+        if report.fileUrl.starts(with: "generated_pdf") {
+            generatePDF()
+        } else {
+            // For real URLs, attempt to load the PDF
+            loadPDFFromURL()
+        }
+    }
+    
     private func generatePDF() {
-        // Simulate a brief loading time
+        // Generate a PDF from the report data
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             if let generatedPDF = PDFGenerator.generateLabReportPDF(report: report) {
                 pdfData = generatedPDF
@@ -301,11 +359,57 @@ struct PatientReportDetailView: View {
         }
     }
     
+    private func loadPDFFromURL() {
+        guard let url = URL(string: report.fileUrl) else {
+            isLoadingPdf = false
+            errorMessage = "Invalid report URL"
+            showError = true
+            return
+        }
+        
+        // Use URLSession to download the PDF
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            DispatchQueue.main.async {
+                isLoadingPdf = false
+                
+                if let error = error {
+                    errorMessage = "Failed to load PDF: \(error.localizedDescription)"
+                    showError = true
+                    return
+                }
+                
+                guard let data = data, let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    errorMessage = "Failed to load PDF from server"
+                    showError = true
+                    return
+                }
+                
+                // Check if the data is a valid PDF
+                if PDFDocument(data: data) != nil {
+                    pdfData = data
+                } else {
+                    // If not a valid PDF, generate one instead
+                    pdfData = PDFGenerator.generateLabReportPDF(report: report)
+                    if pdfData == nil {
+                        errorMessage = "Invalid PDF format"
+                        showError = true
+                    }
+                }
+            }
+        }.resume()
+    }
+    
     private func sharePDF() {
         guard let pdfData = pdfData else { return }
         
+        // Create a formatted filename with patient ID and date
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd"
+        let dateString = dateFormatter.string(from: report.uploadedAt)
+        let fileName = "Lab_Report_\(report.patientId)_\(dateString).pdf"
+        
         // Create a temporary URL to store the PDF
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(report.patientName)_Lab_Report.pdf")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         
         do {
             // Write PDF data to temporary file
@@ -396,19 +500,26 @@ struct AddReportView: View {
     private func addReport() {
         isLoading = true
         
-        // Generate a dummy URL to maintain compatibility with existing database structure
+        // Generate a placeholder for the file_url, which will be used to identify this is a generated PDF
         let placeholderUrl = "generated_pdf_\(UUID().uuidString)"
         
+        // Create a new report with the required fields following the table definition
         let newReport: [String: Any] = [
             "patient_name": patientName,
             "patient_id": patientId,
             "summary": summary,
-            "file_url": placeholderUrl // We're not using a real URL anymore
+            "file_url": placeholderUrl // Required field in the database schema
         ]
         
         Task {
             do {
+                // First ensure the table exists
+                try await supabase.ensurePatReportsTableExists()
+                
+                // Insert the new report
                 try await supabase.insert(into: "pat_reports", values: newReport)
+                
+                print("Report successfully added to pat_reports table")
                 
                 await MainActor.run {
                     isLoading = false
@@ -416,9 +527,112 @@ struct AddReportView: View {
                     dismiss()
                 }
             } catch {
+                print("ERROR adding report: \(error.localizedDescription)")
+                
                 await MainActor.run {
                     isLoading = false
                     errorMessage = "Failed to add report: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Edit Report View
+struct EditReportView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var patientName: String
+    @State private var patientId: String
+    @State private var summary: String
+    
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    
+    private let supabase = SupabaseController.shared
+    private let report: PatientReport
+    
+    var onReportUpdated: () -> Void
+    
+    init(report: PatientReport, onReportUpdated: @escaping () -> Void) {
+        self.report = report
+        self._patientName = State(initialValue: report.patientName)
+        self._patientId = State(initialValue: report.patientId)
+        self._summary = State(initialValue: report.summary ?? "")
+        self.onReportUpdated = onReportUpdated
+    }
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text("Patient Information")) {
+                    TextField("Patient Name", text: $patientName)
+                    TextField("Patient ID", text: $patientId)
+                }
+                
+                Section(header: Text("Report Details")) {
+                    TextField("Report Summary", text: $summary, axis: .vertical)
+                        .lineLimit(5...10)
+                }
+                
+                Section {
+                    Button(action: updateReport) {
+                        HStack {
+                            Text("Update Report")
+                            if isLoading {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty)
+                }
+            }
+            .navigationTitle("Edit Report")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage)
+            }
+        }
+    }
+    
+    private func updateReport() {
+        isLoading = true
+        
+        // Create updated report with the edited fields
+        let updatedReport: [String: Any] = [
+            "patient_name": patientName,
+            "patient_id": patientId,
+            "summary": summary
+        ]
+        
+        Task {
+            do {
+                // Update the report in Supabase
+                try await supabase.update(table: "pat_reports", id: report.id.uuidString, data: updatedReport)
+                
+                print("Report successfully updated in pat_reports table")
+                
+                await MainActor.run {
+                    isLoading = false
+                    onReportUpdated()
+                    dismiss()
+                }
+            } catch {
+                print("ERROR updating report: \(error.localizedDescription)")
+                
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Failed to update report: \(error.localizedDescription)"
                     showError = true
                 }
             }
@@ -436,6 +650,10 @@ struct PatientReportsView: View {
     @State private var selectedReport: PatientReport?
     @State private var showReportDetail = false
     @State private var showAddReport = false
+    @State private var showEditReport = false
+    @State private var reportToEdit: PatientReport?
+    @State private var showDeleteConfirmation = false
+    @State private var reportToDelete: PatientReport?
     
     private let supabase = SupabaseController.shared
     
@@ -523,10 +741,21 @@ struct PatientReportsView: View {
                         } else {
                             // Reports List
                             ForEach(filteredReports) { report in
-                                PatientReportCard(report: report) {
-                                    selectedReport = report
-                                    showReportDetail = true
-                                }
+                                PatientReportCard(
+                                    report: report,
+                                    onTap: {
+                                        selectedReport = report
+                                        showReportDetail = true
+                                    },
+                                    onEdit: {
+                                        reportToEdit = report
+                                        showEditReport = true
+                                    },
+                                    onDelete: {
+                                        reportToDelete = report
+                                        showDeleteConfirmation = true
+                                    }
+                                )
                                 .padding(.horizontal)
                             }
                         }
@@ -561,13 +790,33 @@ struct PatientReportsView: View {
                 }
             }
         }
+        .sheet(isPresented: $showEditReport) {
+            if let report = reportToEdit {
+                EditReportView(report: report) {
+                    // This closure is called when a report is updated
+                    Task {
+                        await fetchPatientReports()
+                    }
+                }
+            }
+        }
+        .alert("Delete Report", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                if let report = reportToDelete {
+                    deleteReport(report)
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this report? This action cannot be undone.")
+        }
     }
     
     private func fetchPatientReports() async {
         isLoading = true
         
         do {
-            // Ensure the pat_reports table exists
+            // Ensure the pat_reports table exists with the correct schema
             try await supabase.ensurePatReportsTableExists()
             
             // Fetch reports from Supabase
@@ -577,7 +826,18 @@ struct PatientReportsView: View {
             // If no reports exist, insert a sample one for testing
             if patientReportsData.isEmpty {
                 print("No reports found, adding sample data")
-                try await supabase.insertSamplePatientReport()
+                
+                // Sample report data matching the table schema
+                let sampleReport: [String: Any] = [
+                    "patient_name": "Sample Patient",
+                    "patient_id": "PAT001",
+                    "summary": "This is a sample lab report for demonstration purposes.",
+                    "file_url": "generated_pdf_sample"
+                ]
+                
+                try await supabase.insert(into: "pat_reports", values: sampleReport)
+                print("Sample report added successfully")
+                
                 // Fetch again after adding sample
                 let refreshedData = try await supabase.select(from: "pat_reports")
                 await updateReportsUI(with: refreshedData)
@@ -591,6 +851,26 @@ struct PatientReportsView: View {
                 errorMessage = "Failed to fetch reports: \(error.localizedDescription)"
                 showError = true
                 isLoading = false
+            }
+        }
+    }
+    
+    private func deleteReport(_ report: PatientReport) {
+        Task {
+            do {
+                // Delete the report from Supabase
+                try await supabase.delete(from: "pat_reports", where: "id", equals: report.id.uuidString)
+                print("Report successfully deleted from pat_reports table")
+                
+                // Refresh the reports list
+                await fetchPatientReports()
+            } catch {
+                print("ERROR deleting report: \(error.localizedDescription)")
+                
+                await MainActor.run {
+                    errorMessage = "Failed to delete report: \(error.localizedDescription)"
+                    showError = true
+                }
             }
         }
     }
