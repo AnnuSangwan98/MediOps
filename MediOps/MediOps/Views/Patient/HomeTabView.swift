@@ -46,12 +46,12 @@ struct HomeTabView: View {
                 }
                 .tag(2)
                 
-            ProfileView()
-                .tabItem {
-                    Image(systemName: selectedTab == 3 ? "person.fill" : "person")
-                    Text("Profile")
-                }
-                .tag(3)
+//            ProfileView()
+//                .tabItem {
+//                    Image(systemName: selectedTab == 3 ? "person.fill" : "person")
+//                    Text("Profile")
+//                }
+//                .tag(3)
         }
         .accentColor(.blue)
         .onAppear {
