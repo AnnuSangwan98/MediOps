@@ -23,6 +23,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets/Assets.xcassets,
+				Services/email_server.sh,
 				Views/otp_verification_template.html,
 			);
 			target = EFC466342D830B79001C272D /* MediOps */;
