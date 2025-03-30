@@ -1,17 +1,20 @@
 import SwiftUI
 
-struct AdminLoginView: View {
+// Add extension for lab admin specific auth errors
+extension AuthError {
+    static let missingHospitalInfo = AuthError.custom("Missing hospital information for lab admin")
+}
+
+struct LabAdminLoginView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var adminId: String = ""
+    @State private var labId: String = ""
     @State private var password: String = ""
     @State private var isLoggedIn: Bool = false
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
-    @State private var newPassword: String = ""
-    @State private var confirmPassword: String = ""
     @State private var isPasswordVisible: Bool = false
     @State private var isLoading: Bool = false
-    @State private var navigateToAdminHome: Bool = false
+    @State private var navigateToLabAdminHome: Bool = false
     
     // Services
     private let supabase = SupabaseController.shared
@@ -19,13 +22,8 @@ struct AdminLoginView: View {
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
-        return !adminId.isEmpty && !password.isEmpty &&
-               isValidAdminId(adminId) && isValidPassword(password)
-    }
-    
-    private var isValidPasswordChange: Bool {
-        return !newPassword.isEmpty && !confirmPassword.isEmpty &&
-               newPassword == confirmPassword && isValidPassword(newPassword)
+        return !labId.isEmpty && !password.isEmpty &&
+               isValidLabId(labId) && isValidPassword(password)
     }
     
     var body: some View {
@@ -39,7 +37,7 @@ struct AdminLoginView: View {
             VStack(spacing: 30) {
                 // Logo and Header
                 VStack(spacing: 15) {
-                    Image(systemName: "person.badge.key.fill")
+                    Image(systemName: "flask.fill")
                         .resizable()
                         .frame(width: 80, height: 80)
                         .foregroundColor(.teal)
@@ -50,7 +48,7 @@ struct AdminLoginView: View {
                                 .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
                         )
                     
-                    Text("Admin Login")
+                    Text("Lab Admin Login")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.teal)
                 }
@@ -58,22 +56,22 @@ struct AdminLoginView: View {
                 
                 // Login Form
                 VStack(spacing: 25) {
-                    // Admin ID field
+                    // Lab Admin ID field
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Admin ID")
+                        Text("Lab Admin ID")
                             .font(.subheadline)
                             .foregroundColor(.gray)
                         
-                        TextField("Enter admin ID (e.g. HOS001)", text: $adminId)
+                        TextField("Enter lab ID (e.g. LAB002)", text: $labId)
                             .textFieldStyle(CustomTextFieldStyles())
-                            .onChange(of: adminId) { _, newValue in
-                                // Automatically format to uppercase for "HOS" part
+                            .onChange(of: labId) { _, newValue in
+                                // Automatically format to uppercase for "LAB" part
                                 if newValue.count >= 3 {
-                                    let hosPrefix = newValue.prefix(3).uppercased()
+                                    let labPrefix = newValue.prefix(3).uppercased()
                                     let numericPart = newValue.dropFirst(3)
-                                    adminId = hosPrefix + numericPart
+                                    labId = labPrefix + numericPart
                                 } else if newValue.count > 0 {
-                                    adminId = newValue.uppercased()
+                                    labId = newValue.uppercased()
                                 }
                             }
                     }
@@ -147,9 +145,8 @@ struct AdminLoginView: View {
                 Spacer()
             }
             
-            // Modern navigation API
-            .navigationDestination(isPresented: $navigateToAdminHome) {
-                AdminHomeView()
+            NavigationLink(destination: LabAdminHomeView(), isActive: $navigateToLabAdminHome) {
+                EmptyView()
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -184,38 +181,46 @@ struct AdminLoginView: View {
         
         Task {
             do {
-                // Query the hospital_admins table directly to find the admin with the matching ID
-                let admins = try await supabase.select(
-                    from: "hospitals",
+                // Query the lab_admins table directly to find the lab admin with the matching ID
+                let labAdmins = try await supabase.select(
+                    from: "lab_admins",
                     where: "id",
-                    equals: adminId
+                    equals: labId
                 )
                 
-                // Check if admin exists
-                guard let admin = admins.first else {
-                    print("Login failed: No admin found with ID \(adminId)")
+                // Check if lab admin exists
+                guard let labAdmin = labAdmins.first else {
+                    print("Login failed: No lab admin found with ID \(labId)")
                     throw AuthError.userNotFound
                 }
                 
                 // Verify password
-                guard let storedPassword = admin["password"] as? String,
+                guard let storedPassword = labAdmin["password"] as? String,
                       storedPassword == password else {
-                    print("Login failed: Invalid password for admin \(adminId)")
+                    print("Login failed: Invalid password for lab admin \(labId)")
                     throw AuthError.invalidCredentials
                 }
                 
-                print("Admin authentication successful for ID: \(adminId)")
+                print("Lab admin authentication successful for ID: \(labId)")
                 
-                // Store hospital ID in UserDefaults
-                UserDefaults.standard.set(adminId, forKey: "hospital_id")
-                print("Saved hospital ID to UserDefaults: \(adminId)")
+                // Get the hospital ID associated with this lab admin
+                guard let hospitalId = labAdmin["hospital_id"] as? String else {
+                    print("Login failed: No hospital ID associated with lab admin \(labId)")
+                    throw AuthError.missingHospitalInfo
+                }
+                
+                // Store lab admin ID and hospital ID in UserDefaults
+                UserDefaults.standard.set(labId, forKey: "lab_admin_id")
+                UserDefaults.standard.set(hospitalId, forKey: "hospital_id")
+                print("Saved lab admin ID to UserDefaults: \(labId)")
+                print("Saved hospital ID to UserDefaults: \(hospitalId)")
                 
                 await MainActor.run {
                     isLoading = false
-                    // Update navigation state and sign in as hospital admin
-                    navigationState.signIn(as: .hospitalAdmin)
-                    // Navigate to admin dashboard
-                    navigateToAdminHome = true
+                    // Update navigation state and sign in as lab admin
+                    navigationState.signIn(as: .labAdmin)
+                    // Navigate to lab admin dashboard
+                    navigateToLabAdminHome = true
                 }
             } catch let error as AuthError {
                 await MainActor.run {
@@ -233,13 +238,13 @@ struct AdminLoginView: View {
         }
     }
     
-    // Validates that the admin ID is in format HOS followed by numbers
-    private func isValidAdminId(_ id: String) -> Bool {
-        let adminIdRegex = #"^HOS\d+$"#
-        return NSPredicate(format: "SELF MATCHES %@", adminIdRegex).evaluate(with: id)
+    // Validates that the lab ID is in format LAB followed by 3 digits
+    private func isValidLabId(_ id: String) -> Bool {
+        let labIdRegex = #"^LAB\d{3}$"#
+        return NSPredicate(format: "SELF MATCHES %@", labIdRegex).evaluate(with: id)
     }
     
-    // Validates password complexity
+    // Validates password complexity according to the Supabase table constraint
     private func isValidPassword(_ password: String) -> Bool {
         // At least 8 characters
         guard password.count >= 8 else { return false }
@@ -248,50 +253,24 @@ struct AdminLoginView: View {
         let uppercaseRegex = ".*[A-Z]+.*"
         guard NSPredicate(format: "SELF MATCHES %@", uppercaseRegex).evaluate(with: password) else { return false }
         
+        // Check for at least one lowercase letter
+        let lowercaseRegex = ".*[a-z]+.*"
+        guard NSPredicate(format: "SELF MATCHES %@", lowercaseRegex).evaluate(with: password) else { return false }
+        
         // Check for at least one number
         let numberRegex = ".*[0-9]+.*"
         guard NSPredicate(format: "SELF MATCHES %@", numberRegex).evaluate(with: password) else { return false }
         
-        // Check for at least one special character
-        let specialCharRegex = ".*[@#$%^&*()\\-_=+\\[\\]{}|;:'\",.<>/?]+.*"
+        // Check for at least one special character (@$!%*?&)
+        let specialCharRegex = ".*[@$!%*?&]+.*"
         guard NSPredicate(format: "SELF MATCHES %@", specialCharRegex).evaluate(with: password) else { return false }
         
         return true
     }
 }
 
-
-// Custom TextField Style
-struct CustomTextFieldStyles: TextFieldStyle {
-    func _body(configuration: TextField<Self._Label>) -> some View {
-        configuration
-            .padding()
-            .background(Color.white)
-            .cornerRadius(10)
-            .shadow(color: .gray.opacity(0.1), radius: 5, x: 0, y: 2)
-    }
-}
-
-// Custom Back Button
-struct CustomBackButtons: View {
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        Button(action: {
-            dismiss()
-        }) {
-            Image(systemName: "chevron.left")
-                .foregroundColor(.teal)
-                .font(.system(size: 16, weight: .semibold))
-                .padding(10)
-                .background(Circle().fill(Color.white))
-                .shadow(color: .gray.opacity(0.2), radius: 3)
-        }
-    }
-}
-
 #Preview {
     NavigationStack {
-        AdminLoginView()
+        LabAdminLoginView()
     }
-}
+} 
