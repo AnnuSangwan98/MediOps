@@ -115,182 +115,92 @@ class HospitalViewModel: ObservableObject {
         error = nil
         
         do {
-            print("🏥 HospitalViewModel: Starting hospital fetch")
-            
-            // Use direct custom SQL query to ensure filters are applied properly
-            let queryTable = "hospitals"
-            let queryEndpoint = "\(supabase.supabaseURL)/rest/v1/rpc/execute_sql"
-            
-            var queryParams: [String] = []
-            // Always include active hospitals
-            queryParams.append("status = 'active'")
+            // Construct the SQL query with proper escaping
+            var conditions = ["status = 'active'"]
             
             if !searchText.isEmpty {
                 let escapedSearch = searchText.replacingOccurrences(of: "'", with: "''")
-                queryParams.append("hospital_name ilike '%\(escapedSearch)%'")
+                conditions.append("hospital_name ilike '%\(escapedSearch)%'")
             }
             
-            if let city = selectedCity, !city.isEmpty {
+            if let city = selectedCity {
                 let escapedCity = city.replacingOccurrences(of: "'", with: "''")
-                queryParams.append("hospital_city = '\(escapedCity)'")
+                conditions.append("hospital_city = '\(escapedCity)'")
             }
             
-            // Try first with a direct table select (without SQL function)
-            print("🏥 Attempting direct table fetch from \(queryTable)")
-            var results: [[String: Any]] = []
+            let query = "select * from hospitals where \(conditions.joined(separator: " and "))"
+            print("SUPABASE QUERY: \(query)") // Debug log
             
-            do {
-                results = try await supabase.select(from: queryTable)
-                print("🏥 Direct fetch successful! Found \(results.count) hospitals")
-            } catch {
-                print("⚠️ Direct fetch failed: \(error.localizedDescription)")
-                print("🔄 Attempting backup fetch method...")
-                
-                // If simple fetch fails, try with an HTTP request directly
-                let url = URL(string: "\(supabase.supabaseURL)/rest/v1/hospitals?select=*")!
-                var request = URLRequest(url: url)
-                request.httpMethod = "GET"
-                request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
-                request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-                request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-                
-                do {
-                    let (data, response) = try await URLSession.shared.data(for: request)
-                    
-                    if let httpResponse = response as? HTTPURLResponse {
-                        print("🌐 Response status: \(httpResponse.statusCode)")
-                        
-                        if httpResponse.statusCode == 200 {
-                            if let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                                results = jsonArray
-                                print("✅ Backup fetch successful! Found \(results.count) hospitals")
-                            } else {
-                                print("❌ Failed to parse JSON from backup fetch")
-                                if let responseString = String(data: data, encoding: .utf8) {
-                                    print("Response data: \(responseString)")
-                                }
-                            }
-                        } else {
-                            print("❌ Backup fetch failed with status \(httpResponse.statusCode)")
-                            if let responseString = String(data: data, encoding: .utf8) {
-                                print("Error response: \(responseString)")
-                            }
-                        }
-                    }
-                } catch {
-                    print("❌ Backup fetch failed with error: \(error.localizedDescription)")
-                }
-            }
+            let results = try await supabase.select(from: "hospitals")
+            print("SUPABASE RESULTS: \(results.count) hospitals found") // Debug log
             
-            // Filter results client-side based on our conditions
-            if !results.isEmpty {
-                results = results.filter { data in
-                    guard let status = data["status"] as? String else { return false }
-                    
-                    // Must be active
-                    guard status == "active" else { return false }
-                    
-                    // Filter by search text if provided
-                    if !searchText.isEmpty {
-                        guard let name = data["hospital_name"] as? String,
-                              name.lowercased().contains(searchText.lowercased()) else {
-                            return false
-                        }
-                    }
-                    
-                    // Filter by city if provided
-                    if let city = selectedCity, !city.isEmpty {
-                        guard let hospitalCity = data["hospital_city"] as? String,
-                              hospitalCity == city else {
-                            return false
-                        }
-                    }
-                    
-                    return true
-                }
-            }
-            
-            // Convert to HospitalModel objects
+            // First create basic hospital models
             var hospitalModels: [HospitalModel] = []
             
             for data in results {
-                do {
-                    guard let id = data["id"] as? String,
-                          let name = data["hospital_name"] as? String
-                    else { 
-                        print("⚠️ Missing required hospital data fields (id/name): \(data)")
-                        continue
-                    }
-                    
-                    // Handle optional or missing fields with defaults
-                    let address = data["hospital_address"] as? String ?? "Address not provided"
-                    let state = data["hospital_state"] as? String ?? "State not provided"
-                    let city = data["hospital_city"] as? String ?? "City not provided"
-                    let pincode = data["area_pincode"] as? String ?? "Pincode not provided"
-                    let email = data["email"] as? String ?? "Email not provided"
-                    let contact = data["contact_number"] as? String ?? "Contact not provided"
-                    let emergency = data["emergency_contact_number"] as? String ?? "Emergency contact not provided"
-                    let licence = data["licence"] as? String ?? "License not provided"
-                    let accreditation = data["hospital_accreditation"] as? String ?? "Accreditation not provided"
-                    let type = data["type"] as? String ?? "Type not provided"
-                    let status = data["status"] as? String ?? "active"
-                    let departments = data["departments"] as? [String] ?? []
-                    let numAppointments = data["number_of_appointments"] as? Int ?? 0
-                    
-                    // Try to fetch doctor count, but continue if it fails
-                    var numDoctors = 0
-                    do {
-                        let doctorResults = try await supabase.select(
-                            from: "doctors",
-                            where: "hospital_id",
-                            equals: id
-                        )
-                        numDoctors = doctorResults.count
-                    } catch {
-                        print("⚠️ Failed to fetch doctors for hospital \(name): \(error.localizedDescription)")
-                    }
-                    
-                    let hospital = HospitalModel(
-                        id: id,
-                        hospitalName: name,
-                        hospitalAddress: address,
-                        hospitalState: state,
-                        hospitalCity: city,
-                        areaPincode: pincode,
-                        email: email,
-                        contactNumber: contact,
-                        emergencyContactNumber: emergency,
-                        licence: licence,
-                        hospitalAccreditation: accreditation,
-                        type: type,
-                        hospitalProfileImage: data["hospital_profile_image"] as? String,
-                        coverImage: data["cover_image"] as? String,
-                        status: status,
-                        departments: departments,
-                        numberOfDoctors: numDoctors,
-                        numberOfAppointments: numAppointments,
-                        description: data["description"] as? String,
-                        rating: data["rating"] as? Double ?? 0.0
-                    )
-                    
-                    hospitalModels.append(hospital)
-                    print("✅ Added hospital: \(name)")
-                } catch {
-                    print("❌ Error parsing hospital: \(error.localizedDescription)")
+                guard let id = data["id"] as? String,
+                      let name = data["hospital_name"] as? String,
+                      let address = data["hospital_address"] as? String,
+                      let state = data["hospital_state"] as? String,
+                      let city = data["hospital_city"] as? String,
+                      let pincode = data["area_pincode"] as? String,
+                      let email = data["email"] as? String,
+                      let contact = data["contact_number"] as? String,
+                      let emergency = data["emergency_contact_number"] as? String,
+                      let licence = data["licence"] as? String,
+                      let accreditation = data["hospital_accreditation"] as? String,
+                      let type = data["type"] as? String,
+                      let status = data["status"] as? String,
+                      let departments = data["departments"] as? [String],
+                      let numAppointments = data["number_of_appointments"] as? Int
+                else { 
+                    print("Failed to parse hospital data: \(data)") // Debug log
+                    continue
                 }
+                
+                // Now fetch actual doctor count for this hospital
+                let doctorResults = try await supabase.select(
+                    from: "doctors",
+                    where: "hospital_id",
+                    equals: id
+                )
+                
+                let numDoctors = doctorResults.count
+                print("Hospital \(name) has \(numDoctors) doctors")
+                
+                let hospital = HospitalModel(
+                    id: id,
+                    hospitalName: name,
+                    hospitalAddress: address,
+                    hospitalState: state,
+                    hospitalCity: city,
+                    areaPincode: pincode,
+                    email: email,
+                    contactNumber: contact,
+                    emergencyContactNumber: emergency,
+                    licence: licence,
+                    hospitalAccreditation: accreditation,
+                    type: type,
+                    hospitalProfileImage: data["hospital_profile_image"] as? String,
+                    coverImage: data["cover_image"] as? String,
+                    status: status,
+                    departments: departments,
+                    numberOfDoctors: numDoctors,
+                    numberOfAppointments: numAppointments,
+                    description: data["description"] as? String,
+                    rating: data["rating"] as? Double ?? 0.0
+                )
+                
+                hospitalModels.append(hospital)
             }
             
-            await MainActor.run {
-                self.hospitals = hospitalModels
-                self.isLoading = false
-                print("🏥 VIEWMODEL: Updated with \(self.hospitals.count) hospitals")
-            }
+            self.hospitals = hospitalModels
+            print("VIEWMODEL: Parsed \(self.hospitals.count) hospitals") // Debug log
+            isLoading = false
         } catch {
-            await MainActor.run {
-                self.error = error
-                self.isLoading = false
-                print("❌ Error fetching hospitals: \(error.localizedDescription)")
-            }
+            self.error = error
+            isLoading = false
+            print("Error fetching hospitals: \(error)")
         }
     }
     
@@ -652,28 +562,45 @@ class HospitalViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Computed Properties
+    var availableCities: [String] = []
     
-    /// Get hospitals filtered by search text and selected city
     var filteredHospitals: [HospitalModel] {
-        if searchText.isEmpty && selectedCity == nil {
+        if searchText.isEmpty {
             return hospitals
         }
-        
         return hospitals.filter { hospital in
-            let matchesSearch = searchText.isEmpty || 
-                hospital.hospitalName.lowercased().contains(searchText.lowercased())
-            
-            let matchesCity = selectedCity == nil || 
-                hospital.hospitalCity == selectedCity
-            
-            return matchesSearch && matchesCity
+            let nameMatch = hospital.hospitalName.localizedCaseInsensitiveContains(searchText)
+            let cityMatch = selectedCity == nil || hospital.hospitalCity == selectedCity
+            return nameMatch && cityMatch
         }
     }
     
-    // MARK: - Published Properties
-    @Published var availableCities: [String] = []
-    @Published var appointments: [AppointmentModels.Appointment] = []
+    // MARK: - Refresh Methods
+    
+    /// Refresh all data - hospitals and cities
+    func refreshData() async {
+        print("🔄 HOSPITAL: Starting full data refresh")
+        isLoading = true
+        error = nil
+        
+        // Clear existing data for a fresh start
+        await MainActor.run {
+            self.hospitals = []
+        }
+        
+        // First fetch cities
+        await fetchAvailableCities()
+        
+        // Then fetch hospitals
+        await fetchHospitals()
+        
+        // Ensure loading state is reset when complete
+        await MainActor.run {
+            self.isLoading = false
+        }
+        
+        print("✅ HOSPITAL: Data refresh completed")
+    }
 }
 
 // MARK: - Doctor Model Extensions

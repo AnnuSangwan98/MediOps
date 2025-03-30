@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 struct BookAppointmentView: View {
     @Environment(\.dismiss) private var dismiss
@@ -201,25 +202,19 @@ struct BookAppointmentView: View {
         isLoading = true
         
         do {
-            // Get the patient ID for this user ID
-            print("🔍 Getting patient ID for user: \(userId)")
-            let supabase = SupabaseController.shared
+            // Use SupabaseController directly
             
-            let patientResults = try await supabase.select(
-                from: "patients",
-                where: "user_id",
-                equals: userId
-            )
-            
-            guard let patientData = patientResults.first, let patientId = patientData["id"] as? String else {
+            // Ensure patient has patient_id field - this is a critical step
+            print("🔍 Ensuring patient record has patient_id field")
+            guard var patientId = await SupabaseController.shared.ensurePatientHasPatientId(userId: userId) else {
                 isLoading = false
-                print("⚠️ No patient record found for user ID: \(userId)")
-                alertMessage = "No patient record found. Please complete your profile first."
+                print("❌ Failed to ensure patient has patient_id field")
+                alertMessage = "Could not locate or update your patient record. Please contact support."
                 showAlert = true
                 return
             }
             
-            print("✅ Found patient ID: \(patientId) for user ID: \(userId)")
+            print("✅ Using patient ID: \(patientId) for user ID: \(userId)")
             print("📋 Booking details:")
             print("- Patient ID: \(patientId)")
             print("- Doctor: \(doctor.name) (ID: \(doctor.id))")
@@ -237,56 +232,126 @@ struct BookAppointmentView: View {
             let dateFormatter = DateFormatter()
             dateFormatter.dateFormat = "yyyy-MM-dd"
             
-            // Create appointment data with explicit timestamp
-            var appointmentData: [String: Any] = [
-                "id": appointmentId,
-                "patient_id": patientId,
-                "doctor_id": doctor.id,
-                "hospital_id": hospital.id,
-                "availability_slot_id": slot.id,
-                "appointment_date": dateFormatter.string(from: selectedDate),
-                "status": "upcoming",
-                "reason": reason
-            ]
+            // First, directly verify the patient record exists in the database
+            print("🔍 Double-checking patient exists in database")
+            let patientRecords = try await SupabaseController.shared.select(
+                from: "patients",
+                where: "id",
+                equals: patientId
+            )
             
-            // Insert into database - try direct method
-            print("🔄 Creating appointment with ID: \(appointmentId)")
-            
-            let url = URL(string: "https://cwahmqodmutorxkoxtyz.supabase.co/rest/v1/appointments")!
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.addValue("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk", forHTTPHeaderField: "apikey")
-            request.addValue("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk", forHTTPHeaderField: "Authorization")
-            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.addValue("return=representation", forHTTPHeaderField: "Prefer")
-            
-            let jsonData = try JSONSerialization.data(withJSONObject: appointmentData)
-            request.httpBody = jsonData
-            
-            let (responseData, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
+            if patientRecords.isEmpty {
+                print("⚠️ Patient ID not found as primary key - attempting to create it")
+                
+                // First check if there's a patient record with this user_id
+                let userPatientRecords = try await SupabaseController.shared.select(
+                    from: "patients",
+                    where: "user_id",
+                    equals: userId
+                )
+                
+                if let existingPatient = userPatientRecords.first, let existingId = existingPatient["id"] as? String {
+                    print("✅ Found existing patient with user_id \(userId), using id: \(existingId)")
+                    // Use the existing patient ID instead
+                    patientId = existingId
+                } else {
+                    // Create a completely new patient record
+                    print("🔄 Creating new patient record with id=\(patientId) and user_id=\(userId)")
+                    
+                    // Create the patient record with proper fields
+                    let patientData: [String: Any] = [
+                        "id": patientId,
+                        "patient_id": patientId, // Make sure patient_id matches id
+                        "user_id": userId,
+                        "name": "Patient",
+                        "gender": "Not specified",
+                        "bloodGroup": "Not specified",
+                        "age": 0,
+                        "phoneNumber": "",
+                        "emergencyContactNumber": "",
+                        "emergencyRelationship": ""
+                    ]
+                    
+                    try await SupabaseController.shared.insert(into: "patients", values: patientData)
+                    print("✅ Created patient record with ID: \(patientId)")
+                    
+                    // Verify the patient was created successfully
+                    let verifyPatient = try await SupabaseController.shared.select(
+                        from: "patients",
+                        where: "id",
+                        equals: patientId
+                    )
+                    
+                    if verifyPatient.isEmpty {
+                        throw NSError(
+                            domain: "AppointmentError",
+                            code: 1002,
+                            userInfo: [NSLocalizedDescriptionKey: "Failed to create patient record. Please try again."]
+                        )
+                    }
+                }
+            } else {
+                print("✅ Patient record exists with ID: \(patientId)")
             }
             
-            print("📊 Response status code: \(httpResponse.statusCode)")
-            
-            if httpResponse.statusCode != 201 && httpResponse.statusCode != 200 {
-                print("❌ HTTP Error: \(httpResponse.statusCode)")
+            // Attempt to book the appointment
+            do {
+                print("🔄 Attempting to book appointment with patient_id: \(patientId)")
+                try await SupabaseController.shared.insertAppointment(
+                    id: appointmentId,
+                    patientId: patientId,
+                    doctorId: doctor.id,
+                    hospitalId: hospital.id,
+                    slotId: slot.id,
+                    date: selectedDate,
+                    reason: reason
+                )
                 
-                // Try to get error details
-                if let errorStr = String(data: responseData, encoding: .utf8) {
-                    print("❌ Error details: \(errorStr)")
+                print("✅ Successfully saved appointment to Supabase")
+            } catch let appointmentError {
+                print("⚠️ First attempt failed: \(appointmentError.localizedDescription)")
+                
+                // Check if it's a foreign key error and attempt a fix
+                if appointmentError.localizedDescription.contains("foreign key constraint") {
+                    print("🔍 Foreign key constraint error detected - attempting to diagnose and fix")
+                    
+                    // Debug: Check if the patient exists in the table directly
+                    let checkPatientSql = "SELECT id, patient_id, user_id FROM patients WHERE id = '\(patientId)'"
+                    
+                    do {
+                        let result = try await SupabaseController.shared.executeSQL(sql: checkPatientSql)
+                        print("🔍 Patient lookup result: \(result)")
+                        
+                        // If we got here but still have issues, try updating the record to ensure patient_id is set
+                        let updateSql = """
+                        UPDATE patients SET patient_id = '\(patientId)' WHERE id = '\(patientId)'
+                        """
+                        let updateResult = try await SupabaseController.shared.executeSQL(sql: updateSql)
+                        print("🔄 Patient record update result: \(updateResult)")
+                    } catch {
+                        print("⚠️ Error checking patient record: \(error.localizedDescription)")
+                    }
                 }
                 
-                throw NSError(domain: "AppointmentError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to create appointment. Status code: \(httpResponse.statusCode)"])
+                print("🔄 Trying alternative approach with direct insert")
+                
+                // Try direct insert into appointments table
+                let appointmentData: [String: Any] = [
+                    "id": appointmentId,
+                    "patient_id": patientId,
+                    "doctor_id": doctor.id,
+                    "hospital_id": hospital.id,
+                    "availability_slot_id": slot.id,
+                    "appointment_date": dateFormatter.string(from: selectedDate),
+                    "status": "upcoming",
+                    "reason": reason.isEmpty ? "Medical consultation" : reason,
+                    "isdone": false,
+                    "is_premium": false
+                ]
+                
+                try await SupabaseController.shared.insert(into: "appointments", values: appointmentData)
+                print("✅ Successfully saved appointment using direct insert")
             }
-            
-            // Try to parse the response data to confirm success
-            if let responseStr = String(data: responseData, encoding: .utf8) {
-                print("✅ Supabase response: \(responseStr)")
-            }
-            
-            print("✅ Successfully saved appointment to Supabase")
             
             // Create local appointment object for immediate UI update
             let appointmentTime = Calendar.current.date(from: DateComponents(
@@ -315,7 +380,22 @@ struct BookAppointmentView: View {
         } catch {
             isLoading = false
             print("❌ Error booking appointment: \(error.localizedDescription)")
-            alertMessage = "Failed to book appointment: \(error.localizedDescription)"
+            
+            if let nsError = error as? NSError {
+                // Give more helpful error messages based on error details
+                if nsError.domain == "AppointmentError" {
+                    alertMessage = "Failed to book appointment: \(nsError.localizedDescription)"
+                } else if nsError.localizedDescription.contains("foreign key constraint") {
+                    alertMessage = "Cannot book appointment: Your patient record wasn't found. Please try updating your profile first."
+                } else if nsError.localizedDescription.contains("network") {
+                    alertMessage = "Cannot book appointment: Network error. Please check your internet connection and try again."
+                } else {
+                    alertMessage = "Failed to book appointment: \(nsError.localizedDescription)"
+                }
+            } else {
+                alertMessage = "Failed to book appointment: \(error.localizedDescription)"
+            }
+            
             showAlert = true
         }
     }

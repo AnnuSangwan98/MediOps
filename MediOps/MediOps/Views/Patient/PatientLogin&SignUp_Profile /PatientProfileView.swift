@@ -41,7 +41,19 @@ struct PatientProfileView: View {
                             }
                             VStack {
                                 Image(systemName: "drop.fill")
-                                Text(patient.bloodGroup)
+                                if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
+                                    Text("Unknown")
+                                        .foregroundColor(.orange)
+                                        .onTapGesture {
+                                            Task {
+                                                // Run diagnostic on tap if blood group is missing
+                                                await profileController.inspectPatientsTableSchema()
+                                                profileController.inspectCurrentPatientObject()
+                                            }
+                                        }
+                                } else {
+                                    Text(patient.bloodGroup)
+                                }
                             }
                             VStack {
                                 Image(systemName: "calendar")
@@ -60,7 +72,48 @@ struct PatientProfileView: View {
                                         .padding(.bottom, 5)
                                     InfoRow(title: "Address", value: patient.address ?? "Not provided")
                                     InfoRow(title: "Phone Number", value: patient.phoneNumber)
-                                    InfoRow(title: "Blood Group", value: patient.bloodGroup)
+                                    
+                                    // Special handling for blood group
+                                    HStack {
+                                        Text("Blood Group")
+                                            .fontWeight(.medium)
+                                        Spacer()
+                                        if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
+                                            HStack {
+                                                Text("Not specified")
+                                                    .foregroundColor(.orange)
+                                                
+                                                Menu {
+                                                    ForEach(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], id: \.self) { group in
+                                                        Button(group) {
+                                                            Task {
+                                                                // Fix blood group
+                                                                let success = await profileController.fixBloodGroup(
+                                                                    patientId: patient.id,
+                                                                    bloodGroup: group
+                                                                )
+                                                                
+                                                                if success {
+                                                                    // Reload profile
+                                                                    await profileController.loadProfile(userId: patient.userId)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } label: {
+                                                    Text("Fix")
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 3)
+                                                        .background(Color.blue)
+                                                        .foregroundColor(.white)
+                                                        .cornerRadius(4)
+                                                }
+                                            }
+                                        } else {
+                                            Text(patient.bloodGroup)
+                                                .foregroundColor(.gray)
+                                        }
+                                    }
                                 }
                             }
                             
@@ -181,11 +234,33 @@ struct PatientProfileView: View {
                     if let userId = UserDefaults.standard.string(forKey: "userId") ?? 
                                UserDefaults.standard.string(forKey: "current_user_id") {
                         await profileController.loadProfile(userId: userId)
+                        
+                        // After loading the profile, check the blood group field
+                        if let patient = profileController.patient {
+                            if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
+                                print("⚠️ PROFILE: Blood group is missing or not specified, running blood group check")
+                                await profileController.checkBloodGroupField(patientId: patient.id)
+                                
+                                // Reload profile after checking blood group
+                                await profileController.loadProfile(userId: userId)
+                            }
+                        }
                     } else {
                         // Create a test patient if no user ID is available
                         await profileController.createAndInsertTestPatientInSupabase()
                     }
                     isLoading = false
+                }
+            } else if let patient = profileController.patient {
+                // Patient is already loaded, check if blood group needs verification
+                if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
+                    Task {
+                        print("⚠️ PROFILE: Blood group is missing or not specified, running blood group check")
+                        await profileController.checkBloodGroupField(patientId: patient.id)
+                        
+                        // Reload profile after checking blood group
+                        await profileController.loadProfile(userId: patient.userId)
+                    }
                 }
             }
         }

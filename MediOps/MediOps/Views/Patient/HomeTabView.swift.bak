@@ -25,9 +25,12 @@ struct HomeTabView: View {
                 }
                 .tag(0)
                 .onAppear {
-                    // Refresh appointments each time home tab appears
+                    // Refresh appointments and hospital data each time home tab appears
                     if selectedTab == 0 {
-                        print("📱 Home tab appeared - refreshing appointments")
+                        print("📱 Home tab appeared - refreshing all data")
+                        Task {
+                            await hospitalVM.refreshData()
+                        }
                         appointmentManager.refreshAppointments()
                     }
                 }
@@ -113,12 +116,6 @@ struct HomeTabView: View {
                     .ignoresSafeArea()
 
                 ScrollView {
-                    RefreshControl(coordinateSpace: .named("pullToRefresh")) {
-                        Task {
-                            await refreshHospitals()
-                        }
-                    }
-                    
                     VStack(spacing: 20) {
                         headerSection
                         searchAndFilterSection
@@ -130,23 +127,10 @@ struct HomeTabView: View {
                             
                             // Show all hospitals when not searching
                             VStack(alignment: .leading, spacing: 15) {
-                                HStack {
-                                    Text("All Hospitals")
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                    
-                                    Spacer()
-                                    
-                                    Button(action: {
-                                        Task {
-                                            await refreshHospitals()
-                                        }
-                                    }) {
-                                        Image(systemName: "arrow.clockwise")
-                                            .foregroundColor(.teal)
-                                    }
-                                }
-                                .padding(.horizontal)
+                                Text("All Hospitals")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .padding(.horizontal)
                                 
                                 if hospitalVM.isLoading {
                                     ProgressView()
@@ -155,31 +139,9 @@ struct HomeTabView: View {
                                         .frame(maxWidth: .infinity)
                                         .padding()
                                 } else if let error = hospitalVM.error {
-                                    VStack {
-                                        Text("Error loading hospitals")
-                                            .foregroundColor(.red)
-                                            .padding(.bottom, 4)
-                                        
-                                        Text(error.localizedDescription)
-                                            .font(.caption)
-                                            .foregroundColor(.gray)
-                                            .multilineTextAlignment(.center)
-                                            .padding(.horizontal)
-                                        
-                                        Button("Try Again") {
-                                            Task {
-                                                await refreshHospitals()
-                                            }
-                                        }
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 16)
-                                        .background(Color.teal)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(8)
-                                        .padding(.top, 8)
-                                    }
-                                    .padding()
-                                    .frame(maxWidth: .infinity)
+                                    Text("Error: \(error.localizedDescription)")
+                                        .foregroundColor(.red)
+                                        .padding()
                                 } else if !hospitalVM.hospitals.isEmpty {
                                     ForEach(hospitalVM.hospitals) { hospital in
                                         NavigationLink {
@@ -191,33 +153,20 @@ struct HomeTabView: View {
                                         .padding(.horizontal)
                                     }
                                 } else {
-                                    VStack(spacing: 12) {
-                                        Text("No hospitals found")
-                                            .foregroundColor(.gray)
-                                        
-                                        Button("Refresh") {
-                                            Task {
-                                                await refreshHospitals()
-                                            }
-                                        }
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 16)
-                                        .background(Color.teal)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(8)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
+                                    Text("No hospitals found")
+                                        .foregroundColor(.gray)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
                                 }
                             }
                         }
                     }
                 }
-                .coordinateSpace(name: "pullToRefresh")
             }
             .navigationBarHidden(true)
             .task {
-                await refreshHospitals()
+                print("🏥 HomeTab task initializing - loading full hospital data")
+                await hospitalVM.refreshData()
                 
                 if let userId = userId {
                     print("🔍 Home Tab task using user ID: \(userId)")
@@ -235,41 +184,12 @@ struct HomeTabView: View {
                     print("⚠️ No user ID found in HomeTab onAppear")
                 }
             }
-        }
-    }
-    
-    // Helper function to refresh hospitals and cities
-    private func refreshHospitals() async {
-        print("🔄 Refreshing hospitals and cities...")
-        
-        // Check Supabase connectivity first
-        let supabase = SupabaseController.shared
-        let isConnected = await supabase.checkConnectivity()
-        
-        if isConnected {
-            print("✅ Supabase connectivity confirmed - proceeding with data fetch")
-            
-            // Fetch hospitals and cities
-            await hospitalVM.fetchHospitals()
-            await hospitalVM.fetchAvailableCities()
-            
-            if hospitalVM.hospitals.isEmpty {
-                print("⚠️ No hospitals found after refresh")
-            } else {
-                print("✅ Successfully loaded \(hospitalVM.hospitals.count) hospitals")
-            }
-        } else {
-            print("❌ Supabase connectivity failed - setting error")
-            await MainActor.run {
-                hospitalVM.error = NSError(
-                    domain: "HospitalViewModel",
-                    code: 1001,
-                    userInfo: [NSLocalizedDescriptionKey: "Cannot connect to server. Please check your internet connection and try again."]
-                )
+            .refreshable {
+                print("🔃 Manually refreshing home tab data")
+                await hospitalVM.refreshData()
+                appointmentManager.refreshAppointments()
             }
         }
-        
-        print("✅ Refresh complete!")
     }
     
     private var historyTab: some View {
@@ -412,57 +332,6 @@ struct HomeTabView: View {
             }
         }
         .padding(.vertical)
-    }
-
-    // Pull-to-refresh control
-    struct RefreshControl: View {
-        var coordinateSpace: CoordinateSpace
-        var onRefresh: () -> Void
-        
-        @State private var isRefreshing = false
-        
-        var body: some View {
-            GeometryReader { geometry in
-                if geometry.frame(in: coordinateSpace).minY > 50 {
-                    Spacer()
-                        .onAppear {
-                            if !isRefreshing {
-                                isRefreshing = true
-                                onRefresh()
-                                
-                                // Reset after delay
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                                    isRefreshing = false
-                                }
-                            }
-                        }
-                } else if geometry.frame(in: coordinateSpace).minY < 1 {
-                    Spacer()
-                        .onAppear {
-                            isRefreshing = false
-                        }
-                }
-                
-                HStack {
-                    Spacer()
-                    if isRefreshing {
-                        ProgressView()
-                    } else if geometry.frame(in: coordinateSpace).minY > 20 {
-                        Text("Release to refresh")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    } else if geometry.frame(in: coordinateSpace).minY > 5 {
-                        Text("Pull to refresh")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    Spacer()
-                }
-                .frame(height: geometry.frame(in: coordinateSpace).minY > 0 ? geometry.frame(in: coordinateSpace).minY : 0)
-                .offset(y: -10)
-            }
-            .frame(height: 50)
-        }
     }
 }
 
