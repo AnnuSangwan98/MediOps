@@ -586,6 +586,7 @@ struct NotificationRow: View {
 // Appointment Card View
 struct DoctorAppointmentCard: View {
     let appointment: DoctorAppointmentModel
+    @State private var showDetails = false
     
     private var formattedDate: String {
         let formatter = DateFormatter()
@@ -594,89 +595,98 @@ struct DoctorAppointmentCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                // Patient info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(appointment.patientName)
-                        .font(.headline)
-                }
-                
-                Spacer()
-                
-                // Status badge
-                Text(appointment.status.rawValue.capitalized)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(appointment.status.color.opacity(0.2))
-                    .foregroundColor(appointment.status.color)
-                    .cornerRadius(6)
-            }
-            
-            Divider()
-            
-            // Appointment details
-            HStack(spacing: 15) {
-                // Date
-                VStack(alignment: .leading, spacing: 4) {
-                    Label {
-                        Text("Date")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    } icon: {
-                        Image(systemName: "calendar")
-                            .foregroundColor(.teal)
+        Button(action: {
+            showDetails = true
+        }) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    // Patient info
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(appointment.patientName)
+                            .font(.headline)
                     }
                     
-                    Text(formattedDate)
-                        .font(.subheadline)
-                }
-                
-                Spacer()
-                
-                // Time
-                VStack(alignment: .leading, spacing: 4) {
-                    Label {
-                        Text("Time")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    } icon: {
-                        Image(systemName: "clock")
-                            .foregroundColor(.teal)
-                    }
+                    Spacer()
                     
-                    Text(appointment.slotTime)
-                        .font(.subheadline)
-                }
-                
-                Spacer()
-                
-                // Premium indicator if applicable
-                if let isPremium = appointment.isPremium, isPremium {
-                    Image(systemName: "star.fill")
-                        .foregroundColor(.yellow)
-                }
-            }
-            
-            // Reason (if provided)
-            if !appointment.reason.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Reason")
+                    // Status badge
+                    Text(appointment.status.rawValue.capitalized)
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(appointment.status.color.opacity(0.2))
+                        .foregroundColor(appointment.status.color)
+                        .cornerRadius(6)
+                }
+                
+                Divider()
+                
+                // Appointment details
+                HStack(spacing: 15) {
+                    // Date
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label {
+                            Text("Date")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        } icon: {
+                            Image(systemName: "calendar")
+                                .foregroundColor(.teal)
+                        }
+                        
+                        Text(formattedDate)
+                            .font(.subheadline)
+                    }
                     
-                    Text(appointment.reason)
-                        .font(.subheadline)
-                        .lineLimit(2)
+                    Spacer()
+                    
+                    // Time
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label {
+                            Text("Time")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        } icon: {
+                            Image(systemName: "clock")
+                                .foregroundColor(.teal)
+                        }
+                        
+                        Text(appointment.slotTime)
+                            .font(.subheadline)
+                    }
+                    
+                    Spacer()
+                    
+                    // Premium indicator if applicable
+                    if let isPremium = appointment.isPremium, isPremium {
+                        Image(systemName: "star.fill")
+                            .foregroundColor(.yellow)
+                    }
+                }
+                
+                // Reason (if provided)
+                if !appointment.reason.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reason")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        
+                        Text(appointment.reason)
+                            .font(.subheadline)
+                            .lineLimit(2)
+                    }
                 }
             }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(10)
+            .shadow(color: Color.gray.opacity(0.1), radius: 5)
+            // Remove color scheme to avoid blue tint on button press
+            .buttonStyle(PlainButtonStyle())
         }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(10)
-        .shadow(color: Color.gray.opacity(0.1), radius: 5)
+        .sheet(isPresented: $showDetails) {
+            DoctorAppointmentDetailsView(appointment: appointment)
+        }
     }
 }
 
