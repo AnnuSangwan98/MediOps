@@ -46,12 +46,12 @@ struct HomeTabView: View {
                 }
                 .tag(2)
                 
-            ProfileView()
-                .tabItem {
-                    Image(systemName: selectedTab == 3 ? "person.fill" : "person")
-                    Text("Profile")
-                }
-                .tag(3)
+//            ProfileView()
+//                .tabItem {
+//                    Image(systemName: selectedTab == 3 ? "person.fill" : "person")
+//                    Text("Profile")
+//                }
+//                .tag(3)
         }
         .accentColor(.blue)
         .onAppear {
@@ -195,8 +195,10 @@ struct HomeTabView: View {
                 } else {
                     Section(header: Text("Completed Appointments")) {
                         ForEach(appointmentManager.appointments.filter { $0.status == .completed }, id: \.id) { appointment in
-                            AppointmentHistoryCard(appointment: appointment)
-                                .listRowBackground(Color.green.opacity(0.1))
+                            NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
+                                AppointmentHistoryCard(appointment: appointment)
+                                    .listRowBackground(Color.green.opacity(0.1))
+                            }
                         }
                     }
                     

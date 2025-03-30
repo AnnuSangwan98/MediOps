@@ -25,7 +25,7 @@ fileprivate struct CardView<Content: View>: View {
     }
 }
 
-fileprivate struct InfoRow: View {
+fileprivate struct InfoRows: View {
     var title: String
     var value: String
     
