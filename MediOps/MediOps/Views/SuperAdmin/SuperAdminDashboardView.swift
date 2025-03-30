@@ -16,7 +16,7 @@ struct SuperAdminDashboardView: View {
     @State private var email = ""
     @State private var street = ""
     @State private var city = ""
-    @State private var state = ""
+    @State private var state = "Delhi"
     @State private var zipCode = ""
     @State private var emergencyContact = ""
     
@@ -27,6 +27,7 @@ struct SuperAdminDashboardView: View {
     @State private var errorMessage = ""
     @State private var showLogoutConfirmation = false
     @State private var navigateToRoleSelection = false
+    @State private var showProfileSheet = false
     
     // Selected Hospital States
     @State private var hospitalToDelete: Hospital?
@@ -57,25 +58,22 @@ struct SuperAdminDashboardView: View {
                 Text("Welcome")
                     .font(.title)
                     .fontWeight(.bold)
+                Text("Super Admin")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
             }
             Spacer()
             
             HStack(spacing: 20) {
-                VStack(alignment: .trailing) {
-                    Text("\(viewModel.totalHospitals)")
-                        .font(.title2)
-                        .fontWeight(.bold)
+                NavigationLink(destination: SuperAdminProfileView()) {
+                    Image(systemName: "person.circle.fill")
+                        .resizable()
+                        .frame(width: 40, height: 40)
                         .foregroundColor(.teal)
-                    Text("Total Hospitals")
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                        .background(Circle().fill(Color.white))
+                        .shadow(color: .gray.opacity(0.2), radius: 3)
                 }
-                
-                Button(action: { showLogoutConfirmation = true }) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.title2)
-                        .foregroundColor(.red)
-                }
+                .padding(.trailing)
             }
         }
         .padding(.horizontal)
@@ -132,11 +130,16 @@ struct SuperAdminDashboardView: View {
                     
                     // Hospitals section with title outside scroll view
                     VStack(alignment: .leading, spacing: 15) {
-                        Text("Hospitals")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .padding(.horizontal)
-                        
+                        HStack(spacing: 5){
+                            Text("\(viewModel.filteredHospitals.count)")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.teal)
+                            Text(viewModel.filteredHospitals.count == 1 ? " Hospital Found" : " Hospitals Found")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                        }
+                        .padding(.horizontal)
                         // Only the hospital list is scrollable
                         ScrollView {
                             VStack(spacing: 15) {
@@ -289,9 +292,7 @@ struct SuperAdminDashboardView: View {
             } message: {
                 Text("Are you sure you want to logout?")
             }
-            
-            // Use modern navigation API
-            .navigationDestination(isPresented: $navigateToRoleSelection) {
+            .fullScreenCover(isPresented: $navigateToRoleSelection) {
                 RoleSelectionView()
             }
         }
@@ -377,7 +378,7 @@ struct SuperAdminDashboardView: View {
         email = ""
         street = ""
         city = ""
-        state = ""
+        state = "Delhi"
         zipCode = ""
         emergencyContact = ""
     }
@@ -387,7 +388,7 @@ struct SuperAdminDashboardView: View {
         UserDefaults.standard.removeObject(forKey: "userRole")
         UserDefaults.standard.removeObject(forKey: "userToken")
         
-        // Navigate to role selection
+        // Navigate to role selection using fullScreenCover
         navigateToRoleSelection = true
     }
 }
@@ -583,6 +584,127 @@ struct FilterChip: View {
                 .foregroundColor(isSelected ? .white : .gray)
                 .cornerRadius(20)
         }
+    }
+}
+
+// New SuperAdminProfileView
+struct SuperAdminProfileView: View {
+    @EnvironmentObject private var navigationState: AppNavigationState
+    @State private var showLogoutConfirmation = false
+    @State private var navigateToRoleSelection = false
+    @Environment(\.presentationMode) var presentationMode
+    
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+            
+            VStack(spacing: 25) {
+                // Profile Image
+                Circle()
+                    .fill(Color.teal.opacity(0.2))
+                    .frame(width: 120, height: 120)
+                    .overlay(
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.teal)
+                    )
+                    .padding(.top, 40)
+                
+                // Profile Info
+                VStack(spacing: 12) {
+                    Text("Super Admin")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("SUPER1")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                
+                Divider()
+                    .padding(.horizontal)
+                
+                // Profile Stats
+                VStack(spacing: 15) {
+                    ProfileRowView(icon: "building.2.fill", title: "Role", value: "Manage Hospitals")
+                }
+                .padding()
+                .background(Color.white)
+                .cornerRadius(12)
+                .shadow(color: .gray.opacity(0.1), radius: 5)
+                .padding(.horizontal)
+                
+                Spacer()
+                
+                // Logout Button
+                Button(action: { showLogoutConfirmation = true }) {
+                    HStack {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                        Text("Logout")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(height: 55)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.red)
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+                }
+                .padding(.bottom, 30)
+            }
+        }
+        .navigationTitle("Profile")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Logout Confirmation", isPresented: $showLogoutConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Logout", role: .destructive) {
+                performLogout()
+            }
+        } message: {
+            Text("Are you sure you want to logout?")
+        }
+        .fullScreenCover(isPresented: $navigateToRoleSelection) {
+            RoleSelectionView()
+        }
+    }
+    
+    private func performLogout() {
+        // Clear user data
+        UserDefaults.standard.removeObject(forKey: "userRole")
+        UserDefaults.standard.removeObject(forKey: "userToken")
+        
+        // Navigate to role selection using fullScreenCover
+        navigateToRoleSelection = true
+    }
+}
+
+struct ProfileRowView: View {
+    let icon: String
+    let title: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundColor(.teal)
+                .frame(width: 30)
+            
+            Text(title)
+                .font(.subheadline)
+            
+            Spacer()
+            
+            Text(value)
+                .font(.subheadline)
+                .foregroundColor(.gray)
+        }
+        .padding(.vertical, 8)
     }
 }
 
