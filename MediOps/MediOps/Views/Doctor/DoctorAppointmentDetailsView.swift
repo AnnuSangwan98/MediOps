@@ -84,9 +84,30 @@ struct DoctorAppointmentDetailsView: View {
                                     .foregroundColor(.teal)
                             }
                             
-                            Text(appointment.slotTime)
-                                .font(.body)
-                                .fontWeight(.medium)
+                            // First try to show both times
+                            if let endTime = appointment.slotEndTime, !endTime.isEmpty {
+                                if !appointment.slotTime.isEmpty {
+                                    Text("\(appointment.slotTime) - \(endTime)")
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                } else {
+                                    // Only end time exists
+                                    Text(endTime)
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                }
+                            } else if !appointment.slotTime.isEmpty {
+                                // Only start time exists
+                                Text(appointment.slotTime)
+                                    .font(.body)
+                                    .fontWeight(.medium)
+                            } else {
+                                // No time information
+                                Text("—")
+                                    .font(.body)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.gray)
+                            }
                         }
                         
                         Spacer()
@@ -459,8 +480,9 @@ struct PatientDetailModel {
         isDone: false,
         isPremium: true,
         slotId: 1,
-        slotTime: "10:00 AM"
+        slotTime: "10:00 AM",
+        slotEndTime: "11:00 AM"
     )
     
-    return DoctorAppointmentDetailsView(appointment: sampleAppointment)
+    DoctorAppointmentDetailsView(appointment: sampleAppointment)
 } 

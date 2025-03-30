@@ -51,7 +51,8 @@ struct DoctorAppointmentModel: Identifiable {
     let isDone: Bool
     let isPremium: Bool?
     let slotId: Int
-    let slotTime: String // Will be fetched separately
+    let slotTime: String // Time slot
+    let slotEndTime: String? // End time of the slot
 }
 
 // Unique enum for appointment status
@@ -279,9 +280,10 @@ struct DoctorHomeView: View {
             do {
                 let supabase = SupabaseController.shared
                 
-                // Use standard select method instead of raw query
+                // Use standard select method with specific fields
                 let result = try await supabase.select(
                     from: "appointments",
+                    columns: "id, patient_id, doctor_id, hospital_id, appointment_date, booking_time, status, reason, isdone, is_premium, availability_slot_id, slot_time, slot_end_time",
                     where: "doctor_id",
                     equals: doctorId
                 )
@@ -289,7 +291,7 @@ struct DoctorHomeView: View {
                 // Parse result
                 let appointments = try parseAppointments(result)
                 
-                // Fetch additional details for each appointment (patient, hospital, slot)
+                // Fetch additional details for each appointment (patient, hospital)
                 var enhancedAppointments: [DoctorAppointmentModel] = []
                 
                 for appointment in appointments {
@@ -313,17 +315,7 @@ struct DoctorHomeView: View {
                         hospitalName = name
                     }
                     
-                    // Load slot details
-                    var slotTime = "Not specified"
-                    if let slotResult = try? await supabase.select(
-                        from: "doctor_availability",
-                        where: "id",
-                        equals: String(appointment.slotId)
-                    ).first, let startTime = slotResult["start_time"] as? String {
-                        slotTime = startTime
-                    }
-                    
-                    // Create enhanced appointment
+                    // Create enhanced appointment - keep original slot times
                     let enhancedAppointment = DoctorAppointmentModel(
                         id: appointment.id,
                         patientId: appointment.patientId,
@@ -337,7 +329,8 @@ struct DoctorHomeView: View {
                         isDone: appointment.isDone,
                         isPremium: appointment.isPremium,
                         slotId: appointment.slotId,
-                        slotTime: slotTime
+                        slotTime: appointment.slotTime,
+                        slotEndTime: appointment.slotEndTime
                     )
                     
                     enhancedAppointments.append(enhancedAppointment)
@@ -425,6 +418,10 @@ struct DoctorHomeView: View {
         let timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
         
+        // Time formatter for slot times
+        let slotTimeFormatter = DateFormatter()
+        slotTimeFormatter.dateFormat = "HH:mm:ss"
+        
         return try data.map { appointmentData in
             // Required fields
             guard let id = appointmentData["id"] as? String else {
@@ -461,10 +458,41 @@ struct DoctorHomeView: View {
             let isDone = appointmentData["isdone"] as? Bool ?? false
             let isPremium = appointmentData["is_premium"] as? Bool
             
+            // Get slot times directly from the appointment
+            var slotTime = ""
+            if let slotTimeString = appointmentData["slot_time"] as? String {
+                // Format time from "HH:MM:SS" to "HH:MM AM/PM"
+                if let timeDate = slotTimeFormatter.date(from: slotTimeString) {
+                    let displayFormatter = DateFormatter()
+                    displayFormatter.dateFormat = "h:mm a"
+                    slotTime = displayFormatter.string(from: timeDate)
+                } else {
+                    slotTime = slotTimeString
+                }
+            }
+            
+            // Handle slot end time
+            var slotEndTime: String? = nil
+            if let endTimeString = appointmentData["slot_end_time"] as? String {
+                if let timeDate = slotTimeFormatter.date(from: endTimeString) {
+                    let displayFormatter = DateFormatter()
+                    displayFormatter.dateFormat = "h:mm a"
+                    slotEndTime = displayFormatter.string(from: timeDate)
+                } else {
+                    slotEndTime = endTimeString
+                }
+            }
+            
+            // Debug slot times
+            print("Appointment ID: \(id)")
+            print("Raw slot_time: \(appointmentData["slot_time"] as? String ?? "nil")")
+            print("Raw slot_end_time: \(appointmentData["slot_end_time"] as? String ?? "nil")")
+            print("Formatted slotTime: \(slotTime)")
+            print("Formatted slotEndTime: \(slotEndTime ?? "nil")")
+            
             // Joined fields
             let patientName = appointmentData["patient_name"] as? String ?? "Unknown Patient"
             let hospitalName = appointmentData["hospital_name"] as? String ?? "Unknown Hospital"
-            let slotTime = appointmentData["slot_time"] as? String ?? "Not specified"
             
             return DoctorAppointmentModel(
                 id: id,
@@ -479,7 +507,8 @@ struct DoctorHomeView: View {
                 isDone: isDone,
                 isPremium: isPremium,
                 slotId: slotId,
-                slotTime: slotTime
+                slotTime: slotTime,
+                slotEndTime: slotEndTime
             )
         }
     }
@@ -594,6 +623,23 @@ struct DoctorAppointmentCard: View {
         return formatter.string(from: appointment.appointmentDate)
     }
     
+    private var formattedTime: String {
+        // Empty cases first
+        if appointment.slotTime.isEmpty {
+            if let endTime = appointment.slotEndTime, !endTime.isEmpty {
+                return endTime
+            }
+            return "—" // Em dash for completely missing time
+        }
+        
+        // When we have a start time
+        if let endTime = appointment.slotEndTime, !endTime.isEmpty {
+            return "\(appointment.slotTime) - \(endTime)"
+        } else {
+            return appointment.slotTime
+        }
+    }
+    
     var body: some View {
         Button(action: {
             showDetails = true
@@ -604,6 +650,7 @@ struct DoctorAppointmentCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(appointment.patientName)
                             .font(.headline)
+                            .foregroundColor(.black)
                     }
                     
                     Spacer()
@@ -636,6 +683,7 @@ struct DoctorAppointmentCard: View {
                         
                         Text(formattedDate)
                             .font(.subheadline)
+                            .foregroundColor(.black)
                     }
                     
                     Spacer()
@@ -651,8 +699,37 @@ struct DoctorAppointmentCard: View {
                                 .foregroundColor(.teal)
                         }
                         
-                        Text(appointment.slotTime)
-                            .font(.subheadline)
+                        if !appointment.slotTime.isEmpty {
+                            if let endTime = appointment.slotEndTime, !endTime.isEmpty {
+                                // Both times available
+                                HStack(spacing: 3) {
+                                    Text(appointment.slotTime)
+                                        .font(.subheadline)
+                                        .foregroundColor(.black)
+                                    Text("to")
+                                        .font(.subheadline)
+                                        .foregroundColor(.gray)
+                                    Text(endTime)
+                                        .font(.subheadline)
+                                        .foregroundColor(.black)
+                                }
+                            } else {
+                                // Only start time
+                                Text(appointment.slotTime)
+                                    .font(.subheadline)
+                                    .foregroundColor(.black)
+                            }
+                        } else if let endTime = appointment.slotEndTime, !endTime.isEmpty {
+                            // Only end time
+                            Text(endTime)
+                                .font(.subheadline)
+                                .foregroundColor(.black)
+                        } else {
+                            // No time information
+                            Text("—")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
                     }
                     
                     Spacer()
@@ -673,6 +750,7 @@ struct DoctorAppointmentCard: View {
                         
                         Text(appointment.reason)
                             .font(.subheadline)
+                            .foregroundColor(.black)
                             .lineLimit(2)
                     }
                 }
