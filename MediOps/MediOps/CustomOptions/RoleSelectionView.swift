@@ -59,7 +59,7 @@ struct RoleSelectionView: View {
                     // Administrator Button
                     NavigationLink(destination: AdminLoginView()) {
                         RoleButton(
-                            icon: "person.badge.key",
+                            icon: "person.badge.plus",
                             title: "Admin",
                             isHighlighted: selectedRole == .admin
                         )

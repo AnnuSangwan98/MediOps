@@ -96,15 +96,15 @@ struct SuperAdminDashboardView: View {
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    FilterChip(title: "All Cities", 
-                             isSelected: viewModel.selectedCity == nil) {
-                        viewModel.selectedCity = nil
+                    FilterChip(title: "All States", 
+                             isSelected: viewModel.selectedState == nil) {
+                        viewModel.selectedState = nil
                     }
                     
-                    ForEach(viewModel.uniqueCities, id: \.self) { city in
-                        FilterChip(title: city, 
-                                 isSelected: viewModel.selectedCity == city) {
-                            viewModel.selectedCity = city
+                    ForEach(viewModel.uniqueStates, id: \.self) { state in
+                        FilterChip(title: state,
+                                 isSelected: viewModel.selectedState == state) {
+                            viewModel.selectedState = state
                         }
                     }
                 }

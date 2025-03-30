@@ -45,7 +45,7 @@ struct AdminLoginView: View {
                             .frame(width: 120, height: 120)
                             .shadow(color: .gray.opacity(0.2), radius: 10)
                         
-                        Image(systemName: "person.badge.key.fill")
+                        Image(systemName: "person.badge.plus.fill")
                             .resizable()
                             .scaledToFit()
                             .frame(width: 60, height: 60)

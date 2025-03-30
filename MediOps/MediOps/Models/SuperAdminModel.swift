@@ -20,7 +20,7 @@ struct SuperAdmin: Identifiable, Codable {
 class SuperAdminDashboardViewModel: ObservableObject {
     @Published var hospitals: [Hospital] = []
     @Published var searchText: String = ""
-    @Published var selectedCity: String?
+    @Published var selectedState: String?
     @Published var isLoading: Bool = false
     @Published var errorMessage: String = ""
     
@@ -42,16 +42,16 @@ class SuperAdminDashboardViewModel: ObservableObject {
             }
         }
         
-        // Apply city filter
-        if let city = selectedCity {
-            filtered = filtered.filter { $0.city == city }
+        // Apply state filter
+        if let state = selectedState {
+            filtered = filtered.filter { $0.state == state }
         }
         
         return filtered
     }
     
-    var uniqueCities: [String] {
-        Array(Set(hospitals.map { $0.city })).sorted()
+    var uniqueStates: [String] {
+        Array(Set(hospitals.map { $0.state })).sorted()
     }
     
     var totalHospitals: Int {
