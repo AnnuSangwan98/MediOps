@@ -11,6 +11,7 @@ struct DoctorLoginView: View {
     @State private var newPassword: String = ""
     @State private var confirmPassword: String = ""
     @State private var isPasswordVisible: Bool = false
+    @State private var isLoading: Bool = false
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
@@ -111,27 +112,36 @@ struct DoctorLoginView: View {
                     // Login Button
                     Button(action: handleLogin) {
                         HStack {
-                            Text("Login")
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            Image(systemName: "arrow.right")
-                                .font(.title3)
+                            if isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .padding(.trailing, 5)
+                                Text("Logging in...")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                            } else {
+                                Text("Login")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                                Image(systemName: "arrow.right")
+                                    .font(.title3)
+                            }
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 55)
                         .background(
                             LinearGradient(gradient: Gradient(colors: [
-                                isValidLoginInput ? Color.teal : Color.gray.opacity(0.5),
-                                isValidLoginInput ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
+                                (!isLoading && isValidLoginInput) ? Color.teal : Color.gray.opacity(0.5),
+                                (!isLoading && isValidLoginInput) ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
                             ]),
                             startPoint: .leading,
                             endPoint: .trailing)
                         )
                         .cornerRadius(15)
-                        .shadow(color: isValidLoginInput ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
+                        .shadow(color: (!isLoading && isValidLoginInput) ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
                     }
-                    .disabled(!isValidLoginInput)
+                    .disabled(!isValidLoginInput || isLoading)
                     .padding(.top, 10)
                 }
                 .padding(.horizontal, 30)
@@ -155,109 +165,157 @@ struct DoctorLoginView: View {
                 newPassword: $newPassword,
                 confirmPassword: $confirmPassword,
                 isValidInput: isValidPasswordChange,
+                isLoading: isLoading,
                 onSubmit: handlePasswordChange
             )
         }
     }
     
     private func handleLogin() {
-        guard let url = URL(string: "http://localhost:8082/validate-doctor") else {
-            errorMessage = "Invalid server configuration"
+        // Validate input
+        guard isValidLoginInput else {
+            errorMessage = "Please enter valid credentials"
             showError = true
             return
         }
         
-        let credentials: [String: Any] = [
-            "doctorId": doctorId, 
-            "password": password
-        ]
+        // Show loading state
+        isLoading = true
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: credentials)
-            
-            URLSession.shared.dataTask(with: request) { data, response, error in
-                DispatchQueue.main.async {
-                    if let error = error {
-                        self.errorMessage = "Network error: \(error.localizedDescription)"
-                        self.showError = true
-                        return
+        Task {
+            do {
+                print("Attempting to login with doctorId: \(doctorId)")
+                let supabase = SupabaseController.shared
+                
+                // Query the doctors table to find the matching doctor
+                let doctorData = try await supabase.select(
+                    from: "doctors",
+                    where: "id",
+                    equals: doctorId
+                )
+                
+                guard let doctorInfo = doctorData.first else {
+                    await MainActor.run {
+                        errorMessage = "Doctor ID not found"
+                        showError = true
+                        isLoading = false // Reset loading state
                     }
-                    
-                    guard let httpResponse = response as? HTTPURLResponse else {
-                        self.errorMessage = "Invalid server response"
-                        self.showError = true
-                        return
+                    return
+                }
+                
+                print("Found doctor: \(doctorInfo)")
+                
+                // Verify password
+                guard let storedPassword = doctorInfo["password"] as? String,
+                      storedPassword == password else {
+                    await MainActor.run {
+                        errorMessage = "Invalid password"
+                        showError = true
+                        isLoading = false // Reset loading state
                     }
-                    
-                    guard let data = data else {
-                        self.errorMessage = "No data received"
-                        self.showError = true
-                        return
+                    return
+                }
+                
+                // Check doctor status
+                guard let status = doctorInfo["doctor_status"] as? String,
+                      status == "active" else {
+                    await MainActor.run {
+                        errorMessage = "Your account is not active. Please contact the hospital administrator."
+                        showError = true
+                        isLoading = false // Reset loading state
                     }
+                    return
+                }
+                
+                // Store doctor information in UserDefaults
+                UserDefaults.standard.set(doctorId, forKey: "current_doctor_id")
+                UserDefaults.standard.set("doctor", forKey: "userRole")
+                
+                // Check if first time login
+                if let isFirstTimeLogin = doctorInfo["is_first_time_login"] as? Bool, isFirstTimeLogin {
+                    // Show password change sheet for first time login
+                    await MainActor.run {
+                        showChangePasswordSheet = true
+                        isLoading = false // Reset loading state
+                    }
+                } else {
+                    // Update login timestamp
+                    try? await supabase.update(
+                        table: "doctors",
+                        data: ["login_in_at": ISO8601DateFormatter().string(from: Date())],
+                        where: "id",
+                        equals: doctorId
+                    )
                     
-                    do {
-                        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                           let status = json["status"] as? String,
-                           let valid = json["valid"] as? Bool {
-                            
-                            if status == "success" {
-                                if valid {
-                                    self.isLoggedIn = true
-                                } else {
-                                    self.errorMessage = "Invalid credentials"
-                                    self.showError = true
-                                }
-                            } else {
-                                self.errorMessage = "Server error: Invalid response format"
-                                self.showError = true
-                            }
-                        } else {
-                            self.errorMessage = "Invalid response format"
-                            self.showError = true
-                        }
-                    } catch {
-                        self.errorMessage = "Failed to parse server response"
-                        self.showError = true
+                    // Navigate to home screen
+                    await MainActor.run {
+                        isLoading = false // Reset loading state
+                        isLoggedIn = true
                     }
                 }
-            }.resume()
-        } catch {
-            self.errorMessage = "Failed to prepare request"
-            self.showError = true
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Login failed: \(error.localizedDescription)"
+                    showError = true
+                    isLoading = false // Reset loading state
+                    print("Login error: \(error)")
+                }
+            }
         }
     }
     
     private func handlePasswordChange() {
-        showChangePasswordSheet = false
-        isLoggedIn = true
+        guard isValidPasswordChange else {
+            errorMessage = "Invalid password format"
+            showError = true
+            return
+        }
+        
+        isLoading = true
+        
+        Task {
+            do {
+                let supabase = SupabaseController.shared
+                
+                // Update password and set first-time login to false
+                try await supabase.update(
+                    table: "doctors",
+                    data: [
+                        "password": newPassword,
+                        "is_first_time_login": "false", // Convert Boolean to String
+                        "login_in_at": ISO8601DateFormatter().string(from: Date())
+                    ],
+                    where: "id",
+                    equals: doctorId
+                )
+                
+                await MainActor.run {
+                    isLoading = false // Reset loading state
+                    showChangePasswordSheet = false
+                    isLoggedIn = true
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to update password: \(error.localizedDescription)"
+                    showError = true
+                    isLoading = false // Reset loading state
+                    print("Password update error: \(error)")
+                }
+            }
+        }
     }
     
     private func isValidAdminId(_ id: String) -> Bool {
-        let adminIdRegex = #"^DOC\d+$"#
+        let adminIdRegex = #"^DOC\d{3}$"#
         return NSPredicate(format: "SELF MATCHES %@", adminIdRegex).evaluate(with: id)
     }
     
     private func isValidPassword(_ password: String) -> Bool {
-        // At least 8 characters
-        guard password.count >= 8 else { return false }
-        
-        // Check for at least one uppercase letter
-        let uppercaseRegex = ".*[A-Z]+.*"
-        guard NSPredicate(format: "SELF MATCHES %@", uppercaseRegex).evaluate(with: password) else { return false }
-        
-        // Check for at least one number
-        let numberRegex = ".*[0-9]+.*"
-        guard NSPredicate(format: "SELF MATCHES %@", numberRegex).evaluate(with: password) else { return false }
-        
-        // Check for at least one special character
-        let specialCharRegex = ".*[@#$%^&*()\\-_=+\\[\\]{}|;:'\",.<>/?]+.*"
-        guard NSPredicate(format: "SELF MATCHES %@", specialCharRegex).evaluate(with: password) else { return false }
-        
-        return true
+        // The regex matches the constraint from the Supabase table:
+        // "Password must be at least 8 characters and contain at least one uppercase letter, 
+        // one lowercase letter, one number, and one special character"
+        let passwordRegex = #"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$"#
+        return NSPredicate(format: "SELF MATCHES %@", passwordRegex).evaluate(with: password)
     }
 }
 
@@ -269,6 +327,7 @@ struct ChangePasswordSheets: View {
     @State private var isNewPasswordVisible: Bool = false
     @State private var isConfirmPasswordVisible: Bool = false
     var isValidInput: Bool
+    var isLoading: Bool
     var onSubmit: () -> Void
     
     var body: some View {
@@ -345,24 +404,37 @@ struct ChangePasswordSheets: View {
             
             // Submit Button
             Button(action: onSubmit) {
-                Text("Submit")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 55)
-                    .background(
-                        LinearGradient(gradient: Gradient(colors: [
-                            isValidInput ? Color.teal : Color.gray.opacity(0.5),
-                            isValidInput ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
-                        ]),
-                        startPoint: .leading,
-                        endPoint: .trailing)
-                    )
-                    .cornerRadius(15)
-                    .shadow(color: isValidInput ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
+                HStack {
+                    if isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .padding(.trailing, 5)
+                        Text("Updating...")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                    } else {
+                        Text("Submit")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                    }
+                }
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 55)
+                .background(
+                    LinearGradient(gradient: Gradient(colors: [
+                        (!isLoading && isValidInput) ? Color.teal : Color.gray.opacity(0.5),
+                        (!isLoading && isValidInput) ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing)
+                )
+                .cornerRadius(15)
+                .shadow(color: (!isLoading && isValidInput) ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
             }
-            .disabled(!isValidInput)
+            .disabled(!isValidInput || isLoading)
             .padding(.horizontal, 20)
             .padding(.top, 10)
             
