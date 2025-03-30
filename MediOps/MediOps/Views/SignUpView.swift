@@ -49,7 +49,7 @@ struct SignUpView: View {
         Task {
             do {
                 // First create the user and get OTP
-                let (patient, token) = try await AuthService.shared.signUpPatient(
+                let (_, _) = try await AuthService.shared.signUpPatient(
                     email: email,
                     password: password,
                     username: name,

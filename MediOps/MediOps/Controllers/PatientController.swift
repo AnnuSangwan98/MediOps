@@ -173,8 +173,8 @@ class PatientController {
     
     /// Update patient profile
     func updatePatient(id: String, name: String? = nil, age: Int? = nil, gender: String? = nil) async throws -> Patient {
-        // 1. Get current patient data
-        let patient = try await getPatient(id: id)
+        // 1. Get current patient data to verify it exists
+        _ = try await getPatient(id: id)
         
         // 2. Prepare update data - convert everything to strings for the API
         var updateData: [String: String] = [:]
