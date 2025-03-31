@@ -961,197 +961,112 @@ class PatientProfileController: ObservableObject {
         }
     }
     
-    // MARK: - Diagnostic Functions
+    // MARK: - Blood Group Management Methods
     
-    /// Inspect the patients table schema and look for blood group related fields
+    // Inspect the patients table schema to check the blood_group field
     func inspectPatientsTableSchema() async {
-        print("🔍 DIAGNOSTIC: Starting inspection of patients table schema")
+        print("🔍 SCHEMA INSPECTION: Checking patients table schema for blood_group field")
         
-        // First, try to get a single patient record to see all available fields
         do {
-            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/patients?limit=1")!
+            // Use the introspection endpoint to get table information
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/?apikey=\(supabase.supabaseAnonKey)")!
             var request = URLRequest(url: url)
-            request.httpMethod = "GET"
             request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
             request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
             
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ DIAGNOSTIC: Invalid response")
-                return
-            }
-            
-            print("📊 DIAGNOSTIC: Response status code: \(httpResponse.statusCode)")
-            
-            if httpResponse.statusCode == 200 {
-                if let result = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], 
-                   let firstRecord = result.first {
-                    print("✅ DIAGNOSTIC: Found patient record with the following fields:")
-                    for (key, value) in firstRecord {
-                        let valueType = type(of: value)
-                        let valuePreview = String(describing: value).prefix(50)
-                        print("  - \(key) (\(valueType)): \(valuePreview)")
-                        
-                        // Check if this field might be related to blood group
-                        if key.lowercased().contains("blood") {
-                            print("  ⚠️ POSSIBLE BLOOD GROUP FIELD: \(key) = \(value)")
-                        }
-                    }
+            if let httpResponse = response as? HTTPURLResponse, 
+               httpResponse.statusCode == 200,
+               let jsonStr = String(data: data, encoding: .utf8) {
+                print("✅ SCHEMA INSPECTION: Successfully retrieved schema info")
+                print("🔍 SCHEMA INSPECTION: Looking for blood_group field in patients table")
+                
+                // Check if the response contains information about the blood_group field
+                if jsonStr.contains("blood_group") || jsonStr.contains("bloodGroup") {
+                    print("✅ SCHEMA INSPECTION: Found blood group field in schema")
                 } else {
-                    print("❌ DIAGNOSTIC: Could not parse patient record or no patients found")
+                    print("⚠️ SCHEMA INSPECTION: No blood group field found in schema")
                 }
             } else {
-                print("❌ DIAGNOSTIC: Request failed with status code \(httpResponse.statusCode)")
-                if let errorText = String(data: data, encoding: .utf8) {
-                    print("  Error: \(errorText)")
-                }
-            }
-            
-            // Also check for schema information
-            print("\n🔍 DIAGNOSTIC: Checking for explicit schema information")
-            let schemaUrl = URL(string: "\(supabase.supabaseURL)/rest/v1/patients?select=body")!
-            var schemaRequest = URLRequest(url: schemaUrl)
-            schemaRequest.httpMethod = "HEAD"  // Just get headers
-            schemaRequest.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
-            schemaRequest.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-            
-            let (_, schemaResponse) = try await URLSession.shared.data(for: schemaRequest)
-            if let httpSchemaResponse = schemaResponse as? HTTPURLResponse {
-                print("📊 DIAGNOSTIC: Schema request status code: \(httpSchemaResponse.statusCode)")
-                
-                // Check response headers for schema information
-                print("📊 DIAGNOSTIC: Response headers:")
-                for (key, value) in httpSchemaResponse.allHeaderFields {
-                    print("  - \(key): \(value)")
-                }
+                print("❌ SCHEMA INSPECTION: Failed to get schema information")
             }
         } catch {
-            print("❌ DIAGNOSTIC ERROR: \(error.localizedDescription)")
+            print("❌ SCHEMA INSPECTION ERROR: \(error.localizedDescription)")
         }
     }
     
-    /// Specifically check for blood_group field in patient record
+    // Inspect the current patient object
+    func inspectCurrentPatientObject() {
+        print("🔍 PATIENT OBJECT: Checking current patient object for blood group data")
+        
+        if let patient = self.patient {
+            print("✅ PATIENT OBJECT: Patient object exists with ID: \(patient.id)")
+            print("🔍 PATIENT OBJECT: Blood Group value: '\(patient.bloodGroup)'")
+            print("🔍 PATIENT OBJECT: Blood Group empty? \(patient.bloodGroup.isEmpty)")
+            print("🔍 PATIENT OBJECT: Blood Group 'Not specified'? \(patient.bloodGroup == "Not specified")")
+        } else {
+            print("❌ PATIENT OBJECT: No patient object available")
+        }
+    }
+    
+    // Check and fix blood group field
     func checkBloodGroupField(patientId: String) async {
-        print("🔍 BLOOD GROUP CHECK: Starting check for blood_group field in patient record")
+        print("🔍 BLOOD GROUP CHECK: Checking blood group for patient ID: \(patientId)")
         
         do {
-            // Query to specifically check for blood_group field in the patient record
-            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/patients?id=eq.\(patientId)&select=id,blood_group,bloodGroup")!
-            var request = URLRequest(url: url)
-            request.httpMethod = "GET"
-            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
-            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            // Query the patients table to get the current blood group value
+            let results = try await supabase.select(
+                from: "patients",
+                where: "id",
+                equals: patientId
+            )
             
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ BLOOD GROUP CHECK: Invalid response")
-                return
-            }
-            
-            print("📊 BLOOD GROUP CHECK: Response status code: \(httpResponse.statusCode)")
-            
-            if httpResponse.statusCode == 200 {
-                if let result = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], 
-                   let patient = result.first {
-                    print("✅ BLOOD GROUP CHECK: Found patient record with ID: \(patientId)")
-                    
-                    // Check for blood_group field
-                    if let bloodGroup = patient["blood_group"] as? String {
-                        print("✅ BLOOD GROUP CHECK: Found blood_group field with value: '\(bloodGroup)'")
-                    } else {
-                        print("❌ BLOOD GROUP CHECK: No blood_group field found")
-                    }
-                    
-                    // Check for alternative bloodGroup field (camelCase)
-                    if let bloodGroup = patient["bloodGroup"] as? String {
-                        print("✅ BLOOD GROUP CHECK: Found bloodGroup field (camelCase) with value: '\(bloodGroup)'")
-                    } else {
-                        print("❌ BLOOD GROUP CHECK: No bloodGroup field (camelCase) found")
-                    }
-                    
-                    // Check if any key contains "blood"
-                    var foundBloodRelatedField = false
-                    for (key, value) in patient {
-                        if key.lowercased().contains("blood") {
-                            foundBloodRelatedField = true
-                            print("✅ BLOOD GROUP CHECK: Found blood-related field '\(key)' with value: '\(value)'")
-                        }
-                    }
-                    
-                    if !foundBloodRelatedField {
-                        print("❌ BLOOD GROUP CHECK: No blood-related fields found in the patient record")
-                        print("🔄 BLOOD GROUP CHECK: Adding blood_group field with default value 'O+'")
-                        
-                        // Try to add the blood_group field with a default value
-                        let success = await fixBloodGroup(patientId: patientId, bloodGroup: "O+")
-                        if success {
-                            print("✅ BLOOD GROUP CHECK: Successfully added blood_group field")
-                        } else {
-                            print("❌ BLOOD GROUP CHECK: Failed to add blood_group field")
-                        }
-                    }
+            if let patientData = results.first {
+                print("✅ BLOOD GROUP CHECK: Found patient record")
+                print("🔍 BLOOD GROUP CHECK: Available fields: \(patientData.keys.joined(separator: ", "))")
+                
+                // Check if blood_group field exists and has a value
+                if let bloodGroup = patientData["blood_group"] as? String, !bloodGroup.isEmpty {
+                    print("✅ BLOOD GROUP CHECK: Found blood_group field with value: \(bloodGroup)")
                 } else {
-                    print("❌ BLOOD GROUP CHECK: Could not parse patient record or no patient found with ID: \(patientId)")
+                    print("⚠️ BLOOD GROUP CHECK: blood_group field is missing or empty")
+                    
+                    // Try to find an alternative field with blood group information
+                    for (key, value) in patientData {
+                        if key.lowercased().contains("blood") && value is String && !(value as! String).isEmpty {
+                            print("✅ BLOOD GROUP CHECK: Found alternative blood group field '\(key)' with value: \(value)")
+                            
+                            // Update the blood_group field with this value
+                            let success = await fixBloodGroup(patientId: patientId, bloodGroup: value as! String)
+                            if success {
+                                print("✅ BLOOD GROUP CHECK: Successfully updated blood_group field")
+                            } else {
+                                print("❌ BLOOD GROUP CHECK: Failed to update blood_group field")
+                            }
+                            
+                            return
+                        }
+                    }
+                    
+                    print("⚠️ BLOOD GROUP CHECK: No blood group information found in any field")
                 }
             } else {
-                print("❌ BLOOD GROUP CHECK: Request failed with status code \(httpResponse.statusCode)")
-                if let errorText = String(data: data, encoding: .utf8) {
-                    print("  Error: \(errorText)")
-                }
+                print("❌ BLOOD GROUP CHECK: Patient record not found")
             }
         } catch {
             print("❌ BLOOD GROUP CHECK ERROR: \(error.localizedDescription)")
         }
     }
     
-    /// Check existing data in current patient object
-    func inspectCurrentPatientObject() {
-        guard let patient = self.patient else {
-            print("❌ DIAGNOSTIC: No patient object available")
-            return
-        }
-        
-        print("\n🔍 DIAGNOSTIC: Current patient object values:")
-        print("  - ID: \(patient.id)")
-        print("  - User ID: \(patient.userId)")
-        print("  - Name: \(patient.name)")
-        print("  - Age: \(patient.age)")
-        print("  - Gender: \(patient.gender)")
-        print("  - Blood Group: '\(patient.bloodGroup)'")
-        print("  - Phone Number: \(patient.phoneNumber)")
-        
-        // Additional information
-        if let address = patient.address {
-            print("  - Address: \(address)")
-        } else {
-            print("  - Address: nil")
-        }
-        
-        if let email = patient.email {
-            print("  - Email: \(email)")
-        } else {
-            print("  - Email: nil")
-        }
-        
-        // Emergency contact info
-        if let emergencyName = patient.emergencyContactName {
-            print("  - Emergency Contact Name: \(emergencyName)")
-        } else {
-            print("  - Emergency Contact Name: nil")
-        }
-        print("  - Emergency Contact Number: \(patient.emergencyContactNumber)")
-        print("  - Emergency Relationship: \(patient.emergencyRelationship)")
-    }
-    
-    /// Fix blood group for a patient record
+    // Fix blood group field
     func fixBloodGroup(patientId: String, bloodGroup: String) async -> Bool {
-        print("🩸 BLOOD GROUP FIX: Attempting to fix blood group for patient ID: \(patientId)")
-        print("🩸 BLOOD GROUP FIX: Setting blood group to: \(bloodGroup)")
+        print("🩸 FIX BLOOD GROUP: Updating blood group to '\(bloodGroup)' for patient ID: \(patientId)")
         
         do {
-            // Create a simple dictionary to update just the blood group field
+            // Prepare update data
             let updateData: [String: String] = [
-                "blood_group": bloodGroup
+                "blood_group": bloodGroup,
+                "updated_at": ISO8601DateFormatter().string(from: Date())
             ]
             
             // Build the update URL
@@ -1161,43 +1076,388 @@ class PatientProfileController: ObservableObject {
             request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
             request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
             request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue("return=representation", forHTTPHeaderField: "Prefer")
             
+            // Convert to JSON data
             let jsonData = try JSONSerialization.data(withJSONObject: updateData)
             request.httpBody = jsonData
             
-            print("🩸 BLOOD GROUP FIX: Sending PATCH request to update blood_group field")
-            print("🩸 BLOOD GROUP FIX: Request payload: \(String(data: jsonData, encoding: .utf8) ?? "Unable to convert data to string")")
-            
+            // Execute request
             let (responseData, response) = try await URLSession.shared.data(for: request)
             let responseString = String(data: responseData, encoding: .utf8) ?? "No response data"
             
+            // Validate HTTP response
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ BLOOD GROUP FIX ERROR: Invalid response")
+                print("❌ FIX BLOOD GROUP ERROR: Invalid response type")
                 return false
             }
             
-            print("📊 BLOOD GROUP FIX: Response status code: \(httpResponse.statusCode)")
-            print("📊 BLOOD GROUP FIX: Response: \(responseString)")
-            
+            // Check status code
             if httpResponse.statusCode == 204 || httpResponse.statusCode == 200 {
-                print("✅ BLOOD GROUP FIX: Successfully updated blood group")
+                print("✅ FIX BLOOD GROUP: Successfully updated blood group, status code: \(httpResponse.statusCode)")
                 
                 // Update the local patient object
                 await MainActor.run {
-                    if var updatedPatient = self.patient {
-                        updatedPatient.bloodGroup = bloodGroup
+                    if let currentPatient = self.patient {
+                        // Update the blood group in the current patient object
+                        let updatedPatient = Patient(
+                            id: currentPatient.id,
+                            userId: currentPatient.userId,
+                            name: currentPatient.name,
+                            age: currentPatient.age,
+                            gender: currentPatient.gender,
+                            createdAt: currentPatient.createdAt,
+                            updatedAt: Date(),
+                            email: currentPatient.email,
+                            emailVerified: currentPatient.emailVerified,
+                            bloodGroup: bloodGroup, // Set the new blood group
+                            address: currentPatient.address,
+                            phoneNumber: currentPatient.phoneNumber,
+                            emergencyContactName: currentPatient.emergencyContactName,
+                            emergencyContactNumber: currentPatient.emergencyContactNumber,
+                            emergencyRelationship: currentPatient.emergencyRelationship
+                        )
                         self.patient = updatedPatient
+                        print("✅ FIX BLOOD GROUP: Updated local patient object with new blood group: \(bloodGroup)")
                     }
                 }
                 
                 return true
             } else {
-                print("❌ BLOOD GROUP FIX ERROR: Failed with status code \(httpResponse.statusCode)")
+                print("❌ FIX BLOOD GROUP ERROR: Failed with status code \(httpResponse.statusCode)")
+                print("❌ FIX BLOOD GROUP ERROR: Response: \(responseString)")
                 return false
             }
         } catch {
-            print("❌ BLOOD GROUP FIX ERROR: \(error.localizedDescription)")
+            print("❌ FIX BLOOD GROUP ERROR: \(error.localizedDescription)")
             return false
         }
+    }
+    
+    // MARK: - Direct Update Methods with Enhanced Error Handling
+    
+    /// Robust method to update profile with multiple retries and error handling
+    func updateProfileWithRetry(
+        patientId: String,
+        userId: String,
+        name: String,
+        age: Int,
+        gender: String,
+        bloodGroup: String,
+        email: String,
+        phoneNumber: String,
+        address: String,
+        emergencyContactName: String,
+        emergencyContactNumber: String,
+        emergencyRelationship: String
+    ) async -> Bool {
+        print("🔐 ROBUST UPDATE: Starting enhanced profile update for patient ID: \(patientId)")
+        
+        // Format data for update - use a consistent structure
+        let updateData: [String: Any] = [
+            "name": name,
+            "age": age,
+            "gender": gender,
+            "blood_group": bloodGroup,
+            "email": email,
+            "phone_number": phoneNumber,
+            "address": address,
+            "emergency_contact_name": emergencyContactName,
+            "emergency_contact_number": emergencyContactNumber,
+            "emergency_relationship": emergencyRelationship,
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        // First, verify patient exists with this ID
+        print("🔍 ROBUST UPDATE: Verifying patient exists with ID: \(patientId)")
+        do {
+            let results = try await supabase.select(
+                from: "patients",
+                where: "id",
+                equals: patientId
+            )
+            
+            if results.isEmpty {
+                print("⚠️ ROBUST UPDATE: Patient not found with ID: \(patientId)")
+                print("🔄 ROBUST UPDATE: Checking if patient exists with user_id: \(userId)")
+                
+                // Patient not found by ID, check if exists by user_id
+                let userResults = try await supabase.select(
+                    from: "patients",
+                    where: "user_id",
+                    equals: userId
+                )
+                
+                if let userData = userResults.first, let realPatientId = userData["id"] as? String {
+                    print("✅ ROBUST UPDATE: Found patient with user_id: \(userId), real patient ID is: \(realPatientId)")
+                    // Use this patient ID instead
+                    return await directUpdateProfileWithExactPatientId(
+                        patientId: realPatientId,
+                        updateData: updateData
+                    )
+                } else {
+                    print("⚠️ ROBUST UPDATE: No patient found with this user_id either. Creating new patient.")
+                    
+                    // Create completely new patient
+                    let newPatientId = "PAT_\(Int(Date().timeIntervalSince1970))"
+                    var newPatientData = updateData
+                    newPatientData["id"] = newPatientId
+                    newPatientData["user_id"] = userId
+                    newPatientData["created_at"] = ISO8601DateFormatter().string(from: Date())
+                    
+                    // Try to insert
+                    try await supabase.insert(into: "patients", values: newPatientData)
+                    print("✅ ROBUST UPDATE: Created new patient with ID: \(newPatientId)")
+                    
+                    // Update our local object and return success
+                    await MainActor.run {
+                        self.patient = Patient(
+                            id: newPatientId,
+                            userId: userId,
+                            name: name,
+                            age: age,
+                            gender: gender,
+                            createdAt: Date(),
+                            updatedAt: Date(),
+                            email: email,
+                            emailVerified: false,
+                            bloodGroup: bloodGroup,
+                            address: address,
+                            phoneNumber: phoneNumber,
+                            emergencyContactName: emergencyContactName,
+                            emergencyContactNumber: emergencyContactNumber,
+                            emergencyRelationship: emergencyRelationship
+                        )
+                    }
+                    
+                    return true
+                }
+            } else {
+                print("✅ ROBUST UPDATE: Patient exists with ID: \(patientId), proceeding with update")
+                
+                // Patient exists, continue with direct update
+                return await directUpdateProfileWithExactPatientId(
+                    patientId: patientId,
+                    updateData: updateData
+                )
+            }
+        } catch {
+            print("❌ ROBUST UPDATE ERROR: Failed to verify patient: \(error.localizedDescription)")
+            
+            // Continue with update anyway, since verification failed but patient might still exist
+            print("⚠️ ROBUST UPDATE: Attempting update despite verification error")
+            return await directUpdateProfileWithExactPatientId(
+                patientId: patientId,
+                updateData: updateData
+            )
+        }
+    }
+    
+    /// Direct update method using raw HTTP for maximum compatibility
+    private func directUpdateProfileWithExactPatientId(
+        patientId: String,
+        updateData: [String: Any]
+    ) async -> Bool {
+        print("🔧 DIRECT UPDATE: Updating patient with ID: \(patientId)")
+        print("🔧 DIRECT UPDATE: Update data: \(updateData)")
+        
+        do {
+            // Create a simplified version of the data specifically for Supabase
+            // This avoids potential issues with complex data types
+            let simplifiedData: [String: String] = [
+                "name": updateData["name"] as? String ?? "",
+                "age": String(describing: updateData["age"] ?? "0"),
+                "gender": updateData["gender"] as? String ?? "",
+                "blood_group": updateData["blood_group"] as? String ?? "",
+                "email": updateData["email"] as? String ?? "",
+                "phone_number": updateData["phone_number"] as? String ?? "",
+                "address": updateData["address"] as? String ?? "",
+                "emergency_contact_name": updateData["emergency_contact_name"] as? String ?? "",
+                "emergency_contact_number": updateData["emergency_contact_number"] as? String ?? "",
+                "emergency_relationship": updateData["emergency_relationship"] as? String ?? ""
+            ]
+            
+            // Convert data to JSON
+            let jsonData = try JSONSerialization.data(withJSONObject: simplifiedData)
+            
+            // Use direct URL to the specific patient record
+            let apiKey = supabase.supabaseAnonKey
+            let baseUrl = supabase.supabaseURL
+            let urlString = "\(baseUrl)/rest/v1/patients?id=eq.\(patientId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? patientId)"
+            
+            guard let url = URL(string: urlString) else {
+                print("❌ DIRECT UPDATE: Invalid URL")
+                return false
+            }
+            
+            print("🔄 DIRECT UPDATE: Using URL: \(urlString)")
+            
+            // Create the request with detailed headers
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.httpBody = jsonData
+            
+            // Add all necessary headers
+            request.addValue(apiKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue("*/*", forHTTPHeaderField: "Accept")
+            request.addValue("return=minimal", forHTTPHeaderField: "Prefer") // Use minimal to reduce data transfer
+            
+            print("🔄 DIRECT UPDATE: Request payload: \(String(data: jsonData, encoding: .utf8) ?? "Unable to convert data to string")")
+            
+            // Try multiple approaches with different configurations
+            var success = false
+            
+            // Attempt 1: Standard approach
+            success = await tryUpdateWithRequest(request, attempt: 1, patientId: patientId, updateData: simplifiedData)
+            if success { return true }
+            
+            // Attempt 2: Different URL format
+            if let url2 = URL(string: "\(baseUrl)/rest/v1/patients?id=eq.\(patientId)") {
+                var request2 = URLRequest(url: url2)
+                request2.httpMethod = "PATCH"
+                request2.httpBody = jsonData
+                request2.addValue(apiKey, forHTTPHeaderField: "apikey")
+                request2.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                request2.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                
+                success = await tryUpdateWithRequest(request2, attempt: 2, patientId: patientId, updateData: simplifiedData)
+                if success { return true }
+            }
+            
+            // Attempt 3: Try POST with UPSERT
+            if let url3 = URL(string: "\(baseUrl)/rest/v1/patients") {
+                var request3 = URLRequest(url: url3)
+                request3.httpMethod = "POST"
+                
+                // Add ID to the data for upsert
+                var upsertData = simplifiedData
+                upsertData["id"] = patientId
+                
+                let upsertJsonData = try JSONSerialization.data(withJSONObject: upsertData)
+                request3.httpBody = upsertJsonData
+                
+                request3.addValue(apiKey, forHTTPHeaderField: "apikey")
+                request3.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                request3.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                request3.addValue("upsert", forHTTPHeaderField: "Prefer")
+                
+                success = await tryUpdateWithRequest(request3, attempt: 3, patientId: patientId, updateData: upsertData)
+                if success { return true }
+            }
+            
+            // Final fallback: Try PUT method
+            if let url4 = URL(string: "\(baseUrl)/rest/v1/patients?id=eq.\(patientId)") {
+                var request4 = URLRequest(url: url4)
+                request4.httpMethod = "PUT"
+                
+                // For PUT, we need to include all required fields
+                var putData = simplifiedData
+                putData["id"] = patientId
+                putData["user_id"] = self.patient?.userId ?? ""
+                
+                let putJsonData = try JSONSerialization.data(withJSONObject: putData)
+                request4.httpBody = putJsonData
+                
+                request4.addValue(apiKey, forHTTPHeaderField: "apikey")
+                request4.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                request4.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                
+                success = await tryUpdateWithRequest(request4, attempt: 4, patientId: patientId, updateData: putData)
+                if success { return true }
+            }
+            
+            // If we got here, all attempts failed
+            updateLocalPatientAnyway(patientId: patientId, updateData: updateData)
+            return false
+        } catch {
+            print("❌ DIRECT UPDATE ERROR: \(error.localizedDescription)")
+            updateLocalPatientAnyway(patientId: patientId, updateData: updateData)
+            return false
+        }
+    }
+    
+    /// Helper method to try update with a specific request
+    private func tryUpdateWithRequest(_ request: URLRequest, attempt: Int, patientId: String, updateData: [String: String]) async -> Bool {
+        do {
+            print("🔄 DIRECT UPDATE: Starting attempt \(attempt)")
+            let (responseData, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ DIRECT UPDATE: Invalid response type on attempt \(attempt)")
+                return false
+            }
+            
+            let responseString = String(data: responseData, encoding: .utf8) ?? "No response data"
+            print("📊 DIRECT UPDATE: Response status code: \(httpResponse.statusCode)")
+            print("📊 DIRECT UPDATE: Response: \(responseString)")
+            
+            // Success cases for different HTTP methods
+            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("✅ DIRECT UPDATE: Successfully updated patient profile on attempt \(attempt)")
+                
+                // Update local patient data
+                updateLocalPatient(patientId: patientId, updateData: updateData)
+                return true
+            } else {
+                print("❌ DIRECT UPDATE: Failed with status code \(httpResponse.statusCode) on attempt \(attempt)")
+                print("❌ DIRECT UPDATE: Error response: \(responseString)")
+                return false
+            }
+        } catch {
+            print("❌ DIRECT UPDATE ERROR on attempt \(attempt): \(error.localizedDescription)")
+            return false
+        }
+    }
+    
+    /// Update local patient object with the new data
+    private func updateLocalPatient(patientId: String, updateData: [String: String]) {
+        Task {
+            await MainActor.run {
+                if let currentPatient = self.patient {
+                    let updatedPatient = Patient(
+                        id: patientId,
+                        userId: currentPatient.userId,
+                        name: updateData["name"] ?? currentPatient.name,
+                        age: Int(updateData["age"] ?? "") ?? currentPatient.age,
+                        gender: updateData["gender"] ?? currentPatient.gender,
+                        createdAt: currentPatient.createdAt,
+                        updatedAt: Date(),
+                        email: updateData["email"] ?? currentPatient.email ?? "",
+                        emailVerified: currentPatient.emailVerified,
+                        bloodGroup: updateData["blood_group"] ?? currentPatient.bloodGroup,
+                        address: updateData["address"] ?? currentPatient.address ?? "",
+                        phoneNumber: updateData["phone_number"] ?? currentPatient.phoneNumber,
+                        emergencyContactName: updateData["emergency_contact_name"] ?? currentPatient.emergencyContactName ?? "",
+                        emergencyContactNumber: updateData["emergency_contact_number"] ?? currentPatient.emergencyContactNumber,
+                        emergencyRelationship: updateData["emergency_relationship"] ?? currentPatient.emergencyRelationship
+                    )
+                    
+                    self.patient = updatedPatient
+                    print("✅ DIRECT UPDATE: Updated local patient object")
+                }
+            }
+        }
+    }
+    
+    /// Update the local patient even if server update failed to keep UI consistent
+    private func updateLocalPatientAnyway(patientId: String, updateData: [String: Any]) {
+        // Create string-only version
+        let stringData: [String: String] = [
+            "name": updateData["name"] as? String ?? "",
+            "age": String(describing: updateData["age"] ?? "0"),
+            "gender": updateData["gender"] as? String ?? "",
+            "blood_group": updateData["blood_group"] as? String ?? "",
+            "email": updateData["email"] as? String ?? "",
+            "phone_number": updateData["phone_number"] as? String ?? "",
+            "address": updateData["address"] as? String ?? "",
+            "emergency_contact_name": updateData["emergency_contact_name"] as? String ?? "",
+            "emergency_contact_number": updateData["emergency_contact_number"] as? String ?? "",
+            "emergency_relationship": updateData["emergency_relationship"] as? String ?? ""
+        ]
+        
+        updateLocalPatient(patientId: patientId, updateData: stringData)
+        print("⚠️ DIRECT UPDATE: Updated local patient data despite server failure for better user experience")
     }
 } 

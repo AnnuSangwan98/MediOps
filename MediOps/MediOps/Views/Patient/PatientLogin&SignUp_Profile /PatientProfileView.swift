@@ -5,6 +5,7 @@
 //  Created by Aditya Rai on 21/03/25.
 //
 import SwiftUI
+import UIKit
 
 struct PatientProfileView: View {
     @ObservedObject var profileController: PatientProfileController
@@ -12,6 +13,8 @@ struct PatientProfileView: View {
     @State private var isEditing = false
     @State private var showFamilyMemberSheet = false
     @State private var isLoading = false
+    @State private var showLogoutAlert = false
+    @State private var hasCompletedInitialLoad = false
     
     var body: some View {
         NavigationStack {
@@ -40,22 +43,6 @@ struct PatientProfileView: View {
                                     .padding(.horizontal)
                             }
                             VStack {
-                                Image(systemName: "drop.fill")
-                                if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
-                                    Text("Unknown")
-                                        .foregroundColor(.orange)
-                                        .onTapGesture {
-                                            Task {
-                                                // Run diagnostic on tap if blood group is missing
-                                                await profileController.inspectPatientsTableSchema()
-                                                profileController.inspectCurrentPatientObject()
-                                            }
-                                        }
-                                } else {
-                                    Text(patient.bloodGroup)
-                                }
-                            }
-                            VStack {
                                 Image(systemName: "calendar")
                                 Text("\(patient.age)")
                             }
@@ -63,6 +50,72 @@ struct PatientProfileView: View {
                         .font(.subheadline)
                         .foregroundColor(.gray)
                         .padding(.bottom, 20)
+                        
+                        // Blood group card - displayed as a separate card for better visibility
+                        CardView {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text("Blood Group")
+                                        .font(.headline)
+                                        .padding(.bottom, 2)
+                                    
+                                    HStack {
+                                        Image(systemName: "drop.fill")
+                                            .foregroundColor(.red)
+                                            .font(.title2)
+                                        
+                                        if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
+                                            Text("Unknown")
+                                                .foregroundColor(.orange)
+                                                .font(.title3)
+                                                .fontWeight(.semibold)
+                                                .onTapGesture {
+                                                    Task {
+                                                        // Run diagnostic on tap if blood group is missing
+                                                        await profileController.inspectPatientsTableSchema()
+                                                        profileController.inspectCurrentPatientObject()
+                                                    }
+                                                }
+                                            
+                                            // Add fix button
+                                            Menu {
+                                                ForEach(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], id: \.self) { group in
+                                                    Button(group) {
+                                                        Task {
+                                                            // Fix blood group
+                                                            let success = await profileController.fixBloodGroup(
+                                                                patientId: patient.id,
+                                                                bloodGroup: group
+                                                            )
+                                                            
+                                                            if success {
+                                                                // Reload profile
+                                                                await profileController.loadProfile(userId: patient.userId)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } label: {
+                                                Text("Fix")
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 3)
+                                                    .background(Color.blue)
+                                                    .foregroundColor(.white)
+                                                    .cornerRadius(4)
+                                            }
+                                        } else {
+                                            Text(patient.bloodGroup)
+                                                .font(.title3)
+                                                .fontWeight(.semibold)
+                                        }
+                                    }
+                                }
+                                Spacer()
+                            }
+                            .padding(.vertical, 5)
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 10)
                         
                         VStack(spacing: 16) {
                             CardView {
@@ -73,47 +126,7 @@ struct PatientProfileView: View {
                                     InfoRow(title: "Address", value: patient.address ?? "Not provided")
                                     InfoRow(title: "Phone Number", value: patient.phoneNumber)
                                     
-                                    // Special handling for blood group
-                                    HStack {
-                                        Text("Blood Group")
-                                            .fontWeight(.medium)
-                                        Spacer()
-                                        if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
-                                            HStack {
-                                                Text("Not specified")
-                                                    .foregroundColor(.orange)
-                                                
-                                                Menu {
-                                                    ForEach(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], id: \.self) { group in
-                                                        Button(group) {
-                                                            Task {
-                                                                // Fix blood group
-                                                                let success = await profileController.fixBloodGroup(
-                                                                    patientId: patient.id,
-                                                                    bloodGroup: group
-                                                                )
-                                                                
-                                                                if success {
-                                                                    // Reload profile
-                                                                    await profileController.loadProfile(userId: patient.userId)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                } label: {
-                                                    Text("Fix")
-                                                        .padding(.horizontal, 8)
-                                                        .padding(.vertical, 3)
-                                                        .background(Color.blue)
-                                                        .foregroundColor(.white)
-                                                        .cornerRadius(4)
-                                                }
-                                            }
-                                        } else {
-                                            Text(patient.bloodGroup)
-                                                .foregroundColor(.gray)
-                                        }
-                                    }
+                                    // Remove blood group from here since it's now a separate card
                                 }
                             }
                             
@@ -168,8 +181,12 @@ struct PatientProfileView: View {
                         .padding()
                         .frame(maxWidth: .infinity)
                         .padding(.top, 100)
-                    } else {
-                        // No data view (no patient and no error)
+                    } else if isLoading {
+                        // Show a spinner when actively loading
+                        ProgressView("Loading profile data...")
+                            .padding(.vertical, 100)
+                    } else if hasCompletedInitialLoad && profileController.patient == nil {
+                        // Only show this message after we've attempted to load data and failed
                         VStack(spacing: 20) {
                             Text("No patient information available")
                                 .font(.title3)
@@ -179,7 +196,17 @@ struct PatientProfileView: View {
                             Button("Create Test Profile") {
                                 Task {
                                     isLoading = true
-                                    await profileController.createAndInsertTestPatientInSupabase()
+                                    let success = await profileController.createAndInsertTestPatientInSupabase()
+                                    if !success {
+                                        await MainActor.run {
+                                            // Set an error if creation failed
+                                            profileController.error = NSError(
+                                                domain: "PatientProfileError",
+                                                code: 2,
+                                                userInfo: [NSLocalizedDescriptionKey: "Failed to create test profile. Please try logging in again."]
+                                            )
+                                        }
+                                    }
                                     isLoading = false
                                 }
                             }
@@ -189,20 +216,29 @@ struct PatientProfileView: View {
                             .cornerRadius(8)
                         }
                         .padding(.top, 50)
+                    } else {
+                        // Default placeholder while waiting for data
+                        ProgressView()
+                            .padding(.vertical, 100)
                     }
                 }
             }
             .navigationTitle("Patient Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationBarItems(
-                leading: Button("Cancel") {
-                    dismiss()
-                },
-                trailing: Button("Edit") {
-                    isEditing = true
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
                 }
-                .disabled(profileController.patient == nil)
-            )
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Edit") {
+                        isEditing = true
+                    }
+                    .disabled(profileController.patient == nil)
+                }
+            }
             
             if let patient = profileController.patient {
                 Button(action: {
@@ -221,46 +257,112 @@ struct PatientProfileView: View {
                 .sheet(isPresented: $showFamilyMemberSheet) {
                     FamilyMemberListView(profileController: profileController)
                 }
+                
+                // Add logout button
+                Button(action: {
+                    showLogoutAlert = true
+                }) {
+                    Text("Logout")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.red.opacity(0.8))
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                        .padding(.top, 10)
+                        .padding(.bottom, 20)
+                }
             }
         }
         .sheet(isPresented: $isEditing) {
             EditProfileView(profileController: profileController, isPresented: $isEditing)
         }
+        .alert("Logout", isPresented: $showLogoutAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Yes, Logout", role: .destructive) {
+                // Get the AppNavigationState from UserDefaults
+                let defaults = UserDefaults.standard
+                defaults.removeObject(forKey: "userId")
+                defaults.removeObject(forKey: "current_user_id")
+                defaults.synchronize()
+                
+                // Dismiss the profile view
+                dismiss()
+                
+                // Reset to RoleSelectionView without using navigationState
+                guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                      let window = windowScene.windows.first else { return }
+                
+                // Create a new AppNavigationState since we can't access the current one
+                let newNavigationState = AppNavigationState()
+                // Explicitly call signOut to reset the navigation state
+                newNavigationState.signOut()
+                
+                let contentView = NavigationStack {
+                    RoleSelectionView()
+                }
+                .environmentObject(newNavigationState)
+                
+                window.rootViewController = UIHostingController(rootView: contentView)
+                window.makeKeyAndVisible()
+            }
+        } message: {
+            Text("Are you sure you want to log out?")
+        }
         .onAppear {
-            // Check if we need to load the profile
-            if profileController.patient == nil && !profileController.isLoading && profileController.error == nil {
+            print("🔍 DEBUG: PatientProfileView appeared, checking data state")
+            print("🔍 DEBUG: Patient data: \(profileController.patient != nil ? "Available" : "Not available")")
+            print("🔍 DEBUG: Error: \(profileController.error?.localizedDescription ?? "None")")
+            
+            // Only attempt to load if we don't already have data
+            if profileController.patient == nil && !profileController.isLoading {
                 Task {
-                    isLoading = true
+                    print("🔄 DEBUG: Starting patient data load")
+                    
+                    // Show loading indicator
+                    await MainActor.run {
+                        isLoading = true
+                    }
+                    
                     if let userId = UserDefaults.standard.string(forKey: "userId") ?? 
                                UserDefaults.standard.string(forKey: "current_user_id") {
+                        print("🔄 DEBUG: Loading profile for userId: \(userId)")
+                        
+                        // Load the patient profile using userId
                         await profileController.loadProfile(userId: userId)
                         
-                        // After loading the profile, check the blood group field
+                        // Check if we have patient data
                         if let patient = profileController.patient {
+                            print("✅ DEBUG: Successfully loaded patient: \(patient.name)")
+                            
+                            // Check and fix blood group if needed
                             if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
-                                print("⚠️ PROFILE: Blood group is missing or not specified, running blood group check")
+                                print("⚠️ DEBUG: Blood group missing, checking...")
                                 await profileController.checkBloodGroupField(patientId: patient.id)
                                 
-                                // Reload profile after checking blood group
+                                // Reload profile after fixing blood group
                                 await profileController.loadProfile(userId: userId)
                             }
+                        } else {
+                            print("⚠️ DEBUG: Failed to load patient data")
                         }
                     } else {
-                        // Create a test patient if no user ID is available
-                        await profileController.createAndInsertTestPatientInSupabase()
+                        print("⚠️ DEBUG: No userId found in UserDefaults")
                     }
-                    isLoading = false
+                    
+                    // Hide loading indicator and mark as completed
+                    await MainActor.run {
+                        isLoading = false
+                        hasCompletedInitialLoad = true
+                    }
                 }
-            } else if let patient = profileController.patient {
-                // Patient is already loaded, check if blood group needs verification
-                if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
-                    Task {
-                        print("⚠️ PROFILE: Blood group is missing or not specified, running blood group check")
-                        await profileController.checkBloodGroupField(patientId: patient.id)
-                        
-                        // Reload profile after checking blood group
-                        await profileController.loadProfile(userId: patient.userId)
-                    }
+            } else {
+                print("ℹ️ DEBUG: Patient data already loaded or loading in progress")
+                
+                // If data is already loaded, just mark as completed
+                if !hasCompletedInitialLoad {
+                    hasCompletedInitialLoad = true
                 }
             }
         }
@@ -316,6 +418,18 @@ struct PatientProfileView: View {
         @State private var errorMessage = ""
         @State private var showErrorAlert = false
         
+        // Add this computed property for phone validation
+        private var phoneNumberIsValid: Bool {
+            let digitsOnly = phone.filter { $0.isNumber }
+            return digitsOnly.count == 10
+        }
+        
+        // Add this computed property for emergency contact validation
+        private var emergencyContactNumberIsValid: Bool {
+            let digitsOnly = emergencyContactNumber.filter { $0.isNumber }
+            return digitsOnly.count == 10
+        }
+        
         var body: some View {
             NavigationStack {
                 Form {
@@ -342,8 +456,23 @@ struct PatientProfileView: View {
                     }
                     
                     Section(header: Text("Contact Information")) {
-                        TextField("Phone Number", text: $phone)
+                        TextField("Phone Number (10 digits)", text: $phone)
                             .keyboardType(.phonePad)
+                            .onChange(of: phone) { newValue in
+                                // Restrict to digits only and maximum 10 characters
+                                let filtered = newValue.filter { $0.isNumber }
+                                if filtered.count > 10 {
+                                    phone = String(filtered.prefix(10))
+                                } else {
+                                    phone = filtered
+                                }
+                            }
+                        
+                        if !phone.isEmpty && !phoneNumberIsValid {
+                            Text("Phone number must be 10 digits")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
                         
                         TextField("Address", text: $address)
                     }
@@ -351,8 +480,23 @@ struct PatientProfileView: View {
                     Section(header: Text("Emergency Contact")) {
                         TextField("Name", text: $emergencyContactName)
                         
-                        TextField("Phone Number", text: $emergencyContactNumber)
+                        TextField("Phone Number (10 digits)", text: $emergencyContactNumber)
                             .keyboardType(.phonePad)
+                            .onChange(of: emergencyContactNumber) { newValue in
+                                // Restrict to digits only and maximum 10 characters
+                                let filtered = newValue.filter { $0.isNumber }
+                                if filtered.count > 10 {
+                                    emergencyContactNumber = String(filtered.prefix(10))
+                                } else {
+                                    emergencyContactNumber = filtered
+                                }
+                            }
+                            
+                        if !emergencyContactNumber.isEmpty && !emergencyContactNumberIsValid {
+                            Text("Emergency contact number must be 10 digits")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
                         
                         TextField("Relationship", text: $emergencyRelationship)
                     }
@@ -378,10 +522,12 @@ struct PatientProfileView: View {
                         gender = patient.gender
                         bloodGroup = patient.bloodGroup
                         email = patient.email ?? ""
-                        phone = patient.phoneNumber
+                        // Format phone number to ensure only digits
+                        phone = patient.phoneNumber.filter { $0.isNumber }
                         address = patient.address ?? ""
                         emergencyContactName = patient.emergencyContactName ?? ""
-                        emergencyContactNumber = patient.emergencyContactNumber
+                        // Format emergency contact number to ensure only digits
+                        emergencyContactNumber = patient.emergencyContactNumber.filter { $0.isNumber }
                         emergencyRelationship = patient.emergencyRelationship
                     }
                 }
@@ -425,66 +571,208 @@ struct PatientProfileView: View {
                     
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save") {
-                            guard let patient = profileController.patient else {
-                                errorMessage = "No patient data available to update"
-                                showErrorAlert = true
-                                return
-                            }
+                            // Get the current patient and try to ensure it's valid
+                            let currentPatient = profileController.patient
                             
-                            // Basic validation
-                            if name.isEmpty {
-                                errorMessage = "Name cannot be empty"
-                                return
-                            }
+                            // Debug the current patient state
+                            print("🔍 EDIT PROFILE: Current patient before update: \(String(describing: currentPatient))")
                             
-                            if phone.isEmpty {
-                                errorMessage = "Phone number cannot be empty"
-                                return
-                            }
-                            
-                            if emergencyContactNumber.isEmpty {
-                                errorMessage = "Emergency contact number cannot be empty"
-                                return
-                            }
-                            
-                            isLoading = true
-                            errorMessage = "" // Clear any previous error
-                            
-                            Task {
-                                print("🔄 EDIT PROFILE: Starting profile update with data:")
-                                print("  - Name: \(name)")
-                                print("  - Age: \(age)")
-                                print("  - Gender: \(gender)")
-                                print("  - Blood Group: \(bloodGroup)")
-                                print("  - Email: \(email)")
-                                print("  - Phone: \(phone)")
+                            // Only show error if there's no patient AND we can't create one
+                            if currentPatient == nil {
+                                // Try to refresh the patient data
+                                print("⚠️ EDIT PROFILE: No patient data available, attempting to retrieve...")
                                 
-                                let success = await profileController.updateProfile(
-                                    name: name,
-                                    age: age,
-                                    gender: gender,
-                                    bloodGroup: bloodGroup,
-                                    email: email,
-                                    phoneNumber: phone,
-                                    address: address,
-                                    emergencyContactName: emergencyContactName,
-                                    emergencyContactNumber: emergencyContactNumber,
-                                    emergencyRelationship: emergencyRelationship
-                                )
-                                
-                                await MainActor.run {
-                                    isLoading = false
+                                Task {
+                                    isLoading = true
                                     
-                                    if success {
-                                        print("✅ EDIT PROFILE: Profile updated successfully")
-                                        isPresented = false
+                                    // Try to get the current user ID
+                                    if let userId = UserDefaults.standard.string(forKey: "userId") ?? 
+                                               UserDefaults.standard.string(forKey: "current_user_id") {
+                                        // Try to load the patient profile
+                                        print("🔄 EDIT PROFILE: Attempting to load profile for user ID: \(userId)")
+                                        await profileController.loadProfile(userId: userId)
+                                        
+                                        await MainActor.run {
+                                            isLoading = false
+                                            
+                                            // Check if we now have patient data
+                                            if profileController.patient != nil {
+                                                print("✅ EDIT PROFILE: Successfully retrieved patient data")
+                                                // Try again with the Save button action
+                                                continueWithSave()
+                                            } else {
+                                                // Still no patient data, create a test patient
+                                                print("⚠️ EDIT PROFILE: Failed to retrieve patient data, creating test patient...")
+                                                Task {
+                                                    isLoading = true
+                                                    let success = await profileController.createAndInsertTestPatientInSupabase()
+                                                    
+                                                    await MainActor.run {
+                                                        isLoading = false
+                                                        if success {
+                                                            print("✅ EDIT PROFILE: Successfully created test patient")
+                                                            // Try again with the Save button action
+                                                            continueWithSave()
+                                                        } else {
+                                                            errorMessage = "Could not create patient profile. Please try again."
+                                                            showErrorAlert = true
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     } else {
-                                        print("❌ EDIT PROFILE ERROR: Failed to update profile")
-                                        errorMessage = "Failed to update profile. Please try again."
-                                        showErrorAlert = true
+                                        await MainActor.run {
+                                            isLoading = false
+                                            errorMessage = "No user ID found. Please log in again."
+                                            showErrorAlert = true
+                                        }
                                     }
                                 }
+                                return
                             }
+                            
+                            // If we have a patient, continue with validation and saving
+                            continueWithSave()
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Helper function to continue with validation and saving
+        func continueWithSave() {
+            // Basic validation
+            if name.isEmpty {
+                errorMessage = "Name cannot be empty"
+                return
+            }
+            
+            if phone.isEmpty {
+                errorMessage = "Phone number cannot be empty"
+                return
+            }
+            
+            if !phoneNumberIsValid {
+                errorMessage = "Phone number must be exactly 10 digits"
+                return
+            }
+            
+            if emergencyContactNumber.isEmpty {
+                errorMessage = "Emergency contact number cannot be empty"
+                return
+            }
+            
+            if !emergencyContactNumberIsValid {
+                errorMessage = "Emergency contact number must be exactly 10 digits"
+                return
+            }
+            
+            if emergencyContactName.isEmpty {
+                errorMessage = "Emergency contact name cannot be empty"
+                return
+            }
+            
+            if emergencyRelationship.isEmpty {
+                errorMessage = "Emergency contact relationship cannot be empty"
+                return
+            }
+            
+            isLoading = true
+            errorMessage = "" // Clear any previous error
+            
+            // Ensure we have a patient
+            guard let patient = profileController.patient else {
+                errorMessage = "Patient data is still not available"
+                showErrorAlert = true
+                isLoading = false
+                return
+            }
+            
+            // Create a local backup of the patient data before attempting to update
+            let originalPatient = patient
+            
+            // Create an updated patient object with the form data
+            let updatedPatient = Patient(
+                id: patient.id,
+                userId: patient.userId,
+                name: name,
+                age: age,
+                gender: gender,
+                createdAt: patient.createdAt,
+                updatedAt: Date(),
+                email: email,
+                emailVerified: patient.emailVerified,
+                bloodGroup: bloodGroup,
+                address: address,
+                phoneNumber: phone,
+                emergencyContactName: emergencyContactName,
+                emergencyContactNumber: emergencyContactNumber,
+                emergencyRelationship: emergencyRelationship
+            )
+            
+            Task {
+                print("🔄 EDIT PROFILE: Starting profile update with data:")
+                print("  - Patient ID: \(patient.id)")
+                print("  - User ID: \(patient.userId)")
+                print("  - Name: \(name)")
+                print("  - Age: \(age)")
+                print("  - Gender: \(gender)")
+                print("  - Blood Group: \(bloodGroup)")
+                print("  - Email: \(email)")
+                print("  - Phone: \(phone)")
+                
+                // First update the local model to provide an immediate response
+                await MainActor.run {
+                    profileController.patient = updatedPatient
+                }
+                
+                var serverUpdateSuccess = false
+                
+                // Try to update on the server
+                do {
+                    serverUpdateSuccess = await profileController.updateProfileWithRetry(
+                        patientId: patient.id,
+                        userId: patient.userId,
+                        name: name,
+                        age: age,
+                        gender: gender,
+                        bloodGroup: bloodGroup,
+                        email: email,
+                        phoneNumber: phone,
+                        address: address,
+                        emergencyContactName: emergencyContactName,
+                        emergencyContactNumber: emergencyContactNumber,
+                        emergencyRelationship: emergencyRelationship
+                    )
+                    
+                    await MainActor.run {
+                        isLoading = false
+                        
+                        if serverUpdateSuccess {
+                            print("✅ EDIT PROFILE: Profile updated successfully on server")
+                            isPresented = false
+                        } else {
+                            print("⚠️ EDIT PROFILE: Server update failed, but using local data")
+                            // Show a warning but dismiss anyway since we've updated locally
+                            errorMessage = "Server update may have failed, but your changes are saved locally."
+                            
+                            // Delay the dismissal to allow the user to see the message
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                self.isPresented = false
+                            }
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        isLoading = false
+                        print("❌ EDIT PROFILE ERROR: \(error.localizedDescription)")
+                        // Show warning but keep the local changes
+                        errorMessage = "Server error occurred, but your changes are saved locally."
+                        
+                        // Delay the dismissal to allow the user to see the message
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            self.isPresented = false
                         }
                     }
                 }
@@ -492,6 +780,7 @@ struct PatientProfileView: View {
         }
     }
 }
+
 
 
 

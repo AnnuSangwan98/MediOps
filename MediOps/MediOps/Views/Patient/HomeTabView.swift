@@ -7,14 +7,33 @@
 
 import SwiftUI
 
+// Define the missing ActiveSheet enum
+enum ActiveSheet: Identifiable {
+    case doctorList(hospital: HospitalModel)
+    case patientProfile
+    case addVitals
+    
+    var id: Int {
+        switch self {
+        case .doctorList: return 0
+        case .patientProfile: return 1
+        case .addVitals: return 2
+        }
+    }
+}
+
 struct HomeTabView: View {
-    @ObservedObject private var hospitalVM = HospitalViewModel.shared
-    @StateObject private var appointmentManager = AppointmentManager.shared
+    @ObservedObject var hospitalVM = HospitalViewModel.shared
+    @StateObject var appointmentManager = AppointmentManager.shared
     @State private var showProfile = false
+    @State private var showAddVitals = false
+    @State private var selectedHospital: HospitalModel?
+    @State private var activeSheet: ActiveSheet?
+    @State private var coordinateSpace = UUID()
+    @State private var profileController = PatientProfileController()
     @State private var selectedTab = 0
     @AppStorage("current_user_id") private var currentUserId: String?
     @AppStorage("userId") private var userId: String?
-    @StateObject private var profileController = PatientProfileController()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -341,7 +360,26 @@ struct HomeTabView: View {
             Spacer()
 
             Button(action: {
-                showProfile.toggle()
+                // Create and initialize the profile controller before showing the sheet
+                let controller = PatientProfileController()
+                
+                // Preload the patient data
+                if let userId = UserDefaults.standard.string(forKey: "userId") ?? 
+                       UserDefaults.standard.string(forKey: "current_user_id") {
+                    Task {
+                        await controller.loadProfile(userId: userId)
+                        
+                        // Show the profile after we've attempted to load data
+                        DispatchQueue.main.async {
+                            self.profileController = controller
+                            self.showProfile = true
+                        }
+                    }
+                } else {
+                    // If no user ID, still show the profile with the empty controller
+                    self.profileController = controller
+                    self.showProfile = true
+                }
             }) {
                 Image(systemName: "person.circle.fill")
                     .resizable()
@@ -349,7 +387,7 @@ struct HomeTabView: View {
                     .foregroundColor(.teal)
             }
             .sheet(isPresented: $showProfile) {
-                PatientProfileView(profileController: PatientProfileController())
+                PatientProfileView(profileController: profileController)
             }
         }
         .padding()
