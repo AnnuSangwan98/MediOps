@@ -450,7 +450,28 @@ struct HomeTabView: View {
             }
             .navigationTitle("Blood Donation")
             .sheet(isPresented: $showBloodDonationRegistration) {
-                BloodDonationRegistrationView(isRegistered: $isRegisteredDonor)
+                if let patient = profileController.patient {
+                    BloodDonationRegistrationView(isRegistered: $isRegisteredDonor, patientId: patient.id)
+                } else {
+                    // Show error view if patient data is not available
+                    VStack {
+                        Text("Error")
+                            .font(.title)
+                            .foregroundColor(.red)
+                        Text("Unable to load patient data. Please try again later.")
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.gray)
+                        Button("Dismiss") {
+                            showBloodDonationRegistration = false
+                        }
+                        .padding()
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                        .padding(.top)
+                    }
+                    .padding()
+                }
             }
             .sheet(isPresented: $showBloodRequest) {
                 BloodRequestView(hasActiveRequest: $hasActiveBloodRequest)

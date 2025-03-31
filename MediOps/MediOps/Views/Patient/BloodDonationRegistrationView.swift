@@ -5,6 +5,11 @@ struct BloodDonationRegistrationView: View {
     @State private var isTermsAccepted = false
     @State private var showRegistrationCard = false
     @Binding var isRegistered: Bool
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    
+    let patientId: String
     
     var body: some View {
         NavigationView {
@@ -49,18 +54,32 @@ struct BloodDonationRegistrationView: View {
                     // Register Button
                     Button(action: {
                         if isTermsAccepted {
-                            showRegistrationCard = true
+                            Task {
+                                await registerAsBloodDonor()
+                            }
                         }
                     }) {
-                        Text("Register")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(isTermsAccepted ? Color.teal : Color.gray)
-                            .cornerRadius(10)
+                        ZStack {
+                            Text("Register")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(isTermsAccepted ? Color.teal : Color.gray)
+                                .cornerRadius(10)
+                                .opacity(isLoading ? 0 : 1)
+                            
+                            if isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.teal)
+                                    .cornerRadius(10)
+                            }
+                        }
                     }
-                    .disabled(!isTermsAccepted)
+                    .disabled(!isTermsAccepted || isLoading)
                     .padding(.top)
                 }
                 .padding()
@@ -76,6 +95,25 @@ struct BloodDonationRegistrationView: View {
             .sheet(isPresented: $showRegistrationCard) {
                 RegistrationSuccessView(isRegistered: $isRegistered, dismiss: dismiss)
             }
+            .alert("Registration Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
+        }
+    }
+    
+    private func registerAsBloodDonor() async {
+        isLoading = true
+        do {
+            _ = try await PatientController.shared.updateBloodDonorStatus(id: patientId, isDonor: true)
+            isLoading = false
+            showRegistrationCard = true
+            isRegistered = true
+        } catch {
+            isLoading = false
+            errorMessage = error.localizedDescription
+            showError = true
         }
     }
 }
@@ -125,5 +163,5 @@ struct RegistrationSuccessView: View {
 }
 
 #Preview {
-    BloodDonationRegistrationView(isRegistered: .constant(false))
+    BloodDonationRegistrationView(isRegistered: .constant(false), patientId: "")
 } 
