@@ -257,6 +257,29 @@ class PatientController {
         )
     }
     
+    /// Update patient's blood donor status
+    func updateBloodDonorStatus(id: String, isDonor: Bool) async throws -> Patient {
+        // 1. Get current patient data to verify it exists
+        _ = try await getPatient(id: id)
+        
+        // 2. Prepare update data
+        let updateData: [String: String] = [
+            "is_blood_donor": String(isDonor),
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        // 3. Update the patient record
+        try await supabase.update(
+            table: "patients",
+            data: updateData,
+            where: "id",
+            equals: id
+        )
+        
+        // 4. Return updated patient data
+        return try await getPatient(id: id)
+    }
+    
     // MARK: - Helper Methods
     
     /// Parse patient data from dictionary
