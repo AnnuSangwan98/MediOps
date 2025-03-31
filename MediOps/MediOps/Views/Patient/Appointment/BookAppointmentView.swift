@@ -364,7 +364,9 @@ struct BookAppointmentView: View {
                 doctor: doctor.toModelDoctor(),
                 date: selectedDate,
                 time: appointmentTime,
-                status: .upcoming
+                status: .upcoming,
+                startTime: slot.startTime,
+                endTime: slot.endTime
             )
             
             // Add to local state

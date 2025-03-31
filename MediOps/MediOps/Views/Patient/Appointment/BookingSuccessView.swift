@@ -1,5 +1,4 @@
 import SwiftUI
-import EventKit
 
 struct BookingSuccessView: View {
     let doctor: HospitalDoctor
@@ -11,7 +10,6 @@ struct BookingSuccessView: View {
     @StateObject private var hospitalVM = HospitalViewModel.shared
     @State private var showError = false
     @State private var errorMessage = ""
-    @State private var isAddingToCalendar = false
     @State private var isLoading = false
     @AppStorage("current_user_id") private var userId: String?
     
@@ -27,46 +25,6 @@ struct BookingSuccessView: View {
         }
         
         return startTime
-    }
-    
-    private func addToCalendar() {
-        isAddingToCalendar = true
-        let eventStore = EKEventStore()
-        
-        eventStore.requestAccess(to: .event) { granted, error in
-            DispatchQueue.main.async {
-                if granted && error == nil {
-                    let event = EKEvent(eventStore: eventStore)
-                    event.title = "Appointment with Dr. \(doctor.name)"
-                    event.notes = "Medical consultation with \(doctor.name) (\(doctor.specialization))"
-                    
-                    // Combine date and time
-                    var components = Calendar.current.dateComponents([.year, .month, .day], from: appointmentDate)
-                    let timeComponents = Calendar.current.dateComponents([.hour, .minute], from: appointmentTime)
-                    components.hour = timeComponents.hour
-                    components.minute = timeComponents.minute
-                    
-                    if let startDate = Calendar.current.date(from: components) {
-                        event.startDate = startDate
-                        event.endDate = Calendar.current.date(byAdding: .hour, value: 1, to: startDate)!
-                        event.calendar = eventStore.defaultCalendarForNewEvents
-                        
-                        do {
-                            try eventStore.save(event, span: .thisEvent)
-                            errorMessage = "Appointment added to calendar"
-                            showError = true
-                        } catch {
-                            errorMessage = "Failed to add to calendar"
-                            showError = true
-                        }
-                    }
-                } else {
-                    errorMessage = "Calendar access denied"
-                    showError = true
-                }
-                isAddingToCalendar = false
-            }
-        }
     }
     
     private func checkIfAppointmentExists(_ appointmentId: String) async -> Bool {
@@ -348,19 +306,6 @@ struct BookingSuccessView: View {
             .background(Color.white)
             .cornerRadius(12)
             .shadow(color: .gray.opacity(0.1), radius: 5)
-            
-            Button(action: addToCalendar) {
-                HStack {
-                    Image(systemName: "calendar.badge.plus")
-                    Text("Add to calendar")
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.teal)
-                .cornerRadius(10)
-            }
-            .disabled(isAddingToCalendar)
             
             Button(action: saveAndNavigate) {
                 HStack {

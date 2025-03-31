@@ -20,12 +20,22 @@ struct HospitalCard: View {
             HStack {
                 Image(systemName: "person.2.fill")
                     .foregroundColor(.teal)
-                Text("\(hospital.numberOfDoctors) Doctors")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
+                
+                if hospital.numberOfDoctors > 0 {
+                    Text("\(hospital.numberOfDoctors) Doctors")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.teal)
+                } else {
+                    Text("No Doctors Available")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .italic()
+                }
                 
                 Spacer()
             }
+            .padding(.top, 4)
         }
         .padding()
         .background(Color.white)

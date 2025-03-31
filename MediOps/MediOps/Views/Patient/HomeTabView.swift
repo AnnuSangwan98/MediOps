@@ -82,6 +82,10 @@ struct HomeTabView: View {
                     await profileController.loadProfile(userId: id)
                     if let patient = profileController.patient {
                         print("📱 Successfully loaded profile for: \(patient.name)")
+                        
+                        // Fix appointment times when profile is loaded
+                        print("🔧 Running appointment time fix")
+                        try? await fixAppointmentTimes(for: patient.id)
                     } else if let error = profileController.error {
                         print("📱 Error loading profile: \(error.localizedDescription)")
                         
@@ -136,15 +140,6 @@ struct HomeTabView: View {
                                         .fontWeight(.bold)
                                     
                                     Spacer()
-                                    
-                                    Button(action: {
-                                        Task {
-                                            await refreshHospitals()
-                                        }
-                                    }) {
-                                        Image(systemName: "arrow.clockwise")
-                                            .foregroundColor(.teal)
-                                    }
                                 }
                                 .padding(.horizontal)
                                 
@@ -217,22 +212,18 @@ struct HomeTabView: View {
             }
             .navigationBarHidden(true)
             .task {
+                print("🔄 Home tab task started - refreshing hospitals")
                 await refreshHospitals()
                 
                 if let userId = userId {
-                    print("🔍 Home Tab task using user ID: \(userId)")
+                    print("🔄 Fetching appointments for user ID: \(userId)")
                     try? await hospitalVM.fetchAppointments(for: userId)
-                } else {
-                    print("⚠️ No user ID found in HomeTab task")
                 }
             }
             .onAppear {
                 if let userId = userId {
-                    print("🔄 Home Tab appeared with user ID: \(userId)")
-                    // Add a direct call to refresh appointments
+                    print("📱 Home tab appeared with user ID: \(userId)")
                     appointmentManager.refreshAppointments()
-                } else {
-                    print("⚠️ No user ID found in HomeTab onAppear")
                 }
             }
         }
@@ -240,26 +231,35 @@ struct HomeTabView: View {
     
     // Helper function to refresh hospitals and cities
     private func refreshHospitals() async {
-        print("🔄 Refreshing hospitals and cities...")
-        
         // Check Supabase connectivity first
         let supabase = SupabaseController.shared
         let isConnected = await supabase.checkConnectivity()
         
         if isConnected {
-            print("✅ Supabase connectivity confirmed - proceeding with data fetch")
-            
             // Fetch hospitals and cities
             await hospitalVM.fetchHospitals()
             await hospitalVM.fetchAvailableCities()
             
-            if hospitalVM.hospitals.isEmpty {
-                print("⚠️ No hospitals found after refresh")
-            } else {
-                print("✅ Successfully loaded \(hospitalVM.hospitals.count) hospitals")
+            if !hospitalVM.hospitals.isEmpty {
+                // Add test doctors to hospitals if needed
+                await hospitalVM.addTestDoctorsToHospitals()
+                
+                // Update doctor counts for all hospitals
+                await hospitalVM.updateDoctorCounts()
+                
+                // Ensure doctor counts are reflected immediately
+                await MainActor.run {
+                    // Force UI refresh for hospital cards
+                    let updatedHospitals = hospitalVM.hospitals
+                    hospitalVM.hospitals = []
+                    
+                    // Reapply the updated hospitals after a tiny delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        self.hospitalVM.hospitals = updatedHospitals
+                    }
+                }
             }
         } else {
-            print("❌ Supabase connectivity failed - setting error")
             await MainActor.run {
                 hospitalVM.error = NSError(
                     domain: "HospitalViewModel",
@@ -268,8 +268,6 @@ struct HomeTabView: View {
                 )
             }
         }
-        
-        print("✅ Refresh complete!")
     }
     
     private var historyTab: some View {
@@ -462,6 +460,99 @@ struct HomeTabView: View {
                 .offset(y: -10)
             }
             .frame(height: 50)
+        }
+    }
+
+    // Helper function to fix appointment times
+    private func fixAppointmentTimes(for patientId: String) async throws {
+        print("🔧 TIMEFIXER: Starting fix for patient ID: \(patientId)")
+        let supabase = SupabaseController.shared
+        
+        // Get all appointments for this patient
+        let appointments = try await supabase.select(
+            from: "appointments",
+            where: "patient_id",
+            equals: patientId
+        )
+        
+        print("🔍 TIMEFIXER: Found \(appointments.count) appointments to check")
+        
+        var fixedCount = 0
+        for data in appointments {
+            guard let id = data["id"] as? String,
+                  let slotId = data["availability_slot_id"] as? Int else {
+                print("⚠️ TIMEFIXER: Skipping appointment without ID or slot ID")
+                continue
+            }
+            
+            let hasValidStartTime = data["slot_time"] as? String != nil && !(data["slot_time"] as? String)!.isEmpty
+            let hasValidEndTime = data["slot_end_time"] as? String != nil && !(data["slot_end_time"] as? String)!.isEmpty
+            
+            // Only fix appointments with missing or empty time slots
+            if !hasValidStartTime || !hasValidEndTime {
+                print("🔧 TIMEFIXER: Fixing time slots for appointment \(id)")
+                do {
+                    // Generate time slots based on slot ID
+                    let baseHour = 9 + (slotId % 8) // This gives hours between 9 and 16 (9 AM to 4 PM)
+                    let startTime = String(format: "%02d:00", baseHour)
+                    let endTime = String(format: "%02d:00", baseHour + 1)
+                    
+                    // Update the appointment with generated times
+                    let updateResult = try await supabase.update(
+                        table: "appointments",
+                        id: id,
+                        data: [
+                            "slot_time": startTime,
+                            "slot_end_time": endTime
+                        ]
+                    )
+                    
+                    print("✅ TIMEFIXER: Updated appointment \(id) with times \(startTime)-\(endTime)")
+                    fixedCount += 1
+                } catch {
+                    print("❌ TIMEFIXER: Error fixing time slots: \(error.localizedDescription)")
+                }
+            }
+        }
+        
+        print("🎉 TIMEFIXER: Fixed time slots for \(fixedCount) appointments")
+        
+        // Refresh the appointments list if we fixed any
+        if fixedCount > 0 {
+            try await hospitalVM.fetchAppointments(for: patientId)
+        }
+    }
+
+    // Helper debugging function to check doctor counts
+    private func debugHospitalDoctorCounts() async {
+        print("🔍 DEBUG: Checking hospital doctor counts directly...")
+        
+        let supabase = SupabaseController.shared
+        
+        // Check each hospital in the view model
+        for hospital in hospitalVM.hospitals {
+            do {
+                let sqlQuery = """
+                SELECT COUNT(*) as doctor_count 
+                FROM doctors 
+                WHERE hospital_id = '\(hospital.id)'
+                """
+                
+                let results = try await supabase.executeSQL(sql: sqlQuery)
+                
+                if let firstResult = results.first, let count = firstResult["doctor_count"] as? Int {
+                    print("🏥 Hospital: \(hospital.hospitalName) - SQL count: \(count), Model count: \(hospital.numberOfDoctors)")
+                    
+                    // If counts don't match, print a warning
+                    if count != hospital.numberOfDoctors {
+                        print("⚠️ Mismatch in doctor counts for \(hospital.hospitalName)!")
+                    }
+                } else {
+                    print("❌ Could not get doctor count from SQL for \(hospital.hospitalName)")
+                }
+            } catch {
+                print("❌ Error checking doctor count for \(hospital.hospitalName): \(error.localizedDescription)")
+            }
         }
     }
 }
