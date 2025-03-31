@@ -18,22 +18,16 @@ struct EditDoctorView: View {
     @State private var hospitalId = UserDefaults.standard.string(forKey: "hospital_id") ?? ""
     
     // Doctor availability slots
-    @State private var selectedWeekdaySlots = Set<String>()
-    @State private var selectedWeekendSlots = Set<String>()
+    @State private var selectedWeekdaySlots: Set<String> = []
+    @State private var selectedWeekendSlots: Set<String> = []
     @State private var isLoadingSlots = false
     @State private var availabilityError = ""
     
-    // Add standard UI time slots for comparison
-    private let uiTimeSlots: [String] = [
+    // Standard time slots displayed in the UI - moved to class level for access from all methods
+    private let uiTimeSlots = [
         "9:00-10:00 AM", "10:00-11:00 AM", "11:00-12:00 PM",
         "1:00-2:00 PM", "2:00-3:00 PM", "3:00-4:00 PM",
-        "4:00-5:00 PM", "5:00-6:00 PM", "6:00-7:00 PM",
-        "7:00-8:00 PM", "8:00-9:00 PM",
-        // 24-hour format alternatives
-        "09:00-10:00", "10:00-11:00", "11:00-12:00",
-        "13:00-14:00", "14:00-15:00", "15:00-16:00",
-        "16:00-17:00", "17:00-18:00", "18:00-19:00",
-        "19:00-20:00", "20:00-21:00"
+        "4:00-5:00 PM", "5:00-6:00 PM", "6:00-7:00 PM"
     ]
     
     // Add reference to AdminController
@@ -161,139 +155,76 @@ struct EditDoctorView: View {
                             .foregroundColor(.primary)
                             .padding(.bottom, 5)
                         
-                        // Early morning slots (6 AM - 10 AM)
+                        // Morning slots
                         HStack {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    TimeSlotButton(time: "06:00-07:00", isSelected: isTimeSlotSelected(slotToCheck: "06:00-07:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("06:00-07:00", in: &selectedWeekdaySlots)
+                                    // Break down complex expressions into simpler variables
+                                    let isSlot1Selected = isTimeSlotSelected("9:00-10:00 AM", in: selectedWeekdaySlots)
+                                    TimeSlotButton(time: "9:00-10:00 AM", isSelected: isSlot1Selected) {
+                                        toggleSlot("9:00-10:00 AM", in: &selectedWeekdaySlots)
                                     }
                                     
-                                    TimeSlotButton(time: "07:00-08:00", isSelected: isTimeSlotSelected(slotToCheck: "07:00-08:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("07:00-08:00", in: &selectedWeekdaySlots)
+                                    let isSlot2Selected = isTimeSlotSelected("10:00-11:00 AM", in: selectedWeekdaySlots)
+                                    TimeSlotButton(time: "10:00-11:00 AM", isSelected: isSlot2Selected) {
+                                        toggleSlot("10:00-11:00 AM", in: &selectedWeekdaySlots)
                                     }
                                     
-                                    TimeSlotButton(time: "08:00-09:00", isSelected: isTimeSlotSelected(slotToCheck: "08:00-09:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("08:00-09:00", in: &selectedWeekdaySlots)
-                                    }
+                                    // Break down complex OR condition
+                                    let isSlot3AMSelected = isTimeSlotSelected("11:00-12:00 AM", in: selectedWeekdaySlots)
+                                    let isSlot3PMSelected = isTimeSlotSelected("11:00-12:00 PM", in: selectedWeekdaySlots)
+                                    let isSlot3Selected = isSlot3AMSelected || isSlot3PMSelected
                                     
-                                    TimeSlotButton(time: "09:00-10:00", isSelected: isTimeSlotSelected(slotToCheck: "09:00-10:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("09:00-10:00", in: &selectedWeekdaySlots)
+                                    TimeSlotButton(time: "11:00-12:00 PM", isSelected: isSlot3Selected) {
+                                        // Try removing the old format first if it exists
+                                        if isSlot3AMSelected {
+                                            selectedWeekdaySlots.remove("11:00-12:00 AM")
+                                        }
+                                        toggleSlot("11:00-12:00 PM", in: &selectedWeekdaySlots)
                                     }
                                 }
                             }
                         }
                         
-                        // Morning slots (10 AM - 2 PM)
+                        // Afternoon slots
                         HStack {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    TimeSlotButton(time: "10:00-11:00", isSelected: isTimeSlotSelected(slotToCheck: "10:00-11:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("10:00-11:00", in: &selectedWeekdaySlots)
+                                    let isSlot4Selected = isTimeSlotSelected("1:00-2:00 PM", in: selectedWeekdaySlots)
+                                    TimeSlotButton(time: "1:00-2:00 PM", isSelected: isSlot4Selected) {
+                                        toggleSlot("1:00-2:00 PM", in: &selectedWeekdaySlots)
                                     }
                                     
-                                    TimeSlotButton(time: "11:00-12:00", isSelected: isTimeSlotSelected(slotToCheck: "11:00-12:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("11:00-12:00", in: &selectedWeekdaySlots)
+                                    let isSlot5Selected = isTimeSlotSelected("2:00-3:00 PM", in: selectedWeekdaySlots)
+                                    TimeSlotButton(time: "2:00-3:00 PM", isSelected: isSlot5Selected) {
+                                        toggleSlot("2:00-3:00 PM", in: &selectedWeekdaySlots)
                                     }
                                     
-                                    TimeSlotButton(time: "12:00-13:00", isSelected: isTimeSlotSelected(slotToCheck: "12:00-13:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("12:00-13:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "13:00-14:00", isSelected: isTimeSlotSelected(slotToCheck: "13:00-14:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("13:00-14:00", in: &selectedWeekdaySlots)
+                                    let isSlot6Selected = isTimeSlotSelected("3:00-4:00 PM", in: selectedWeekdaySlots)
+                                    TimeSlotButton(time: "3:00-4:00 PM", isSelected: isSlot6Selected) {
+                                        toggleSlot("3:00-4:00 PM", in: &selectedWeekdaySlots)
                                     }
                                 }
                             }
                         }
                         
-                        // Afternoon slots (2 PM - 6 PM)
+                        // Evening slots
                         HStack {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    TimeSlotButton(time: "14:00-15:00", isSelected: isTimeSlotSelected(slotToCheck: "14:00-15:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("14:00-15:00", in: &selectedWeekdaySlots)
+                                    let isSlot7Selected = isTimeSlotSelected("4:00-5:00 PM", in: selectedWeekdaySlots)
+                                    TimeSlotButton(time: "4:00-5:00 PM", isSelected: isSlot7Selected) {
+                                        toggleSlot("4:00-5:00 PM", in: &selectedWeekdaySlots)
                                     }
                                     
-                                    TimeSlotButton(time: "15:00-16:00", isSelected: isTimeSlotSelected(slotToCheck: "15:00-16:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("15:00-16:00", in: &selectedWeekdaySlots)
+                                    let isSlot8Selected = isTimeSlotSelected("5:00-6:00 PM", in: selectedWeekdaySlots)
+                                    TimeSlotButton(time: "5:00-6:00 PM", isSelected: isSlot8Selected) {
+                                        toggleSlot("5:00-6:00 PM", in: &selectedWeekdaySlots)
                                     }
                                     
-                                    TimeSlotButton(time: "16:00-17:00", isSelected: isTimeSlotSelected(slotToCheck: "16:00-17:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("16:00-17:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "17:00-18:00", isSelected: isTimeSlotSelected(slotToCheck: "17:00-18:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("17:00-18:00", in: &selectedWeekdaySlots)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Evening slots (6 PM - 10 PM)
-                        HStack {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    TimeSlotButton(time: "18:00-19:00", isSelected: isTimeSlotSelected(slotToCheck: "18:00-19:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("18:00-19:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "19:00-20:00", isSelected: isTimeSlotSelected(slotToCheck: "19:00-20:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("19:00-20:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "20:00-21:00", isSelected: isTimeSlotSelected(slotToCheck: "20:00-21:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("20:00-21:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "21:00-22:00", isSelected: isTimeSlotSelected(slotToCheck: "21:00-22:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("21:00-22:00", in: &selectedWeekdaySlots)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Night slots (10 PM - 2 AM)
-                        HStack {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    TimeSlotButton(time: "22:00-23:00", isSelected: isTimeSlotSelected(slotToCheck: "22:00-23:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("22:00-23:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "23:00-00:00", isSelected: isTimeSlotSelected(slotToCheck: "23:00-00:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("23:00-00:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "00:00-01:00", isSelected: isTimeSlotSelected(slotToCheck: "00:00-01:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("00:00-01:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "01:00-02:00", isSelected: isTimeSlotSelected(slotToCheck: "01:00-02:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("01:00-02:00", in: &selectedWeekdaySlots)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Late night slots (2 AM - 6 AM)
-                        HStack {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    TimeSlotButton(time: "02:00-03:00", isSelected: isTimeSlotSelected(slotToCheck: "02:00-03:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("02:00-03:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "03:00-04:00", isSelected: isTimeSlotSelected(slotToCheck: "03:00-04:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("03:00-04:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "04:00-05:00", isSelected: isTimeSlotSelected(slotToCheck: "04:00-05:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("04:00-05:00", in: &selectedWeekdaySlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "05:00-06:00", isSelected: isTimeSlotSelected(slotToCheck: "05:00-06:00", selectedSlots: selectedWeekdaySlots)) {
-                                        toggleSlot("05:00-06:00", in: &selectedWeekdaySlots)
+                                    let isSlot9Selected = isTimeSlotSelected("6:00-7:00 PM", in: selectedWeekdaySlots)
+                                    TimeSlotButton(time: "6:00-7:00 PM", isSelected: isSlot9Selected) {
+                                        toggleSlot("6:00-7:00 PM", in: &selectedWeekdaySlots)
                                     }
                                 }
                             }
@@ -310,139 +241,52 @@ struct EditDoctorView: View {
                             .foregroundColor(.primary)
                             .padding(.bottom, 5)
                         
-                        // Early morning slots (6 AM - 10 AM)
+                        // Morning slots
                         HStack {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    TimeSlotButton(time: "06:00-07:00", isSelected: isTimeSlotSelected(slotToCheck: "06:00-07:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("06:00-07:00", in: &selectedWeekendSlots)
+                                    let isWeekendSlot1Selected = isTimeSlotSelected("9:00-10:00 AM", in: selectedWeekendSlots)
+                                    TimeSlotButton(time: "9:00-10:00 AM", isSelected: isWeekendSlot1Selected) {
+                                        toggleSlot("9:00-10:00 AM", in: &selectedWeekendSlots)
                                     }
                                     
-                                    TimeSlotButton(time: "07:00-08:00", isSelected: isTimeSlotSelected(slotToCheck: "07:00-08:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("07:00-08:00", in: &selectedWeekendSlots)
+                                    let isWeekendSlot2Selected = isTimeSlotSelected("10:00-11:00 AM", in: selectedWeekendSlots)
+                                    TimeSlotButton(time: "10:00-11:00 AM", isSelected: isWeekendSlot2Selected) {
+                                        toggleSlot("10:00-11:00 AM", in: &selectedWeekendSlots)
                                     }
                                     
-                                    TimeSlotButton(time: "08:00-09:00", isSelected: isTimeSlotSelected(slotToCheck: "08:00-09:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("08:00-09:00", in: &selectedWeekendSlots)
-                                    }
+                                    let isWeekendSlot3AMSelected = isTimeSlotSelected("11:00-12:00 AM", in: selectedWeekendSlots)
+                                    let isWeekendSlot3PMSelected = isTimeSlotSelected("11:00-12:00 PM", in: selectedWeekendSlots)
+                                    let isWeekendSlot3Selected = isWeekendSlot3AMSelected || isWeekendSlot3PMSelected
                                     
-                                    TimeSlotButton(time: "09:00-10:00", isSelected: isTimeSlotSelected(slotToCheck: "09:00-10:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("09:00-10:00", in: &selectedWeekendSlots)
+                                    TimeSlotButton(time: "11:00-12:00 PM", isSelected: isWeekendSlot3Selected) {
+                                        // Try removing the old format first if it exists
+                                        if isWeekendSlot3AMSelected {
+                                            selectedWeekendSlots.remove("11:00-12:00 AM")
+                                        }
+                                        toggleSlot("11:00-12:00 PM", in: &selectedWeekendSlots)
                                     }
                                 }
                             }
                         }
                         
-                        // Morning slots (10 AM - 2 PM)
+                        // Afternoon slots
                         HStack {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    TimeSlotButton(time: "10:00-11:00", isSelected: isTimeSlotSelected(slotToCheck: "10:00-11:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("10:00-11:00", in: &selectedWeekendSlots)
+                                    let isWeekendSlot4Selected = isTimeSlotSelected("1:00-2:00 PM", in: selectedWeekendSlots)
+                                    TimeSlotButton(time: "1:00-2:00 PM", isSelected: isWeekendSlot4Selected) {
+                                        toggleSlot("1:00-2:00 PM", in: &selectedWeekendSlots)
                                     }
                                     
-                                    TimeSlotButton(time: "11:00-12:00", isSelected: isTimeSlotSelected(slotToCheck: "11:00-12:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("11:00-12:00", in: &selectedWeekendSlots)
+                                    let isWeekendSlot5Selected = isTimeSlotSelected("2:00-3:00 PM", in: selectedWeekendSlots)
+                                    TimeSlotButton(time: "2:00-3:00 PM", isSelected: isWeekendSlot5Selected) {
+                                        toggleSlot("2:00-3:00 PM", in: &selectedWeekendSlots)
                                     }
                                     
-                                    TimeSlotButton(time: "12:00-13:00", isSelected: isTimeSlotSelected(slotToCheck: "12:00-13:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("12:00-13:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "13:00-14:00", isSelected: isTimeSlotSelected(slotToCheck: "13:00-14:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("13:00-14:00", in: &selectedWeekendSlots)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Afternoon slots (2 PM - 6 PM)
-                        HStack {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    TimeSlotButton(time: "14:00-15:00", isSelected: isTimeSlotSelected(slotToCheck: "14:00-15:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("14:00-15:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "15:00-16:00", isSelected: isTimeSlotSelected(slotToCheck: "15:00-16:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("15:00-16:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "16:00-17:00", isSelected: isTimeSlotSelected(slotToCheck: "16:00-17:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("16:00-17:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "17:00-18:00", isSelected: isTimeSlotSelected(slotToCheck: "17:00-18:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("17:00-18:00", in: &selectedWeekendSlots)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Evening slots (6 PM - 10 PM)
-                        HStack {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    TimeSlotButton(time: "18:00-19:00", isSelected: isTimeSlotSelected(slotToCheck: "18:00-19:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("18:00-19:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "19:00-20:00", isSelected: isTimeSlotSelected(slotToCheck: "19:00-20:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("19:00-20:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "20:00-21:00", isSelected: isTimeSlotSelected(slotToCheck: "20:00-21:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("20:00-21:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "21:00-22:00", isSelected: isTimeSlotSelected(slotToCheck: "21:00-22:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("21:00-22:00", in: &selectedWeekendSlots)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Night slots (10 PM - 2 AM)
-                        HStack {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    TimeSlotButton(time: "22:00-23:00", isSelected: isTimeSlotSelected(slotToCheck: "22:00-23:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("22:00-23:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "23:00-00:00", isSelected: isTimeSlotSelected(slotToCheck: "23:00-00:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("23:00-00:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "00:00-01:00", isSelected: isTimeSlotSelected(slotToCheck: "00:00-01:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("00:00-01:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "01:00-02:00", isSelected: isTimeSlotSelected(slotToCheck: "01:00-02:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("01:00-02:00", in: &selectedWeekendSlots)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Late night slots (2 AM - 6 AM)
-                        HStack {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    TimeSlotButton(time: "02:00-03:00", isSelected: isTimeSlotSelected(slotToCheck: "02:00-03:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("02:00-03:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "03:00-04:00", isSelected: isTimeSlotSelected(slotToCheck: "03:00-04:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("03:00-04:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "04:00-05:00", isSelected: isTimeSlotSelected(slotToCheck: "04:00-05:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("04:00-05:00", in: &selectedWeekendSlots)
-                                    }
-                                    
-                                    TimeSlotButton(time: "05:00-06:00", isSelected: isTimeSlotSelected(slotToCheck: "05:00-06:00", selectedSlots: selectedWeekendSlots)) {
-                                        toggleSlot("05:00-06:00", in: &selectedWeekendSlots)
+                                    let isWeekendSlot6Selected = isTimeSlotSelected("3:00-4:00 PM", in: selectedWeekendSlots)
+                                    TimeSlotButton(time: "3:00-4:00 PM", isSelected: isWeekendSlot6Selected) {
+                                        toggleSlot("3:00-4:00 PM", in: &selectedWeekendSlots)
                                     }
                                 }
                             }
@@ -451,7 +295,7 @@ struct EditDoctorView: View {
                     .padding(.vertical, 5)
                 }
             }
-            .navigationTitle("Edit Doctor")
+            .navigationTitle("Dr. (doctor.fullName)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -506,13 +350,7 @@ struct EditDoctorView: View {
             do {
                 print("🔄 Fetching doctor schedule for doctorID=\(doctor.id), hospitalID=\(hospitalId)")
                 
-                // Create a local function that calls the specific implementation we want
-                func specificGetDoctorSchedule(doctorId: String, hospitalId: String) async throws -> (weekdaySlots: Set<String>, weekendSlots: Set<String>) {
-                    return try await adminController.getDoctorSchedule(doctorId: doctorId, hospitalId: hospitalId)
-                }
-                
-                // Call our local function that has no ambiguity
-                let (weekdaySlots, weekendSlots) = try await specificGetDoctorSchedule(
+                let (weekdaySlots, weekendSlots) = try await adminController.getDoctorSchedule(
                     doctorId: doctor.id, 
                     hospitalId: hospitalId
                 )
@@ -558,12 +396,6 @@ struct EditDoctorView: View {
                     "6-7 PM": "6:00-7:00 PM"
                 ]
                 
-                // Standard time slots we display in the UI - moved outside of mapToUISlot function
-                let uiTimeSlots = [
-                    "9:00-10:00 AM", "10:00-11:00 AM", "11:00-12:00 PM",
-                    "1:00-2:00 PM", "2:00-3:00 PM", "3:00-4:00 PM",
-                    "4:00-5:00 PM", "5:00-6:00 PM", "6:00-7:00 PM"
-                ]
                 
                 // Function to match hours and determine which standard UI slot to use
                 func matchHourPattern(_ slot: String) -> String? {
@@ -689,13 +521,13 @@ struct EditDoctorView: View {
                     // Debug: Print which slots should be highlighted
                     print("🔍 WEEKDAY SLOT HIGHLIGHT CHECK:")
                     for slot in uiTimeSlots {
-                        let isSelected = isTimeSlotSelected(slotToCheck: slot, selectedSlots: self.selectedWeekdaySlots)
+                        let isSelected = isTimeSlotSelected(slot, in: self.selectedWeekdaySlots)
                         print("  \(slot): \(isSelected ? "✅ SELECTED" : "❌ NOT SELECTED")")
                     }
                     
                     print("🔍 WEEKEND SLOT HIGHLIGHT CHECK:")
                     for slot in uiTimeSlots {
-                        let isSelected = isTimeSlotSelected(slotToCheck: slot, selectedSlots: self.selectedWeekendSlots)
+                        let isSelected = isTimeSlotSelected(slot, in: self.selectedWeekendSlots)
                         print("  \(slot): \(isSelected ? "✅ SELECTED" : "❌ NOT SELECTED")")
                     }
                 }
@@ -709,13 +541,23 @@ struct EditDoctorView: View {
     }
     
     private func toggleSlot(_ time: String, in slots: inout Set<String>) {
-        // Toggle individual slot without affecting other selections
-        if slots.contains(time) {
-            slots.remove(time)
+        // Use the more robust check to see if the slot exists (with any format)
+        let normalized = normalizeTimeSlot(time)
+        
+        // Find if any version of this slot already exists
+        let matchingSlot = slots.first { normalizeTimeSlot($0) == normalized }
+        
+        if let existing = matchingSlot {
+            // If exists (in any format), remove it
+            slots.remove(existing)
         } else {
+            // If doesn't exist, add it with the preferred format
+            // Always use the format from the UI (which includes the space before AM/PM)
             slots.insert(time)
         }
-        print("🔄 Toggled slot \(time), now selected: \(slots.contains(time))")
+        
+        // Print for debugging
+        print("🔄 Toggled slot \(time), now selected: \(slots.contains { normalizeTimeSlot($0) == normalized })")
     }
     
     private func updateDoctor() {
@@ -852,14 +694,201 @@ struct EditDoctorView: View {
     }
     
     // Helper method to check if a time slot is selected (more flexible than direct string comparison)
-    private func isTimeSlotSelected(slotToCheck: String, selectedSlots: Set<String>) -> Bool {
-        return selectedSlots.contains(slotToCheck)
+    private func isTimeSlotSelected(_ slotToCheck: String, in slots: Set<String>) -> Bool {
+        // Direct match first
+        if slots.contains(slotToCheck) {
+            print("✓ Direct match for: \(slotToCheck)")
+            return true
+        }
+        
+        // Direct format check (most reliable)
+        let directFormatMap: [String: [String]] = [
+            // Make sure this has ALL the formats that could come from the backend
+            "9:00-10:00 AM": [
+                "9:00AM-10:00AM", "9:00-10:00AM", "09:00:00-10:00:00", "09:00-10:00", 
+                "9-10", "9:00-10:00", "09-10", "9AM-10AM", "9-10 AM"
+            ],
+            "10:00-11:00 AM": [
+                "10:00AM-11:00AM", "10:00-11:00AM", "10:00:00-11:00:00", "10:00-11:00", 
+                "10-11", "10AM-11AM", "10-11 AM"
+            ],
+            "11:00-12:00 PM": [
+                "11:00AM-12:00PM", "11:00-12:00PM", "11:00:00-12:00:00", "11:00-12:00", 
+                "11-12", "11AM-12PM", "11-12 PM", "11:00AM-12:00AM", "11:00-12:00 AM"
+            ],
+            "1:00-2:00 PM": [
+                "1:00PM-2:00PM", "1:00-2:00PM", "13:00:00-14:00:00", "13:00-14:00", 
+                "1-2", "1PM-2PM", "1-2 PM", "13-14", "1:00-2:00"
+            ],
+            "2:00-3:00 PM": [
+                "2:00PM-3:00PM", "2:00-3:00PM", "14:00:00-15:00:00", "14:00-15:00", 
+                "2-3", "2PM-3PM", "2-3 PM", "14-15", "2:00-3:00"
+            ],
+            "3:00-4:00 PM": [
+                "3:00PM-4:00PM", "3:00-4:00PM", "15:00:00-16:00:00", "15:00-16:00", 
+                "3-4", "3PM-4PM", "3-4 PM", "15-16", "3:00-4:00" 
+            ],
+            "4:00-5:00 PM": [
+                "4:00PM-5:00PM", "4:00-5:00PM", "16:00:00-17:00:00", "16:00-17:00", 
+                "4-5", "4PM-5PM", "4-5 PM", "16-17", "4:00-5:00"
+            ],
+            "5:00-6:00 PM": [
+                "5:00PM-6:00PM", "5:00-6:00PM", "17:00:00-18:00:00", "17:00-18:00", 
+                "5-6", "5PM-6PM", "5-6 PM", "17-18", "5:00-6:00"
+            ],
+            "6:00-7:00 PM": [
+                "6:00PM-7:00PM", "6:00-7:00PM", "18:00:00-19:00:00", "18:00-19:00", 
+                "6-7", "6PM-7PM", "6-7 PM", "18-19", "6:00-7:00"
+            ]
+        ]
+        
+        // Check if the slot exactly matches any of our known formats
+        if let formatGroup = directFormatMap[slotToCheck] {
+            for format in formatGroup {
+                if slots.contains(format) {
+                    print("✓ Direct format match: \(slotToCheck) with format: \(format)")
+                    return true
+                }
+            }
+        }
+        
+        // Find formats from other UI slots that might match database formats
+        for (uiSlot, formats) in directFormatMap {
+            if uiSlot != slotToCheck { continue } // Only check for the current slotToCheck
+            
+            for format in formats {
+                if slots.contains(format) {
+                    print("✓ Found \(format) in slots matching UI slot \(slotToCheck)")
+                    return true
+                }
+            }
+        }
+        
+        // Extract hour numbers for matching (e.g., 9-10, 1-2)
+        func extractHourNumbers(_ slot: String) -> (Int, Int)? {
+            // Try to extract hours using simple pattern matching
+            let patterns = [
+                #"(\d+):00-(\d+):00"#,           // 9:00-10:00
+                #"(\d+)[ :]*(\d+)*[APM]+-(\d+)[ :]*(\d+)*[APM]+"#,  // 9AM-10AM, 9:00AM-10:00AM
+                #"(\d+)[:-](\d+)"#                // 9-10, 9:30-10:30
+            ]
+            
+            for pattern in patterns {
+                if let regex = try? NSRegularExpression(pattern: pattern) {
+                    let range = NSRange(slot.startIndex..<slot.endIndex, in: slot)
+                    if let match = regex.firstMatch(in: slot, range: range) {
+                        if match.numberOfRanges >= 3 {
+                            let startHourRange = Range(match.range(at: 1), in: slot)!
+                            let endHourRange = Range(match.range(at: match.numberOfRanges >= 4 ? 3 : 2), in: slot)!
+                            
+                            let startHour = Int(slot[startHourRange]) ?? 0
+                            let endHour = Int(slot[endHourRange]) ?? 0
+                            
+                            return (startHour, endHour)
+                        }
+                    }
+                }
+            }
+            return nil
+        }
+        
+        // Check hour number matching (e.g., 9-10 matches 09:00-10:00)
+        if let (checkStartHour, checkEndHour) = extractHourNumbers(slotToCheck) {
+            for slot in slots {
+                if let (slotStartHour, slotEndHour) = extractHourNumbers(slot) {
+                    // For 12-hour format, we need to handle AM/PM conversion
+                    var adjustedSlotStartHour = slotStartHour
+                    var adjustedSlotEndHour = slotEndHour
+                    
+                    // Handle 24-hour format conversion to 12-hour
+                    if slotStartHour > 12 {
+                        adjustedSlotStartHour = slotStartHour - 12
+                    }
+                    if slotEndHour > 12 {
+                        adjustedSlotEndHour = slotEndHour - 12
+                    }
+                    
+                    if (checkStartHour == slotStartHour && checkEndHour == slotEndHour) ||
+                       (checkStartHour == adjustedSlotStartHour && checkEndHour == adjustedSlotEndHour) {
+                        print("✓ Hour number match: \(slotToCheck) [\(checkStartHour)-\(checkEndHour)] with \(slot) [\(slotStartHour)-\(slotEndHour)]")
+                        return true
+                    }
+                }
+            }
+        }
+        
+        // Last resort: check raw hour-only matches for debugging (9, 10, 11, etc.)
+        for slot in slots {
+            let slotLower = slot.lowercased()
+            let checkLower = slotToCheck.lowercased()
+            
+            // Match simple hour values
+            if slotToCheck.starts(with: "9:00") && slot.contains("9:") || slot.contains("09:") || slot == "9" || slot.contains("9-") {
+                print("✓ Simple hour match for 9:00: \(slot)")
+                return true
+            } else if slotToCheck.starts(with: "10:00") && (slot.contains("10:") || slot == "10" || slot.contains("10-")) {
+                print("✓ Simple hour match for 10:00: \(slot)")
+                return true
+            } else if slotToCheck.starts(with: "11:00") && (slot.contains("11:") || slot == "11" || slot.contains("11-")) {
+                print("✓ Simple hour match for 11:00: \(slot)")
+                return true
+            } else if slotToCheck.starts(with: "1:00") && (slot.contains("1:") || slot.contains("13:") || slot == "1" || slot.contains("1-") || slot.contains("13-")) {
+                print("✓ Simple hour match for 1:00: \(slot)")
+                return true
+            } else if slotToCheck.starts(with: "2:00") && (slot.contains("2:") || slot.contains("14:") || slot == "2" || slot.contains("2-") || slot.contains("14-")) {
+                print("✓ Simple hour match for 2:00: \(slot)")
+                return true
+            } else if slotToCheck.starts(with: "3:00") && (slot.contains("3:") || slot.contains("15:") || slot == "3" || slot.contains("3-") || slot.contains("15-")) {
+                print("✓ Simple hour match for 3:00: \(slot)")
+                return true
+            } else if slotToCheck.starts(with: "4:00") && (slot.contains("4:") || slot.contains("16:") || slot == "4" || slot.contains("4-") || slot.contains("16-")) {
+                print("✓ Simple hour match for 4:00: \(slot)")
+                return true
+            } else if slotToCheck.starts(with: "5:00") && (slot.contains("5:") || slot.contains("17:") || slot == "5" || slot.contains("5-") || slot.contains("17-")) {
+                print("✓ Simple hour match for 5:00: \(slot)")
+                return true
+            } else if slotToCheck.starts(with: "6:00") && (slot.contains("6:") || slot.contains("18:") || slot == "6" || slot.contains("6-") || slot.contains("18-")) {
+                print("✓ Simple hour match for 6:00: \(slot)")
+                return true
+            }
+        }
+        
+        return false
     }
     
     // Normalize a time slot string to a standard format for comparison
     private func normalizeTimeSlot(_ slot: String) -> String {
-        // Simply return the slot as is - we'll use exact matching
-        return slot
+        // Remove all whitespace
+        var normalized = slot.replacingOccurrences(of: " ", with: "")
+        
+        // Handle AM/PM variations
+        normalized = normalized.uppercased()
+        
+        // Special case for 11:00-12:00 (always treat as PM)
+        if normalized.contains("11:00-12:00") {
+            normalized = normalized.replacingOccurrences(of: "AM", with: "PM")
+        }
+        
+        // Handle different dash types
+        normalized = normalized.replacingOccurrences(of: "–", with: "-")
+        
+        // Handle formats like 9:00AM-10:00AM (from AddDoctorView)
+        if !normalized.contains("-") && normalized.contains("AM") || normalized.contains("PM") {
+            // Try to extract time range from patterns like "9:00AM10:00AM"
+            let pattern = #"(\d+:\d+)(AM|PM)(\d+:\d+)(AM|PM)"#
+            if let regex = try? NSRegularExpression(pattern: pattern) {
+                let range = NSRange(normalized.startIndex..<normalized.endIndex, in: normalized)
+                if let match = regex.firstMatch(in: normalized, range: range) {
+                    let startTime = String(normalized[Range(match.range(at: 1), in: normalized)!])
+                    let startIndicator = String(normalized[Range(match.range(at: 2), in: normalized)!])
+                    let endTime = String(normalized[Range(match.range(at: 3), in: normalized)!])
+                    let endIndicator = String(normalized[Range(match.range(at: 4), in: normalized)!])
+                    normalized = "\(startTime)-\(endTime)\(endIndicator)"
+                }
+            }
+        }
+        
+        return normalized
     }
     
     // Helper method to normalize a set of slots to have consistent formatting

@@ -7,6 +7,15 @@ class AdminController {
     private let userController = UserController.shared
     private let hospitalController = HospitalController.shared
     
+    // Add accessor properties for supabase settings
+    var supabaseURL: URL { 
+        return supabase.supabaseURL 
+    }
+    
+    var supabaseAnonKey: String { 
+        return supabase.supabaseAnonKey 
+    }
+    
     // Create Encodable struct exactly matching the database schema
     private struct DoctorAvailabilityRecord: Encodable {
         let doctor_id: String
@@ -1813,7 +1822,10 @@ class AdminController {
             )
             
             // Print the raw results for debugging
-            print("📊 Raw database results: \(results)")
+            if let rawResultData = try? JSONSerialization.data(withJSONObject: results, options: .prettyPrinted),
+               let rawString = String(data: rawResultData, encoding: .utf8) {
+                print("📋 RAW JSON RESULT: \(rawString)")
+            }
             
             // Also check the hospital_id matches since the select method only supports one condition
             let filteredResults = results.filter { record in
@@ -1829,57 +1841,122 @@ class AdminController {
             if let record = filteredResults.first {
                 print("✅ Found record in efficient table: \(record)")
                 
+                // Try parsing the weekly_schedule in multiple ways
+                
+                // 1. First attempt - try parsing as a dictionary
                 if let weeklySchedule = record["weekly_schedule"] as? [String: Any] {
-                    print("✅ Found weekly_schedule: \(weeklySchedule)")
+                    print("✅ Found weekly_schedule as Dictionary: \(weeklySchedule)")
                     
-                    // Extract weekday and weekend slots from the weekly schedule
                     var weekdaySlots = Set<String>()
                     var weekendSlots = Set<String>()
                     
-                    // Directly process the slots from the JSON for more reliable extraction
-                    if let weekdayData = weeklySchedule["weekday"] as? [String], !weekdayData.isEmpty {
+                    if let weekdayData = weeklySchedule["weekday"] as? [String] {
                         weekdaySlots = Set(weekdayData)
-                        print("📋 Raw weekday slots from DB: \(weekdayData)")
-                        for slot in weekdayData {
-                            print("   🕒 Weekday slot format: '\(slot)'")
-                        }
+                        print("📋 Weekday slots (from dictionary): \(weekdaySlots)")
                     } else {
-                        print("⚠️ Weekday data is missing or not in expected format")
-                        if let weekdayData = weeklySchedule["weekday"] {
-                            print("⚠️ Weekday data type: \(type(of: weekdayData))")
-                        }
+                        print("⚠️ Weekday key exists but is not a string array: \(String(describing: weeklySchedule["weekday"]))")
                     }
                     
-                    if let weekendData = weeklySchedule["weekend"] as? [String], !weekendData.isEmpty {
+                    if let weekendData = weeklySchedule["weekend"] as? [String] {
                         weekendSlots = Set(weekendData)
-                        print("📋 Raw weekend slots from DB: \(weekendData)")
-                        for slot in weekendData {
-                            print("   🕒 Weekend slot format: '\(slot)'")
-                        }
+                        print("📋 Weekend slots (from dictionary): \(weekendSlots)")
                     } else {
-                        print("⚠️ Weekend data is missing or not in expected format")
-                        if let weekendData = weeklySchedule["weekend"] {
-                            print("⚠️ Weekend data type: \(type(of: weekendData))")
-                        }
+                        print("⚠️ Weekend key exists but is not a string array: \(String(describing: weeklySchedule["weekend"]))")
                     }
                     
-                    return (weekdaySlots, weekendSlots)
-                } else {
-                    print("❌ No weekly_schedule found in record")
-                    // Check if this might be in a different format
-                    for (key, value) in record {
-                        print("   📌 Record contains: \(key) = \(value)")
+                    // If we found valid data, return it
+                    if !weekdaySlots.isEmpty || !weekendSlots.isEmpty {
+                        return (weekdaySlots, weekendSlots)
                     }
+                }
+                
+                // 2. Second attempt - try parsing from JSON string
+                if let weeklyScheduleStr = record["weekly_schedule"] as? String {
+                    print("🔄 Found weekly_schedule as String: \(weeklyScheduleStr)")
+                    
+                    if let scheduleData = weeklyScheduleStr.data(using: .utf8),
+                       let schedule = try? JSONSerialization.jsonObject(with: scheduleData) as? [String: Any] {
+                        
+                        var weekdaySlots = Set<String>()
+                        var weekendSlots = Set<String>()
+                        
+                        if let weekdayData = schedule["weekday"] as? [String] {
+                            weekdaySlots = Set(weekdayData)
+                            print("📋 Weekday slots (from JSON string): \(weekdaySlots)")
+                        }
+                        
+                        if let weekendData = schedule["weekend"] as? [String] {
+                            weekendSlots = Set(weekendData)
+                            print("📋 Weekend slots (from JSON string): \(weekendSlots)")
+                        }
+                        
+                        return (weekdaySlots, weekendSlots)
+                    }
+                }
+                
+                // 3. Try individual slots in record
+                let weekdayKeyPattern = "slot_weekday_"
+                let weekendKeyPattern = "slot_weekend_"
+                
+                var weekdaySlots = Set<String>()
+                var weekendSlots = Set<String>()
+                
+                for (key, value) in record {
+                    if key.hasPrefix(weekdayKeyPattern), let timeSlot = value as? String {
+                        weekdaySlots.insert(timeSlot)
+                        print("📋 Found weekday slot in record: \(timeSlot)")
+                    } else if key.hasPrefix(weekendKeyPattern), let timeSlot = value as? String {
+                        weekendSlots.insert(timeSlot)
+                        print("📋 Found weekend slot in record: \(timeSlot)")
+                    }
+                }
+                
+                if !weekdaySlots.isEmpty || !weekendSlots.isEmpty {
+                    return (weekdaySlots, weekendSlots)
+                }
+                
+                // 4. Last attempt - check for any time patterns in the record
+                print("⚠️ No standard format found, trying fallback pattern matching")
+                
+                for (key, value) in record {
+                    // Dump each field to help debug the structure
+                    print("   📌 \(key): \(value) (type: \(type(of: value)))")
+                    
+                    if let valueStr = value as? String {
+                        // Check for common time formats: XX:XX-XX:XX or XX:XX:XX-XX:XX:XX
+                        if valueStr.range(of: #"\d{1,2}:\d{2}(:\d{2})?-\d{1,2}:\d{2}(:\d{2})?"#, options: .regularExpression) != nil {
+                            print("⚡️ Found time pattern in field '\(key)': \(valueStr)")
+                            
+                            // Decide where to add this slot based on field name or context
+                            if key.lowercased().contains("weekday") || key.lowercased().contains("week_day") {
+                                weekdaySlots.insert(valueStr)
+                            } else if key.lowercased().contains("weekend") || key.lowercased().contains("week_end") {
+                                weekendSlots.insert(valueStr)
+                            } else {
+                                // Can't determine, add to weekdays by default
+                                weekdaySlots.insert(valueStr)
+                            }
+                        }
+                    }
+                }
+                
+                // Return any slots we found
+                if !weekdaySlots.isEmpty || !weekendSlots.isEmpty {
+                    return (weekdaySlots, weekendSlots)
                 }
             } else {
                 print("⚠️ No matching record found after hospital ID filtering")
             }
             
-            print("⚠️ No schedule found in efficient table, returning empty sets")
+            // If no slots found, return empty sets
+            print("⚠️ No schedule found in database, returning empty sets")
             return (Set<String>(), Set<String>())
         } catch {
             print("❌ Error fetching doctor schedule: \(error.localizedDescription)")
-            throw error
+            
+            // Return empty sets on error
+            print("❌ ERROR: Returning empty sets")
+            return (Set<String>(), Set<String>())
         }
     }
     
