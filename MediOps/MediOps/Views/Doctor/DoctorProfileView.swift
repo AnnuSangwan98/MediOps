@@ -471,8 +471,6 @@ struct EditDoctorProfileView: View {
     @State private var errorMessage = ""
     
     // Editable fields
-    @State private var name: String
-    @State private var specialization: String
     @State private var addressLine: String
     @State private var city: String
     @State private var state: String
@@ -500,8 +498,6 @@ struct EditDoctorProfileView: View {
         self.onSave = onSave
         
         // Initialize state variables with doctor data
-        _name = State(initialValue: doctor.name)
-        _specialization = State(initialValue: doctor.specialization)
         _addressLine = State(initialValue: doctor.addressLine)
         _city = State(initialValue: doctor.city)
         _state = State(initialValue: doctor.state)
@@ -535,12 +531,11 @@ struct EditDoctorProfileView: View {
                                     .background(Circle().fill(Color.white))
                                     .shadow(color: .gray.opacity(0.2), radius: 5)
                                 
-                                TextField("Doctor Name", text: $name)
+                                Text(doctor.name)
                                     .font(.title2)
                                     .fontWeight(.bold)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
                             }
                             .padding()
                             
@@ -548,24 +543,19 @@ struct EditDoctorProfileView: View {
                             VStack(alignment: .leading, spacing: 20) {
                                 SectionTitle(title: "Professional Information")
                                 
-                                // Specialization
+                                // Specialization (display only)
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("Specialization")
                                         .font(.subheadline)
                                         .foregroundColor(.gray)
                                     
-                                    Picker("Specialization", selection: $specialization) {
-                                        ForEach(specializations, id: \.self) { spec in
-                                            Text(spec).tag(spec)
-                                        }
-                                    }
-                                    .pickerStyle(MenuPickerStyle())
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 12)
-                                    .background(Color.white)
-                                    .cornerRadius(8)
-                                    .shadow(color: .gray.opacity(0.1), radius: 2)
+                                    Text(doctor.specialization)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 12)
+                                        .background(Color.white)
+                                        .cornerRadius(8)
+                                        .shadow(color: .gray.opacity(0.1), radius: 2)
                                 }
                             }
                             .padding()
@@ -758,8 +748,6 @@ struct EditDoctorProfileView: View {
         
         // Create the update data using encodable struct
         struct DoctorUpdateData: Encodable {
-            let name: String
-            let specialization: String
             let address_line: String
             let city: String
             let state: String
@@ -770,8 +758,6 @@ struct EditDoctorProfileView: View {
         }
         
         let updateData = DoctorUpdateData(
-            name: name,
-            specialization: specialization,
             address_line: addressLine,
             city: city,
             state: state,
@@ -795,8 +781,8 @@ struct EditDoctorProfileView: View {
                 // Update the doctor profile locally
                 let updatedDoctor = DoctorProfile(
                     id: doctor.id,
-                    name: name,
-                    specialization: specialization,
+                    name: doctor.name,
+                    specialization: doctor.specialization,
                     hospitalId: doctor.hospitalId,
                     qualifications: doctor.qualifications,
                     licenseNo: doctor.licenseNo,
