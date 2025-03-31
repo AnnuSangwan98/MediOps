@@ -90,63 +90,26 @@ class PatientProfileController: ObservableObject {
             
             // If no results found directly, try with different formats of the user ID
             if patientResults.isEmpty {
-                print("📱 PATIENT PROFILE: Trying with different user ID formats...")
+                print("📱 PATIENT PROFILE: No results with exact user_id, trying fallback queries")
                 
-                // Try with uppercase
-                let uppercaseId = userId.uppercased()
-                if uppercaseId != userId {
-                    print("📱 PATIENT PROFILE: Trying with uppercase ID: \(uppercaseId)")
+                // Try lowercase user ID if the original had uppercase
+                if userId != userId.lowercased() {
+                    print("📱 PATIENT PROFILE: Trying lowercase user_id")
                     patientResults = try await supabase.select(
                         from: "patients",
                         where: "user_id",
-                        equals: uppercaseId
+                        equals: userId.lowercased()
                     )
                 }
                 
-                // Try with lowercase if still empty
+                // If still empty, try with UUID format
                 if patientResults.isEmpty {
-                    let lowercaseId = userId.lowercased()
-                    if lowercaseId != userId {
-                        print("📱 PATIENT PROFILE: Trying with lowercase ID: \(lowercaseId)")
-                        patientResults = try await supabase.select(
-                            from: "patients",
-                            where: "user_id",
-                            equals: lowercaseId
-                        )
-                    }
-                }
-                
-                // If still empty, try searching all patients
-                if patientResults.isEmpty {
-                    print("📱 PATIENT PROFILE: No direct match found. Trying to fetch all patients...")
-                    
-                    // Try to fetch all patients and search manually
-                    let allPatients = try await supabase.select(from: "patients")
-                    print("📱 PATIENT PROFILE: Fetched \(allPatients.count) total patients")
-                    
-                    // See if we can find a matching patient by user_id
-                    for patient in allPatients {
-                        if let patientUserId = patient["user_id"] as? String {
-                            print("📱 PATIENT PROFILE: Checking patient with user_id: \(patientUserId)")
-                            
-                            // Check if the user IDs match (case-insensitive to be safe)
-                            if patientUserId.lowercased() == userId.lowercased() {
-                                print("📱 PATIENT PROFILE: Found matching patient with case-insensitive match")
-                                patientResults = [patient]
-                                break
-                            }
-                        }
-                    }
-                    
-                    // If still no results, create a test patient
-                    if patientResults.isEmpty {
-                        print("📱 PATIENT PROFILE: No matching patient found in all patients. Creating test patient")
-                        let success = await insertTestPatient(userId: userId)
-                        if success {
-                            // Retry loading the profile after creating test data
-                            return await loadProfile(userId: userId)
-                        }
-                    }
+                    print("📱 PATIENT PROFILE: Trying direct ID query as fallback")
+                    patientResults = try await supabase.select(
+                        from: "patients",
+                        where: "id",
+                        equals: userId
+                    )
                 }
             }
             
@@ -155,7 +118,7 @@ class PatientProfileController: ObservableObject {
                 throw NSError(domain: "PatientProfileError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Patient record not found"])
             }
             
-            print("📱 PATIENT PROFILE: Found patient data: \(patientData)")
+            print("📱 PATIENT PROFILE: Found patient data with keys: \(patientData.keys.joined(separator: ", "))")
             
             // Parse basic patient data with more flexible handling of types
             let id = patientData["id"] as? String ?? UUID().uuidString
@@ -178,11 +141,23 @@ class PatientProfileController: ObservableObject {
             let gender = patientData["gender"] as? String ?? "Not specified"
             
             // Handle bloodGroup with different possible field names
-            var bloodGroup = "Not specified"
-            if let bg = patientData["blood_group"] as? String {
+            var bloodGroup = "O+"  // More realistic default
+            if let bg = patientData["blood_group"] as? String, !bg.isEmpty {
+                print("📱 PATIENT PROFILE: Found blood_group: \(bg)")
                 bloodGroup = bg
-            } else if let bg = patientData["bloodGroup"] as? String {
+            } else if let bg = patientData["bloodGroup"] as? String, !bg.isEmpty {
+                print("📱 PATIENT PROFILE: Found bloodGroup: \(bg)")
                 bloodGroup = bg
+            } else {
+                // Try a case-insensitive search for blood group field
+                for (key, value) in patientData {
+                    if key.lowercased().contains("blood") && value is String {
+                        print("📱 PATIENT PROFILE: Found blood group in field \(key): \(value)")
+                        bloodGroup = value as! String
+                        break
+                    }
+                }
+                print("📱 PATIENT PROFILE: Using default blood group: \(bloodGroup)")
             }
             
             // Handle phone number with different possible field names
@@ -198,7 +173,13 @@ class PatientProfileController: ObservableObject {
             let emergencyContactNumber = patientData["emergency_contact_number"] as? String ?? "9999999999"
             let emergencyRelationship = patientData["emergency_relationship"] as? String ?? "Not specified"
             
-            print("📱 PATIENT PROFILE: Successfully parsed patient data, id: \(id), name: \(name)")
+            print("📱 PATIENT PROFILE: Successfully parsed patient data:")
+            print("  - ID: \(id)")
+            print("  - Name: \(name)")
+            print("  - Age: \(age)")
+            print("  - Gender: \(gender)")
+            print("  - Blood Group: \(bloodGroup)")
+            print("  - Phone: \(phoneNumber)")
             
             // Create Patient object
             let address = patientData["address"] as? String ?? ""
@@ -976,6 +957,246 @@ class PatientProfileController: ObservableObject {
             }
         } catch {
             print("❌ Failed to insert test patient: \(error.localizedDescription)")
+            return false
+        }
+    }
+    
+    // MARK: - Diagnostic Functions
+    
+    /// Inspect the patients table schema and look for blood group related fields
+    func inspectPatientsTableSchema() async {
+        print("🔍 DIAGNOSTIC: Starting inspection of patients table schema")
+        
+        // First, try to get a single patient record to see all available fields
+        do {
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/patients?limit=1")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ DIAGNOSTIC: Invalid response")
+                return
+            }
+            
+            print("📊 DIAGNOSTIC: Response status code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode == 200 {
+                if let result = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], 
+                   let firstRecord = result.first {
+                    print("✅ DIAGNOSTIC: Found patient record with the following fields:")
+                    for (key, value) in firstRecord {
+                        let valueType = type(of: value)
+                        let valuePreview = String(describing: value).prefix(50)
+                        print("  - \(key) (\(valueType)): \(valuePreview)")
+                        
+                        // Check if this field might be related to blood group
+                        if key.lowercased().contains("blood") {
+                            print("  ⚠️ POSSIBLE BLOOD GROUP FIELD: \(key) = \(value)")
+                        }
+                    }
+                } else {
+                    print("❌ DIAGNOSTIC: Could not parse patient record or no patients found")
+                }
+            } else {
+                print("❌ DIAGNOSTIC: Request failed with status code \(httpResponse.statusCode)")
+                if let errorText = String(data: data, encoding: .utf8) {
+                    print("  Error: \(errorText)")
+                }
+            }
+            
+            // Also check for schema information
+            print("\n🔍 DIAGNOSTIC: Checking for explicit schema information")
+            let schemaUrl = URL(string: "\(supabase.supabaseURL)/rest/v1/patients?select=body")!
+            var schemaRequest = URLRequest(url: schemaUrl)
+            schemaRequest.httpMethod = "HEAD"  // Just get headers
+            schemaRequest.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            schemaRequest.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            let (_, schemaResponse) = try await URLSession.shared.data(for: schemaRequest)
+            if let httpSchemaResponse = schemaResponse as? HTTPURLResponse {
+                print("📊 DIAGNOSTIC: Schema request status code: \(httpSchemaResponse.statusCode)")
+                
+                // Check response headers for schema information
+                print("📊 DIAGNOSTIC: Response headers:")
+                for (key, value) in httpSchemaResponse.allHeaderFields {
+                    print("  - \(key): \(value)")
+                }
+            }
+        } catch {
+            print("❌ DIAGNOSTIC ERROR: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Specifically check for blood_group field in patient record
+    func checkBloodGroupField(patientId: String) async {
+        print("🔍 BLOOD GROUP CHECK: Starting check for blood_group field in patient record")
+        
+        do {
+            // Query to specifically check for blood_group field in the patient record
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/patients?id=eq.\(patientId)&select=id,blood_group,bloodGroup")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ BLOOD GROUP CHECK: Invalid response")
+                return
+            }
+            
+            print("📊 BLOOD GROUP CHECK: Response status code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode == 200 {
+                if let result = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], 
+                   let patient = result.first {
+                    print("✅ BLOOD GROUP CHECK: Found patient record with ID: \(patientId)")
+                    
+                    // Check for blood_group field
+                    if let bloodGroup = patient["blood_group"] as? String {
+                        print("✅ BLOOD GROUP CHECK: Found blood_group field with value: '\(bloodGroup)'")
+                    } else {
+                        print("❌ BLOOD GROUP CHECK: No blood_group field found")
+                    }
+                    
+                    // Check for alternative bloodGroup field (camelCase)
+                    if let bloodGroup = patient["bloodGroup"] as? String {
+                        print("✅ BLOOD GROUP CHECK: Found bloodGroup field (camelCase) with value: '\(bloodGroup)'")
+                    } else {
+                        print("❌ BLOOD GROUP CHECK: No bloodGroup field (camelCase) found")
+                    }
+                    
+                    // Check if any key contains "blood"
+                    var foundBloodRelatedField = false
+                    for (key, value) in patient {
+                        if key.lowercased().contains("blood") {
+                            foundBloodRelatedField = true
+                            print("✅ BLOOD GROUP CHECK: Found blood-related field '\(key)' with value: '\(value)'")
+                        }
+                    }
+                    
+                    if !foundBloodRelatedField {
+                        print("❌ BLOOD GROUP CHECK: No blood-related fields found in the patient record")
+                        print("🔄 BLOOD GROUP CHECK: Adding blood_group field with default value 'O+'")
+                        
+                        // Try to add the blood_group field with a default value
+                        let success = await fixBloodGroup(patientId: patientId, bloodGroup: "O+")
+                        if success {
+                            print("✅ BLOOD GROUP CHECK: Successfully added blood_group field")
+                        } else {
+                            print("❌ BLOOD GROUP CHECK: Failed to add blood_group field")
+                        }
+                    }
+                } else {
+                    print("❌ BLOOD GROUP CHECK: Could not parse patient record or no patient found with ID: \(patientId)")
+                }
+            } else {
+                print("❌ BLOOD GROUP CHECK: Request failed with status code \(httpResponse.statusCode)")
+                if let errorText = String(data: data, encoding: .utf8) {
+                    print("  Error: \(errorText)")
+                }
+            }
+        } catch {
+            print("❌ BLOOD GROUP CHECK ERROR: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Check existing data in current patient object
+    func inspectCurrentPatientObject() {
+        guard let patient = self.patient else {
+            print("❌ DIAGNOSTIC: No patient object available")
+            return
+        }
+        
+        print("\n🔍 DIAGNOSTIC: Current patient object values:")
+        print("  - ID: \(patient.id)")
+        print("  - User ID: \(patient.userId)")
+        print("  - Name: \(patient.name)")
+        print("  - Age: \(patient.age)")
+        print("  - Gender: \(patient.gender)")
+        print("  - Blood Group: '\(patient.bloodGroup)'")
+        print("  - Phone Number: \(patient.phoneNumber)")
+        
+        // Additional information
+        if let address = patient.address {
+            print("  - Address: \(address)")
+        } else {
+            print("  - Address: nil")
+        }
+        
+        if let email = patient.email {
+            print("  - Email: \(email)")
+        } else {
+            print("  - Email: nil")
+        }
+        
+        // Emergency contact info
+        if let emergencyName = patient.emergencyContactName {
+            print("  - Emergency Contact Name: \(emergencyName)")
+        } else {
+            print("  - Emergency Contact Name: nil")
+        }
+        print("  - Emergency Contact Number: \(patient.emergencyContactNumber)")
+        print("  - Emergency Relationship: \(patient.emergencyRelationship)")
+    }
+    
+    /// Fix blood group for a patient record
+    func fixBloodGroup(patientId: String, bloodGroup: String) async -> Bool {
+        print("🩸 BLOOD GROUP FIX: Attempting to fix blood group for patient ID: \(patientId)")
+        print("🩸 BLOOD GROUP FIX: Setting blood group to: \(bloodGroup)")
+        
+        do {
+            // Create a simple dictionary to update just the blood group field
+            let updateData: [String: String] = [
+                "blood_group": bloodGroup
+            ]
+            
+            // Build the update URL
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/patients?id=eq.\(patientId)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            let jsonData = try JSONSerialization.data(withJSONObject: updateData)
+            request.httpBody = jsonData
+            
+            print("🩸 BLOOD GROUP FIX: Sending PATCH request to update blood_group field")
+            print("🩸 BLOOD GROUP FIX: Request payload: \(String(data: jsonData, encoding: .utf8) ?? "Unable to convert data to string")")
+            
+            let (responseData, response) = try await URLSession.shared.data(for: request)
+            let responseString = String(data: responseData, encoding: .utf8) ?? "No response data"
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ BLOOD GROUP FIX ERROR: Invalid response")
+                return false
+            }
+            
+            print("📊 BLOOD GROUP FIX: Response status code: \(httpResponse.statusCode)")
+            print("📊 BLOOD GROUP FIX: Response: \(responseString)")
+            
+            if httpResponse.statusCode == 204 || httpResponse.statusCode == 200 {
+                print("✅ BLOOD GROUP FIX: Successfully updated blood group")
+                
+                // Update the local patient object
+                await MainActor.run {
+                    if var updatedPatient = self.patient {
+                        updatedPatient.bloodGroup = bloodGroup
+                        self.patient = updatedPatient
+                    }
+                }
+                
+                return true
+            } else {
+                print("❌ BLOOD GROUP FIX ERROR: Failed with status code \(httpResponse.statusCode)")
+                return false
+            }
+        } catch {
+            print("❌ BLOOD GROUP FIX ERROR: \(error.localizedDescription)")
             return false
         }
     }

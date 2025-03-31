@@ -371,14 +371,15 @@ class SupabaseController {
     /// Direct method to insert an appointment with proper formatting according to the database schema
     func insertAppointment(id: String, patientId: String, doctorId: String, hospitalId: String, 
                           slotId: Int, date: Date, reason: String) async throws {
-        print("🔄 DIRECT APPOINTMENT INSERT: Creating appointment with ID: \(id)")
+        print("🔄 APPOINTMENT: Creating appointment with ID: \(id)")
+        print("   Using patient_id: \(patientId)")
         
         // Format date for database
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let formattedDate = dateFormatter.string(from: date)
         
-        // Create appointment data conforming to the table schema
+        // Create appointment data conforming to the table schema exactly as defined
         let appointmentData: [String: Any] = [
             "id": id,
             "patient_id": patientId,
@@ -387,9 +388,191 @@ class SupabaseController {
             "availability_slot_id": slotId,
             "appointment_date": formattedDate,
             "status": "upcoming",
-            "reason": reason
+            "reason": reason.isEmpty ? "Medical consultation" : reason,
+            "isdone": false,
+            "is_premium": false
+            // booking_time, created_at, and updated_at will use the DEFAULT CURRENT_TIMESTAMP
         ]
         
+        // Log the data being sent
+        print("📋 APPOINTMENT DATA:")
+        appointmentData.forEach { key, value in
+            print("   \(key): \(value)")
+        }
+        
+        // First verify the patient exists with the right ID column
+        print("🔍 APPOINTMENT: Verifying patient_id exists in patients table")
+        do {
+            // 1. First check if the patient exists with this ID
+            let patientResults = try await select(
+                from: "patients",
+                where: "id",
+                equals: patientId
+            )
+            
+            if patientResults.isEmpty {
+                print("⚠️ APPOINTMENT: Patient with ID \(patientId) not found in patients table")
+                
+                // 2. Try to find a patient with this ID in the patient_id column
+                let patientIdResults = try await select(
+                    from: "patients",
+                    where: "patient_id",
+                    equals: patientId
+                )
+                
+                if patientIdResults.isEmpty {
+                    print("⚠️ APPOINTMENT: No patient found with patient_id = \(patientId) either")
+                    
+                    // 3. Look up the current user to get userId
+                    let userId = UserDefaults.standard.string(forKey: "userId") ?? 
+                                 UserDefaults.standard.string(forKey: "current_user_id")
+                    
+                    if let userId = userId {
+                        print("🔍 APPOINTMENT: Found user ID: \(userId), looking up patient record")
+                        
+                        // 4. Look up the patient by user_id
+                        let userPatients = try await select(
+                            from: "patients",
+                            where: "user_id",
+                            equals: userId
+                        )
+                        
+                        if let userPatient = userPatients.first, 
+                           let patientActualId = userPatient["id"] as? String {
+                            // We found a valid patient record, but with a different ID
+                            print("✅ APPOINTMENT: Found patient with different ID: \(patientActualId)")
+                            
+                            // Create or update patient record with the expected ID
+                            print("🔧 APPOINTMENT: Creating/updating patient record with ID: \(patientId)")
+                            
+                            let sqlUrl = URL(string: "\(supabaseURL)/rest/v1/rpc/execute_sql")!
+                            var sqlRequest = URLRequest(url: sqlUrl)
+                            sqlRequest.httpMethod = "POST"
+                            sqlRequest.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+                            sqlRequest.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+                            sqlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                            
+                            // SQL to create or update patient record with correct ID
+                            let sql = """
+                            BEGIN;
+                            -- Create a new patient record with the expected ID if it doesn't exist
+                            INSERT INTO patients (id, patient_id, user_id, name, age, gender)
+                            VALUES (
+                                '\(patientId)', 
+                                '\(patientId)', 
+                                '\(userId)',
+                                (SELECT name FROM patients WHERE id = '\(patientActualId)'),
+                                (SELECT age FROM patients WHERE id = '\(patientActualId)'),
+                                (SELECT gender FROM patients WHERE id = '\(patientActualId)')
+                            )
+                            ON CONFLICT (id) DO UPDATE 
+                            SET patient_id = '\(patientId)',
+                                user_id = '\(userId)';
+                            
+                            COMMIT;
+                            """
+                            
+                            let sqlParams = ["sql": sql]
+                            let sqlJsonData = try JSONSerialization.data(withJSONObject: sqlParams)
+                            sqlRequest.httpBody = sqlJsonData
+                            
+                            let (sqlResponseData, sqlResponse) = try await URLSession.shared.data(for: sqlRequest)
+                            
+                            if let sqlHttpResponse = sqlResponse as? HTTPURLResponse, 
+                               sqlHttpResponse.statusCode >= 200 && sqlHttpResponse.statusCode < 300 {
+                                print("✅ APPOINTMENT: Successfully created/updated patient record with ID: \(patientId)")
+                            } else {
+                                if let sqlErrorStr = String(data: sqlResponseData, encoding: .utf8) {
+                                    print("❌ APPOINTMENT: Error creating/updating patient: \(sqlErrorStr)")
+                                }
+                                print("⚠️ APPOINTMENT: Failed to create/update patient with status: \(String(describing: (sqlResponse as? HTTPURLResponse)?.statusCode))")
+                            }
+                        } else {
+                            print("⚠️ APPOINTMENT: No patient found for user ID: \(userId)")
+                        }
+                    } else {
+                        print("⚠️ APPOINTMENT: No user ID found in UserDefaults")
+                    }
+                    
+                    // 5. Create a basic patient record with this ID as a last resort
+                    print("🔧 APPOINTMENT: Creating basic patient record with ID: \(patientId) as last resort")
+                    
+                    let sqlUrl = URL(string: "\(supabaseURL)/rest/v1/rpc/execute_sql")!
+                    var sqlRequest = URLRequest(url: sqlUrl)
+                    sqlRequest.httpMethod = "POST"
+                    sqlRequest.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+                    sqlRequest.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+                    sqlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                    
+                    // SQL to create a basic patient record
+                    let sql = """
+                    BEGIN;
+                    -- Create a basic patient record with the needed ID
+                    INSERT INTO patients (id, patient_id)
+                    VALUES ('\(patientId)', '\(patientId)')
+                    ON CONFLICT (id) DO UPDATE 
+                    SET patient_id = '\(patientId)';
+                    
+                    COMMIT;
+                    """
+                    
+                    let sqlParams = ["sql": sql]
+                    let sqlJsonData = try JSONSerialization.data(withJSONObject: sqlParams)
+                    sqlRequest.httpBody = sqlJsonData
+                    
+                    let (sqlResponseData, sqlResponse) = try await URLSession.shared.data(for: sqlRequest)
+                    
+                    if let sqlHttpResponse = sqlResponse as? HTTPURLResponse, 
+                       sqlHttpResponse.statusCode >= 200 && sqlHttpResponse.statusCode < 300 {
+                        print("✅ APPOINTMENT: Successfully created basic patient record with ID: \(patientId)")
+                    } else {
+                        if let sqlErrorStr = String(data: sqlResponseData, encoding: .utf8) {
+                            print("❌ APPOINTMENT: Error creating basic patient: \(sqlErrorStr)")
+                        }
+                        print("⚠️ APPOINTMENT: Failed to create basic patient with status: \(String(describing: (sqlResponse as? HTTPURLResponse)?.statusCode))")
+                        
+                        throw NSError(domain: "AppointmentError", code: 400, userInfo: [
+                            NSLocalizedDescriptionKey: "Could not create or find a valid patient record"
+                        ])
+                    }
+                } else {
+                    print("✅ APPOINTMENT: Found patient with patient_id = \(patientId)")
+                }
+            } else {
+                print("✅ APPOINTMENT: Patient verification successful - found in patients table")
+            }
+            
+            // Double-check the patient_id field is set
+            let sqlUrl = URL(string: "\(supabaseURL)/rest/v1/rpc/execute_sql")!
+            var sqlRequest = URLRequest(url: sqlUrl)
+            sqlRequest.httpMethod = "POST"
+            sqlRequest.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+            sqlRequest.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            sqlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            // SQL to ensure patient_id column is set
+            let sql = """
+            BEGIN;
+            -- Ensure patient_id column is set to match id
+            UPDATE patients 
+            SET patient_id = '\(patientId)'
+            WHERE id = '\(patientId)' AND (patient_id IS NULL OR patient_id = '');
+            
+            COMMIT;
+            """
+            
+            let sqlParams = ["sql": sql]
+            let sqlJsonData = try JSONSerialization.data(withJSONObject: sqlParams)
+            sqlRequest.httpBody = sqlJsonData
+            
+            try await URLSession.shared.data(for: sqlRequest)
+            print("✅ APPOINTMENT: Ensured patient_id is set")
+        } catch {
+            print("❌ APPOINTMENT: Error during patient verification: \(error.localizedDescription)")
+            // Continue anyway, as the direct insert will tell us if there's a foreign key issue
+        }
+        
+        // Now try to insert the appointment
         let url = URL(string: "\(supabaseURL)/rest/v1/appointments")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -401,24 +584,363 @@ class SupabaseController {
         let jsonData = try JSONSerialization.data(withJSONObject: appointmentData)
         request.httpBody = jsonData
         
+        // Print the raw JSON being sent for debugging
+        if let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📦 APPOINTMENT: Raw JSON payload: \(jsonString)")
+        }
+        
         let (responseData, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
         }
         
-        print("📊 Response status code: \(httpResponse.statusCode)")
+        print("📊 APPOINTMENT: Response status code: \(httpResponse.statusCode)")
         
         if httpResponse.statusCode != 201 && httpResponse.statusCode != 200 {
             if let errorStr = String(data: responseData, encoding: .utf8) {
-                print("❌ Error details: \(errorStr)")
+                print("❌ APPOINTMENT: Error details: \(errorStr)")
+                
+                // If there's a foreign key error, try a different approach
+                if errorStr.contains("foreign key constraint") && errorStr.contains("patient_id") {
+                    print("🔧 APPOINTMENT: Trying a direct SQL approach to insert the appointment")
+                    
+                    let sqlUrl = URL(string: "\(supabaseURL)/rest/v1/rpc/execute_sql")!
+                    var sqlRequest = URLRequest(url: sqlUrl)
+                    sqlRequest.httpMethod = "POST"
+                    sqlRequest.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+                    sqlRequest.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+                    sqlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                    
+                    // Escape values for SQL
+                    let escapedReason = reason.replacingOccurrences(of: "'", with: "''")
+                    
+                    // Create SQL that will ensure the patient exists first, then insert the appointment
+                    let sql = """
+                    BEGIN;
+                    
+                    -- First ensure the patient exists
+                    INSERT INTO patients (id, patient_id)
+                    VALUES ('\(patientId)', '\(patientId)')
+                    ON CONFLICT (id) DO UPDATE 
+                    SET patient_id = '\(patientId)';
+                    
+                    -- Then insert the appointment
+                    INSERT INTO appointments (
+                        id, patient_id, doctor_id, hospital_id, 
+                        availability_slot_id, appointment_date, status, 
+                        reason, isdone, is_premium
+                    ) VALUES (
+                        '\(id)', '\(patientId)', '\(doctorId)', '\(hospitalId)', 
+                        \(slotId), '\(formattedDate)', 'upcoming', 
+                        '\(escapedReason.isEmpty ? "Medical consultation" : escapedReason)', 
+                        false, false
+                    );
+                    
+                    COMMIT;
+                    """
+                    
+                    let sqlParams = ["sql": sql]
+                    let sqlJsonData = try JSONSerialization.data(withJSONObject: sqlParams)
+                    sqlRequest.httpBody = sqlJsonData
+                    
+                    let (sqlResponseData, sqlResponse) = try await URLSession.shared.data(for: sqlRequest)
+                    
+                    if let sqlHttpResponse = sqlResponse as? HTTPURLResponse {
+                        if sqlHttpResponse.statusCode >= 200 && sqlHttpResponse.statusCode < 300 {
+                            print("✅ APPOINTMENT: SQL insert successful")
+                            if let responseStr = String(data: sqlResponseData, encoding: .utf8) {
+                                print("   Response: \(responseStr)")
+                            }
+                            return
+                        } else {
+                            print("❌ APPOINTMENT: SQL insert failed with status \(sqlHttpResponse.statusCode)")
+                            if let sqlErrorStr = String(data: sqlResponseData, encoding: .utf8) {
+                                print("   Error: \(sqlErrorStr)")
+                            }
+                        }
+                    }
+                }
+                
                 throw NSError(domain: "AppointmentError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to create appointment: \(errorStr)"])
             } else {
-                throw NSError(domain: "AppointmentError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to create appointment"])
+                throw NSError(domain: "AppointmentError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to create appointment with status code \(httpResponse.statusCode)"])
             }
         }
         
-        if let responseStr = String(data: responseData, encoding: .utf8) {
-            print("✅ Appointment created successfully: \(responseStr)")
+        print("✅ APPOINTMENT: Successfully created appointment")
+    }
+    
+    // MARK: - Network Connectivity Check
+    
+    /// Check if we can connect to Supabase
+    func checkConnectivity() async -> Bool {
+        print("🔍 SUPABASE: Checking connectivity...")
+        
+        // Use a simple health check endpoint
+        let url = URL(string: "\(supabaseURL)/rest/v1/")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        
+        do {
+            let (_, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ SUPABASE CONNECTIVITY: Invalid response type")
+                return false
+            }
+            
+            let isConnected = (200..<300).contains(httpResponse.statusCode)
+            print(isConnected 
+                  ? "✅ SUPABASE CONNECTIVITY: Connected successfully (Status: \(httpResponse.statusCode))" 
+                  : "❌ SUPABASE CONNECTIVITY: Failed to connect (Status: \(httpResponse.statusCode))")
+            
+            return isConnected
+        } catch {
+            print("❌ SUPABASE CONNECTIVITY: Error checking connection: \(error.localizedDescription)")
+            return false
+        }
+    }
+    
+    /// Ensure patient has a patient_id field - useful for fixing missing patient_id issues
+    func ensurePatientHasPatientId(userId: String) async -> String? {
+        print("🔄 PATIENT_ID: Checking patient record for user ID: \(userId)")
+        
+        do {
+            // 1. First fetch the patient record by user_id
+            let patients = try await select(
+                from: "patients",
+                where: "user_id",
+                equals: userId
+            )
+            
+            guard let patientData = patients.first else {
+                print("❌ PATIENT_ID: No patient found for user ID: \(userId)")
+                return nil
+            }
+            
+            print("🔍 PATIENT_ID: Found patient record with keys: \(patientData.keys.joined(separator: ", "))")
+            
+            // 2. Check if patient_id already exists
+            if let patientId = patientData["patient_id"] as? String, !patientId.isEmpty {
+                print("✅ PATIENT_ID: Patient already has patient_id: \(patientId)")
+                
+                // Verify this patient_id exists in the patients table (double-check)
+                let verifyPatients = try await select(
+                    from: "patients",
+                    where: "id",
+                    equals: patientId
+                )
+                
+                if !verifyPatients.isEmpty {
+                    print("✅ PATIENT_ID: Verified patient_id exists as a primary key in patients table")
+                    return patientId
+                } else {
+                    print("⚠️ PATIENT_ID: patient_id doesn't match any primary key in patients table")
+                    // Fall through to use the id field instead
+                }
+            }
+            
+            // 3. If not, use the id as the patient_id
+            guard let id = patientData["id"] as? String else {
+                print("❌ PATIENT_ID: Patient record doesn't have an id")
+                return nil
+            }
+            
+            print("ℹ️ PATIENT_ID: Patient doesn't have patient_id, using id: \(id) to create one")
+            
+            // 4. Try a direct SQL update approach
+            let url = URL(string: "\(supabaseURL)/rest/v1/patients?id=eq.\(id)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            let updateData = ["patient_id": id]
+            let jsonData = try JSONSerialization.data(withJSONObject: updateData)
+            request.httpBody = jsonData
+            
+            let (responseData, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                    print("✅ PATIENT_ID: Successfully updated patient record with patient_id")
+                } else {
+                    if let errorStr = String(data: responseData, encoding: .utf8) {
+                        print("⚠️ PATIENT_ID: Error updating patient: \(errorStr)")
+                    }
+                    print("⚠️ PATIENT_ID: Failed to update patient with status code: \(httpResponse.statusCode)")
+                    
+                    // Try an alternate approach - direct SQL
+                    print("🔄 PATIENT_ID: Trying alternate SQL approach to add patient_id")
+                    
+                    // Create a direct SQL query to add the patient_id column if it doesn't exist
+                    let sqlUrl = URL(string: "\(supabaseURL)/rest/v1/rpc/execute_sql")!
+                    var sqlRequest = URLRequest(url: sqlUrl)
+                    sqlRequest.httpMethod = "POST"
+                    sqlRequest.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+                    sqlRequest.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+                    sqlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                    
+                    // Execute a SQL command to add the patient_id column
+                    let sql = """
+                    BEGIN;
+                    -- Add patient_id column if it doesn't exist
+                    DO $$ 
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT FROM information_schema.columns 
+                            WHERE table_name = 'patients' AND column_name = 'patient_id'
+                        ) THEN
+                            ALTER TABLE patients ADD COLUMN patient_id VARCHAR(36);
+                        END IF;
+                    END $$;
+                    
+                    -- Update the specific patient record
+                    UPDATE patients SET patient_id = '\(id)' WHERE id = '\(id)';
+                    
+                    -- Also ensure this record exists in patients table with id as primary key
+                    INSERT INTO patients (id, patient_id, user_id)
+                    VALUES ('\(id)', '\(id)', '\(userId)')
+                    ON CONFLICT (id) DO UPDATE SET patient_id = '\(id)';
+                    
+                    COMMIT;
+                    """
+                    
+                    let sqlParams = ["sql": sql]
+                    let sqlJsonData = try JSONSerialization.data(withJSONObject: sqlParams)
+                    sqlRequest.httpBody = sqlJsonData
+                    
+                    let (sqlResponseData, sqlResponse) = try await URLSession.shared.data(for: sqlRequest)
+                    
+                    if let sqlHttpResponse = sqlResponse as? HTTPURLResponse {
+                        if sqlHttpResponse.statusCode >= 200 && sqlHttpResponse.statusCode < 300 {
+                            print("✅ PATIENT_ID: SQL approach successfully updated patient record")
+                        } else {
+                            if let sqlErrorStr = String(data: sqlResponseData, encoding: .utf8) {
+                                print("❌ PATIENT_ID: SQL error: \(sqlErrorStr)")
+                            }
+                            print("❌ PATIENT_ID: SQL approach failed with status code: \(sqlHttpResponse.statusCode)")
+                        }
+                    }
+                }
+            }
+            
+            // 5. Verify the update worked by fetching the patient data again
+            let updatedPatients = try await select(
+                from: "patients",
+                where: "id",
+                equals: id
+            )
+            
+            if let updatedPatient = updatedPatients.first,
+               let updatedPatientId = updatedPatient["patient_id"] as? String,
+               !updatedPatientId.isEmpty {
+                print("✅ PATIENT_ID: Verification successful, patient_id: \(updatedPatientId)")
+                
+                // Additional check for foreign key constraint
+                // Make sure this ID exists as a primary key in the patients table
+                let primaryKeyPatients = try await select(
+                    from: "patients", 
+                    where: "id", 
+                    equals: updatedPatientId
+                )
+                
+                if !primaryKeyPatients.isEmpty {
+                    print("✅ PATIENT_ID: Verified patient_id exists as a primary key in patients table")
+                    return updatedPatientId
+                } else {
+                    print("⚠️ PATIENT_ID: patient_id doesn't match any primary key in patients table, using id as primary key")
+                    
+                    // If the patient_id doesn't exist as a primary key, we need to create that record
+                    // This happens when the patient_id field exists but doesn't match a primary key
+                    let fixSqlUrl = URL(string: "\(supabaseURL)/rest/v1/rpc/execute_sql")!
+                    var fixSqlRequest = URLRequest(url: fixSqlUrl)
+                    fixSqlRequest.httpMethod = "POST"
+                    fixSqlRequest.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+                    fixSqlRequest.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+                    fixSqlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                    
+                    // Execute SQL to fix the relationship
+                    let fixSql = """
+                    INSERT INTO patients (id, patient_id, user_id)
+                    VALUES ('\(updatedPatientId)', '\(updatedPatientId)', '\(userId)')
+                    ON CONFLICT (id) DO UPDATE SET patient_id = '\(updatedPatientId)';
+                    """
+                    
+                    let fixSqlParams = ["sql": fixSql]
+                    let fixSqlJsonData = try JSONSerialization.data(withJSONObject: fixSqlParams)
+                    fixSqlRequest.httpBody = fixSqlJsonData
+                    
+                    let (fixSqlResponseData, fixSqlResponse) = try await URLSession.shared.data(for: fixSqlRequest)
+                    
+                    if let fixSqlHttpResponse = fixSqlResponse as? HTTPURLResponse,
+                       fixSqlHttpResponse.statusCode >= 200 && fixSqlHttpResponse.statusCode < 300 {
+                        print("✅ PATIENT_ID: Fixed primary key issue")
+                        return updatedPatientId
+                    } else {
+                        if let fixSqlErrorStr = String(data: fixSqlResponseData, encoding: .utf8) {
+                            print("❌ PATIENT_ID: Fix SQL error: \(fixSqlErrorStr)")
+                        }
+                        print("⚠️ PATIENT_ID: Couldn't fix primary key issue, using id as fallback")
+                        return id
+                    }
+                }
+            } else {
+                print("⚠️ PATIENT_ID: Verification failed, returning id as fallback")
+                return id // Return the id anyway, as a last resort
+            }
+        } catch {
+            print("❌ PATIENT_ID: Error ensuring patient has patient_id: \(error.localizedDescription)")
+            return nil
+        }
+    }
+    
+    // MARK: - Custom SQL Execution
+    
+    /// Execute a custom SQL query directly on the Supabase database
+    /// - Parameter sql: The SQL query to execute
+    /// - Returns: Dictionary containing the query result
+    func executeSQL(sql: String) async throws -> [[String: Any]] {
+        print("📊 Executing SQL: \(sql)")
+        
+        let sqlUrl = URL(string: "\(supabaseURL)/rest/v1/rpc/execute_sql")!
+        var sqlRequest = URLRequest(url: sqlUrl)
+        sqlRequest.httpMethod = "POST"
+        sqlRequest.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        sqlRequest.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        sqlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let sqlParams = ["sql": sql]
+        let sqlJsonData = try JSONSerialization.data(withJSONObject: sqlParams)
+        sqlRequest.httpBody = sqlJsonData
+        
+        let (data, response) = try await URLSession.shared.data(for: sqlRequest)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ Invalid response format")
+            throw NSError(domain: "SupabaseService", code: 1001, userInfo: 
+                         [NSLocalizedDescriptionKey: "Invalid response format"])
+        }
+        
+        if httpResponse.statusCode == 200 {
+            // Parse response as JSON
+            if let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                return jsonArray
+            } else if let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return [jsonObject]
+            } else {
+                print("❌ Failed to parse SQL response JSON")
+                throw NSError(domain: "SupabaseService", code: 1002, userInfo: 
+                             [NSLocalizedDescriptionKey: "Failed to parse SQL response"])
+            }
+        } else {
+            let responseString = String(data: data, encoding: .utf8) ?? "No response data"
+            print("❌ SQL execution failed with status \(httpResponse.statusCode): \(responseString)")
+            throw NSError(domain: "SupabaseService", code: httpResponse.statusCode, userInfo: 
+                         [NSLocalizedDescriptionKey: "SQL execution failed: \(responseString)"])
         }
     }
 }

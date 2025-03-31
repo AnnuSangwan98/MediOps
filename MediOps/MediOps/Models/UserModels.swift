@@ -78,12 +78,12 @@ enum Models {
             case updatedAt = "updated_at"
             case email
             case emailVerified = "email_verified"
-            case bloodGroup
+            case bloodGroup = "blood_group"
             case address
-            case phoneNumber
-            case emergencyContactName
-            case emergencyContactNumber
-            case emergencyRelationship
+            case phoneNumber = "phone_number"
+            case emergencyContactName = "emergency_contact_name"
+            case emergencyContactNumber = "emergency_contact_number"
+            case emergencyRelationship = "emergency_relationship"
         }
     }
 
