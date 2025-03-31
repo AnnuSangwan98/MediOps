@@ -282,7 +282,7 @@ struct AddLabAdminView: View {
                             alertMessage = "This email address is already in use by another lab admin. Please use a different email."
                         case .invalidContactNumber(_):
                             alertMessage = "Invalid phone number. Must be exactly 10 digits."
-                        case .invalidPassword(_):
+                        case .invalidPassword(message: _):
                             alertMessage = "The generated password didn't meet security requirements. Please try again."
                         case .invalidFormat(let message):
                             alertMessage = "Format error: \(message)"

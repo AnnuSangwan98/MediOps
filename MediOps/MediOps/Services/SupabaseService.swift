@@ -60,10 +60,10 @@ class SupabaseController {
         }
         
         do {
-            try await client.database
-                .from(table)
-                .insert(data)
-                .execute()
+        try await client.database
+            .from(table)
+            .insert(data)
+            .execute()
             print("SUPABASE: Successfully inserted data into \(table)")
         } catch {
             print("SUPABASE ERROR: Failed to insert into \(table): \(error.localizedDescription)")
@@ -298,10 +298,10 @@ class SupabaseController {
         print("SUPABASE: Deleting from \(table) where \(column) = \(value)")
         do {
             let result = try await client.database
-                .from(table)
-                .delete()
-                .eq(column, value: value)
-                .execute()
+            .from(table)
+            .delete()
+            .eq(column, value: value)
+            .execute()
             
             // Add logging about the deletion result
             print("SUPABASE: Delete operation completed successfully")
@@ -1085,6 +1085,72 @@ extension SupabaseController {
         } catch {
             print("SUPABASE ERROR: Failed to fetch data from \(table): \(error.localizedDescription)")
             throw error
+        }
+    }
+    
+    // Update hospital password with special handling for constraints
+    func updateHospitalPassword(hospitalId: String, newPassword: String) async throws {
+        print("SUPABASE: Updating hospital password for ID: \(hospitalId)")
+        
+        // First check if the hospital exists
+        let hospitals = try await select(
+            from: "hospitals",
+            where: "id",
+            equals: hospitalId
+        )
+        
+        guard !hospitals.isEmpty else {
+            print("SUPABASE ERROR: Hospital not found with ID: \(hospitalId)")
+            throw SupabaseError.tableNotFound("Hospital not found with ID: \(hospitalId)")
+        }
+        
+        // Prepare the update data
+        let updateData: [String: Any] = [
+            "password": newPassword,
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        // Update the hospital record
+        do {
+            let url = URL(string: "\(supabaseURL)/rest/v1/hospitals?id=eq.\(hospitalId)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            request.addValue("return=representation", forHTTPHeaderField: "Prefer")
+            
+            request.httpBody = try JSONSerialization.data(withJSONObject: updateData)
+            
+            let (data, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw SupabaseError.invalidResponse
+            }
+            
+            if httpResponse.statusCode >= 400 {
+                // Parse the error message
+                if let errorStr = String(data: data, encoding: .utf8) {
+                    print("SUPABASE ERROR: Failed to update hospital password - \(errorStr)")
+                    
+                    // Check for constraint violations
+                    if errorStr.contains("violates unique constraint") && errorStr.contains("hospitals_password_key") {
+                        throw SupabaseError.invalidData("This password is already in use by another hospital")
+                    } else if errorStr.contains("violates check constraint") {
+                        throw SupabaseError.invalidData("Password does not meet the required format")
+                    }
+                }
+                
+                throw SupabaseError.requestFailed("Failed to update hospital password, status: \(httpResponse.statusCode)")
+            }
+            
+            print("SUPABASE: Successfully updated hospital password for ID: \(hospitalId)")
+        } catch let error as SupabaseError {
+            print("SUPABASE ERROR: Hospital password update failed - \(error.localizedDescription)")
+            throw error
+        } catch {
+            print("SUPABASE ERROR: Unexpected error updating hospital password - \(error.localizedDescription)")
+            throw SupabaseError.requestFailed("Failed to update hospital password: \(error.localizedDescription)")
         }
     }
 }

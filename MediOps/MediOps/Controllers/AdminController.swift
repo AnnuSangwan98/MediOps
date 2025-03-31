@@ -47,6 +47,135 @@ class AdminController {
     
     // MARK: - Hospital Admin Management
     
+    /// Force reset a hospital admin's password without requiring the current password (admin override)
+    /// Use this only for emergency cases when a user has forgotten their password
+    func forceResetHospitalAdminPassword(adminId: String, newPassword: String) async throws {
+        print("ADMIN: Force resetting password for admin ID: \(adminId)")
+        
+        // 1. Find the admin record and get hospital ID
+        let admins = try await supabase.select(
+            from: "hospital_admins",
+            where: "id",
+            equals: adminId
+        )
+        
+        guard let adminData = admins.first,
+              let hospitalId = adminData["hospital_id"] as? String else {
+            print("ADMIN ERROR: Could not retrieve admin data or hospital ID")
+            throw AdminError.adminNotFound
+        }
+        
+        // 2. Validate the new password
+        if newPassword.count < 8 {
+            throw AdminError.invalidPassword(message: "Password must be at least 8 characters long")
+        }
+        
+        let passwordRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$"
+        let passwordPredicate = NSPredicate(format: "SELF MATCHES %@", passwordRegex)
+        
+        if !passwordPredicate.evaluate(with: newPassword) {
+            throw AdminError.invalidPassword(message: "Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
+        }
+        
+        // 3. Update the password in the hospital_admins table
+        let updateData: [String: Any] = [
+            "password": newPassword,
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        print("ADMIN: Updating password in hospital_admins table")
+        try await supabase.update(
+            table: "hospital_admins",
+            id: adminId,
+            data: updateData
+        )
+        
+        // 4. Update the password in the hospitals table
+        print("ADMIN: Updating password in hospitals table for hospital ID: \(hospitalId)")
+        try await supabase.updateHospitalPassword(hospitalId: hospitalId, newPassword: newPassword)
+        
+        print("ADMIN: Force password reset successful for admin ID: \(adminId)")
+    }
+    
+    /// Reset a hospital admin's password, updating both hospital_admins and hospitals tables
+    func resetHospitalAdminPassword(adminId: String, currentPassword: String, newPassword: String) async throws {
+        print("ADMIN: Resetting password for admin ID: \(adminId)")
+        print("ADMIN DEBUG: Current password length: \(currentPassword.count)")
+        
+        // 1. First verify the current password is correct
+        let admins = try await supabase.select(
+            from: "hospital_admins",
+            where: "id",
+            equals: adminId
+        )
+        
+        guard let adminData = admins.first,
+              let storedPassword = adminData["password"] as? String,
+              let hospitalId = adminData["hospital_id"] as? String else {
+            print("ADMIN ERROR: Could not retrieve admin password or hospital ID")
+            throw AdminError.adminNotFound
+        }
+        
+        print("ADMIN DEBUG: Retrieved admin details - Name: \(adminData["admin_name"] as? String ?? "unknown")")
+        print("ADMIN DEBUG: Stored password length: \(storedPassword.count)")
+        print("ADMIN DEBUG: Stored password first 3 chars: \(String(storedPassword.prefix(3)))")
+        print("ADMIN DEBUG: Input password first 3 chars: \(String(currentPassword.prefix(3)))")
+        
+        // Add more detailed debug info about the password fields
+        if storedPassword.isEmpty {
+            print("ADMIN DEBUG: WARNING - Stored password is empty!")
+        }
+        
+        if currentPassword.isEmpty {
+            print("ADMIN DEBUG: WARNING - Input current password is empty!")
+        }
+        
+        // Check for whitespace or other invisible characters
+        let storedPasswordHasWhitespace = storedPassword.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
+        let currentPasswordHasWhitespace = currentPassword.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
+        
+        print("ADMIN DEBUG: Stored password has whitespace: \(storedPasswordHasWhitespace)")
+        print("ADMIN DEBUG: Current password has whitespace: \(currentPasswordHasWhitespace)")
+        
+        // Verify current password matches
+        if storedPassword != currentPassword {
+            print("ADMIN ERROR: Current password is incorrect")
+            print("ADMIN DEBUG: Password comparison failed - input: '\(currentPassword)' vs stored: '\(storedPassword)'")
+            throw AdminError.invalidPassword(message: "Current password is incorrect")
+        }
+        
+        // Validate the new password
+        if newPassword.count < 8 {
+            throw AdminError.invalidPassword(message: "Password must be at least 8 characters long")
+        }
+        
+        let passwordRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$"
+        let passwordPredicate = NSPredicate(format: "SELF MATCHES %@", passwordRegex)
+        
+        if !passwordPredicate.evaluate(with: newPassword) {
+            throw AdminError.invalidPassword(message: "Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
+        }
+        
+        // 2. Update the password in the hospital_admins table
+        let updateData: [String: Any] = [
+            "password": newPassword,
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        print("ADMIN: Updating password in hospital_admins table")
+        try await supabase.update(
+            table: "hospital_admins",
+            id: adminId,
+            data: updateData
+        )
+        
+        // 3. Update the password in the hospitals table
+        print("ADMIN: Updating password in hospitals table for hospital ID: \(hospitalId)")
+        try await supabase.updateHospitalPassword(hospitalId: hospitalId, newPassword: newPassword)
+        
+        print("ADMIN: Password reset successful for admin ID: \(adminId)")
+    }
+    
     /// Register a new hospital admin
     func registerHospitalAdmin(email: String, password: String, name: String, hospitalName: String) async throws -> (HospitalAdmin, String) {
         // 1. Register the base user
@@ -540,7 +669,7 @@ class AdminController {
            password.range(of: ".*[a-z].*", options: .regularExpression) == nil ||
            password.range(of: ".*[0-9].*", options: .regularExpression) == nil ||
            password.range(of: ".*[@$!%*?&].*", options: .regularExpression) == nil {
-            throw AdminError.invalidPassword("Password does not meet security requirements")
+            throw AdminError.invalidPassword(message: "Password does not meet security requirements")
         }
         
         // Create lab admin record directly (no user record)
@@ -597,7 +726,7 @@ class AdminController {
                 } else if errorDesc.contains("lab_admins_contact_number_format") {
                     throw AdminError.invalidContactNumber("Invalid contact number format: \(contactNumberToUse)")
                 } else if errorDesc.contains("lab_admins_password_format") {
-                    throw AdminError.invalidPassword("Password does not meet security requirements")
+                    throw AdminError.invalidPassword(message: "Password does not meet security requirements")
                 } else if errorDesc.contains("lab_admins_department_check") {
                     throw AdminError.invalidFormat("Department must be 'Pathology & Laboratory'")
                 } else {
@@ -1661,7 +1790,7 @@ enum AdminError: Error, LocalizedError {
     case doctorDeleteFailed
     case invalidContactNumber(String)
     case invalidFormat(String)
-    case invalidPassword(String)
+    case invalidPassword(message: String)
     case emailAlreadyExists(String)
     case customError(String)
     

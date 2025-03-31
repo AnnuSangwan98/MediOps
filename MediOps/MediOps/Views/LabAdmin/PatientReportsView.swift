@@ -2,6 +2,153 @@ import SwiftUI
 import PDFKit
 import UIKit
 
+// MARK: - Lab Admin Patients ViewModel
+class LabAdminPatientsViewModel: ObservableObject {
+    @Published var patients: [Models.Patient] = []
+    @Published var isLoading = false
+    @Published var errorMessage = ""
+    
+    private let supabase = SupabaseController.shared
+    
+    func fetchPatients() async {
+        await MainActor.run {
+            isLoading = true
+            errorMessage = ""
+        }
+        
+        do {
+            // Get the lab admin ID from UserDefaults
+            guard let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") else {
+                throw NSError(domain: "LabAdminViewModel", code: 1, 
+                             userInfo: [NSLocalizedDescriptionKey: "Lab admin ID not found. Please log in again."])
+            }
+            
+            print("FETCH PATIENTS: Fetching for lab admin ID: \(labAdminId)")
+            
+            // Get the hospital ID associated with this lab admin
+            let labAdmins = try await supabase.select(
+                from: "lab_admins",
+                where: "id",
+                equals: labAdminId
+            )
+            
+            guard let labAdminData = labAdmins.first,
+                  let hospitalId = labAdminData["hospital_id"] as? String else {
+                throw NSError(domain: "LabAdminViewModel", code: 2, 
+                             userInfo: [NSLocalizedDescriptionKey: "Hospital ID not found for lab admin"])
+            }
+            
+            print("FETCH PATIENTS: Found hospital ID: \(hospitalId) for lab admin: \(labAdminId)")
+            
+            // Fetch all patients associated with this hospital
+            // Note: The exact query will depend on your schema - assuming patients have a hospital_id field
+            // If they don't, we might need to join through another table or use a different approach
+            let patientsData = try await supabase.select(
+                from: "patients",
+                where: "hospital_id",
+                equals: hospitalId
+            )
+            
+            print("FETCH PATIENTS: Retrieved \(patientsData.count) patients for hospital: \(hospitalId)")
+            
+            // If there's no direct hospital_id on patients, try different approach - check user_ids
+            var patientsList: [Models.Patient] = []
+            
+            if patientsData.isEmpty {
+                print("FETCH PATIENTS: No patients found with direct hospital_id match, trying alternative approach")
+                
+                // Get all patients as a fallback (in a real app, you'd want to limit this or use a different approach)
+                let allPatientsData = try await supabase.select(from: "patients")
+                print("FETCH PATIENTS: Retrieved \(allPatientsData.count) patients in total")
+                
+                // Parse patients
+                for patientData in allPatientsData {
+                    do {
+                        if let patient = try parsePatientData(patientData) {
+                            patientsList.append(patient)
+                        }
+                    } catch {
+                        print("FETCH PATIENTS ERROR: Failed to parse patient: \(error.localizedDescription)")
+                    }
+                }
+            } else {
+                // Parse patients from direct hospital association
+                for patientData in patientsData {
+                    do {
+                        if let patient = try parsePatientData(patientData) {
+                            patientsList.append(patient)
+                        }
+                    } catch {
+                        print("FETCH PATIENTS ERROR: Failed to parse patient: \(error.localizedDescription)")
+                    }
+                }
+            }
+            
+            await MainActor.run {
+                self.patients = patientsList
+                self.isLoading = false
+                print("FETCH PATIENTS: Updated UI with \(patientsList.count) patients")
+            }
+        } catch {
+            print("FETCH PATIENTS ERROR: \(error.localizedDescription)")
+            
+            await MainActor.run {
+                self.errorMessage = "Failed to fetch patients: \(error.localizedDescription)"
+                self.isLoading = false
+            }
+        }
+    }
+    
+    // Our own implementation to parse patient data
+    private func parsePatientData(_ data: [String: Any]) throws -> Models.Patient? {
+        // Extract required fields with validation
+        guard let id = data["id"] as? String,
+              let name = data["name"] as? String,
+              let gender = data["gender"] as? String,
+              let ageValue = data["age"] as? Int else {
+            print("Missing required patient fields")
+            return nil
+        }
+        
+        // Get createdAt and updatedAt or use current date
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        
+        var createdDate: Date = Date()
+        if let createdAtStr = data["created_at"] as? String,
+            let date = dateFormatter.date(from: createdAtStr) {
+            createdDate = date
+        }
+        
+        var updatedDate: Date = Date()
+        if let updatedAtStr = data["updated_at"] as? String,
+            let date = dateFormatter.date(from: updatedAtStr) {
+            updatedDate = date
+        }
+        
+        // Create a patient with all fields, providing defaults for non-optional fields
+        let patient = Models.Patient(
+            id: id,
+            userId: data["user_id"] as? String ?? "",
+            name: name,
+            age: ageValue,
+            gender: gender,
+            createdAt: createdDate,
+            updatedAt: updatedDate,
+            email: data["email"] as? String,
+            emailVerified: data["email_verified"] as? Bool,
+            bloodGroup: data["blood_group"] as? String ?? "",
+            address: data["address"] as? String,
+            phoneNumber: data["phone_number"] as? String ?? "",
+            emergencyContactName: data["emergency_contact_name"] as? String,
+            emergencyContactNumber: data["emergency_contact_number"] as? String ?? "",
+            emergencyRelationship: data["emergency_relationship"] as? String ?? ""
+        )
+        
+        return patient
+    }
+}
+
 // MARK: - Patient Report Model
 struct PatientReport: Identifiable {
     let id: UUID
@@ -640,13 +787,105 @@ struct EditReportView: View {
     }
 }
 
+// MARK: - Patient Card View
+struct PatientCard: View {
+    let patient: Models.Patient
+    var onTap: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(patient.name)
+                        .font(.headline)
+                    Text("ID: \(patient.id)")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                Spacer()
+                
+                // Display age and gender
+                HStack(spacing: 3) {
+                    Text(patient.gender)
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
+                        .cornerRadius(4)
+                    
+                    Text("\(patient.age) yrs")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.1))
+                        .foregroundColor(.green)
+                        .cornerRadius(4)
+                }
+            }
+            
+            // Contact Info
+            HStack {
+                Label {
+                    Text(patient.phoneNumber ?? "No Phone")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } icon: {
+                    Image(systemName: "phone.fill")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+                
+                Spacer()
+                
+                if !patient.bloodGroup.isEmpty {
+                    Text("Blood: \(patient.bloodGroup)")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.red.opacity(0.1))
+                        .foregroundColor(.red)
+                        .cornerRadius(4)
+                }
+            }
+            
+            // View Button and Chevron
+            HStack {
+                Button(action: onTap) {
+                    HStack {
+                        Image(systemName: "person.text.rectangle")
+                            .foregroundColor(.blue)
+                        Text("View Details")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            .padding(.top, 8)
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
+    }
+}
+
 // MARK: - Patient Reports View
 struct PatientReportsView: View {
-    @State private var reports: [PatientReport] = []
+    // Reports-related state
+    @State private var reports = [PatientReport]()
+    @State private var searchQuery = ""
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
-    @State private var searchQuery = ""
     @State private var selectedReport: PatientReport?
     @State private var showReportDetail = false
     @State private var showAddReport = false
@@ -671,99 +910,95 @@ struct PatientReportsView: View {
     
     var body: some View {
         ZStack {
-            // Background
-            LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+            // Background with a gradient
+            LinearGradient(gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.white]),
                          startPoint: .topLeading,
                          endPoint: .bottomTrailing)
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Header with search and add button
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
-                    TextField("Search by patient name or ID", text: $searchQuery)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                // Enhanced header
+                VStack(spacing: 5) {
+                    // Title
+                    HStack {
+                        Text("Lab Reports")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        // Report count badge
+                        Text("\(reports.count) Reports")
+                            .font(.subheadline)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color.blue))
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 10)
                     
+                    // Search bar
+                    HStack {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.gray)
+                                .padding(.leading, 8)
+                            
+                            TextField("Search by patient name or ID", text: $searchQuery)
+                                .padding(.vertical, 10)
+                            
+                            if !searchQuery.isEmpty {
+                                Button(action: {
+                                    searchQuery = ""
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.gray)
+                                }
+                                .padding(.trailing, 8)
+                            }
+                        }
+                        .background(Color.white)
+                        .cornerRadius(10)
+                        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
+                }
+                .background(Color.white)
+                .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                
+                // Reports List with improved UI
+                reportsListView
+                    .refreshable {
+                        await fetchPatientReports()
+                    }
+            }
+            
+            // Floating Add Button with animation
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
                     Button(action: {
                         showAddReport = true
                     }) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.blue)
+                        Image(systemName: "plus")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 60, height: 60)
+                            .background(Circle().fill(
+                                LinearGradient(gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
+                                               startPoint: .topLeading,
+                                               endPoint: .bottomTrailing)
+                            ))
+                            .shadow(color: Color.blue.opacity(0.4), radius: 8, x: 0, y: 4)
                     }
-                }
-                .padding()
-                .background(Color.white.opacity(0.9))
-                
-                // Reports List
-                ScrollView {
-                    VStack(spacing: 20) {
-                        if isLoading {
-                            ProgressView("Loading reports...")
-                                .padding()
-                        } else if reports.isEmpty {
-                            VStack(spacing: 15) {
-                                Image(systemName: "doc.text")
-                                    .font(.system(size: 40))
-                                    .foregroundColor(.gray)
-                                Text("No reports found")
-                                    .font(.headline)
-                                    .foregroundColor(.gray)
-                                Text("Patient reports will appear here")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray.opacity(0.8))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 40)
-                            .background(Color.white)
-                            .cornerRadius(10)
-                            .shadow(color: .gray.opacity(0.1), radius: 5)
-                            .padding()
-                        } else if filteredReports.isEmpty {
-                            VStack(spacing: 15) {
-                                Image(systemName: "magnifyingglass")
-                                    .font(.system(size: 40))
-                                    .foregroundColor(.gray)
-                                Text("No matching reports")
-                                    .font(.headline)
-                                    .foregroundColor(.gray)
-                                Text("Try adjusting your search criteria")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray.opacity(0.8))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 40)
-                            .background(Color.white)
-                            .cornerRadius(10)
-                            .shadow(color: .gray.opacity(0.1), radius: 5)
-                            .padding()
-                        } else {
-                            // Reports List
-                            ForEach(filteredReports) { report in
-                                PatientReportCard(
-                                    report: report,
-                                    onTap: {
-                                        selectedReport = report
-                                        showReportDetail = true
-                                    },
-                                    onEdit: {
-                                        reportToEdit = report
-                                        showEditReport = true
-                                    },
-                                    onDelete: {
-                                        reportToDelete = report
-                                        showDeleteConfirmation = true
-                                    }
-                                )
-                                .padding(.horizontal)
-                            }
-                        }
-                    }
-                    .padding(.vertical)
-                }
-                .refreshable {
-                    await fetchPatientReports()
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 30)
+                    .scaleEffect(1.0)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isLoading)
                 }
             }
         }
@@ -809,6 +1044,278 @@ struct PatientReportsView: View {
             }
         } message: {
             Text("Are you sure you want to delete this report? This action cannot be undone.")
+        }
+    }
+    
+    // MARK: - Improved Reports List View
+    var reportsListView: some View {
+        ScrollView {
+            VStack(spacing: 15) {
+                if isLoading {
+                    // Enhanced loading view
+                    VStack(spacing: 15) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .padding()
+                        
+                        Text("Loading reports...")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 100)
+                } else if reports.isEmpty {
+                    // Enhanced empty state
+                    VStack(spacing: 20) {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 60))
+                            .foregroundColor(.blue.opacity(0.7))
+                        
+                        Text("No Reports Found")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        Text("Create your first patient report by tapping the + button")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                        
+                        Button(action: {
+                            showAddReport = true
+                        }) {
+                            Text("Add First Report")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .padding(.vertical, 12)
+                                .padding(.horizontal, 30)
+                                .background(Capsule().fill(Color.blue))
+                                .shadow(color: Color.blue.opacity(0.3), radius: 5, x: 0, y: 3)
+                        }
+                        .padding(.top, 10)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 60)
+                } else if filteredReports.isEmpty {
+                    // Enhanced no search results
+                    VStack(spacing: 15) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 50))
+                            .foregroundColor(.orange.opacity(0.8))
+                        
+                        Text("No Matching Reports")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        Text("Try adjusting your search criteria")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                            .padding(.bottom, 10)
+                        
+                        Button(action: {
+                            searchQuery = ""
+                        }) {
+                            HStack {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Clear Search")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.blue)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 60)
+                } else {
+                    // Section header with report count
+                    HStack {
+                        if !searchQuery.isEmpty {
+                            Text("Found \(filteredReports.count) results")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.gray)
+                        }
+                        Spacer()
+                        
+                        // Sort button (placeholder for now)
+                        Button(action: {
+                            // Sort functionality could be implemented here
+                        }) {
+                            HStack(spacing: 4) {
+                                Text("Recent")
+                                    .font(.subheadline)
+                                Image(systemName: "arrow.up.arrow.down")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(.blue)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+                    
+                    // Improved report cards
+                    ForEach(filteredReports) { report in
+                        improvedReportCard(report: report)
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 20)
+                }
+            }
+            .padding(.vertical)
+        }
+    }
+    
+    // MARK: - Improved Report Card
+    private func improvedReportCard(report: PatientReport) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Patient info section
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(report.patientName)
+                        .font(.headline)
+                        .fontWeight(.bold)
+                    
+                    Text("ID: \(report.patientId)")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                // Date badge
+                VStack(alignment: .trailing, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.caption2)
+                        Text(formatDate(report.uploadedAt, dateOnly: true))
+                            .font(.caption)
+                    }
+                    .foregroundColor(.gray)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                        Text(formatDate(report.uploadedAt, timeOnly: true))
+                            .font(.caption)
+                    }
+                    .foregroundColor(.gray)
+                }
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 15)
+            
+            // Divider
+            Rectangle()
+                .fill(Color.gray.opacity(0.1))
+                .frame(height: 1)
+                .padding(.horizontal, 15)
+            
+            // Summary section
+            VStack(alignment: .leading, spacing: 10) {
+                if let summary = report.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .padding(.vertical, 8)
+                } else {
+                    Text("No summary available")
+                        .font(.subheadline)
+                        .foregroundColor(.gray.opacity(0.7))
+                        .italic()
+                        .padding(.vertical, 8)
+                }
+            }
+            .padding(.horizontal, 15)
+            
+            // Action buttons with divider
+            Rectangle()
+                .fill(Color.gray.opacity(0.1))
+                .frame(height: 1)
+                .padding(.horizontal, 15)
+            
+            HStack(spacing: 0) {
+                // View Button
+                Button(action: {
+                    selectedReport = report
+                    showReportDetail = true
+                }) {
+                    HStack {
+                        Image(systemName: "doc.text.fill")
+                            .foregroundColor(.blue)
+                        Text("View")
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                // Vertical divider
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 1, height: 30)
+                
+                // Edit Button
+                Button(action: {
+                    reportToEdit = report
+                    showEditReport = true
+                }) {
+                    HStack {
+                        Image(systemName: "pencil")
+                            .foregroundColor(.green)
+                        Text("Edit")
+                            .font(.subheadline)
+                            .foregroundColor(.green)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                // Vertical divider
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 1, height: 30)
+                
+                // Delete Button
+                Button(action: {
+                    reportToDelete = report
+                    showDeleteConfirmation = true
+                }) {
+                    HStack {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                        Text("Delete")
+                            .font(.subheadline)
+                            .foregroundColor(.red)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.07), radius: 8, x: 0, y: 2)
+    }
+    
+    // Date formatting functions
+    private func formatDate(_ date: Date, dateOnly: Bool = false, timeOnly: Bool = false) -> String {
+        let formatter = DateFormatter()
+        if dateOnly {
+            formatter.dateFormat = "MMM d, yyyy"
+            return formatter.string(from: date)
+        } else if timeOnly {
+            formatter.dateFormat = "h:mm a"
+            return formatter.string(from: date)
+        } else {
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            return formatter.string(from: date)
         }
     }
     

@@ -84,6 +84,8 @@ struct DoctorHomeView: View {
     @State private var appointments: [DoctorAppointmentModel] = []
     @State private var notifications: [DoctorNotification] = []
     @State private var error: String? = nil
+    @State private var doctorName: String = ""
+    @State private var isLoadingDoctorInfo = true
     
     // Stats counters
     @State private var todayCount = 0
@@ -106,9 +108,28 @@ struct DoctorHomeView: View {
                         // Header
                         HStack {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Welcome, Dr.")
-                                    .font(.title)
-                                    .fontWeight(.bold)
+                                if isLoadingDoctorInfo {
+                                    Text("Welcome, ")
+                                        .font(.title)
+                                        .fontWeight(.bold)
+                                    
+                                    HStack(spacing: 10) {
+                                        Text("Dr.")
+                                            .font(.title)
+                                            .fontWeight(.bold)
+                                        
+                                        ProgressView()
+                                            .scaleEffect(0.7)
+                                    }
+                                } else {
+                                    Text("Welcome, ")
+                                        .font(.title)
+                                        .fontWeight(.bold)
+                                    
+                                    Text(doctorName.isEmpty ? "Dr. Doctor" : doctorName)
+                                        .font(.title)
+                                        .fontWeight(.bold)
+                                }
                             }
                             Spacer()
                             
@@ -241,6 +262,7 @@ struct DoctorHomeView: View {
                 RoleSelectionView()
             }
             .onAppear {
+                fetchDoctorData()
                 fetchDoctorAppointments()
             }
             .overlay(
@@ -262,6 +284,97 @@ struct DoctorHomeView: View {
                 }
             )
             .animation(.easeInOut(duration: 0.2), value: showNotifications)
+        }
+    }
+    
+    private func fetchDoctorData() {
+        isLoadingDoctorInfo = true
+        
+        // Get doctor ID from UserDefaults
+        guard let doctorId = UserDefaults.standard.string(forKey: "current_doctor_id") else {
+            print("ERROR: Doctor ID not found in UserDefaults")
+            // Set loading to false and continue with empty doctor name
+            isLoadingDoctorInfo = false
+            return
+        }
+        
+        print("FETCH DOCTOR: Loading doctor info for ID: \(doctorId)")
+        
+        Task {
+            do {
+                let supabase = SupabaseController.shared
+                
+                // Fetch doctor information
+                let result = try await supabase.select(
+                    from: "doctors",
+                    where: "id",
+                    equals: doctorId
+                )
+                
+                if result.isEmpty {
+                    print("FETCH DOCTOR: No records found for doctor ID: \(doctorId)")
+                    await MainActor.run {
+                        isLoadingDoctorInfo = false
+                        // Keep doctorName empty, UI will show fallback
+                    }
+                    return
+                }
+                
+                guard let doctorData = result.first else {
+                    print("FETCH DOCTOR: Result is not empty but first item is nil")
+                    await MainActor.run {
+                        isLoadingDoctorInfo = false
+                    }
+                    return
+                }
+                
+                // Extract doctor name with detailed logging
+                if let name = doctorData["name"] as? String, !name.isEmpty {
+                    print("FETCH DOCTOR: Successfully retrieved doctor name: \(name)")
+                    
+                    // Ensure the name includes the Dr. prefix
+                    let formattedName: String
+                    if name.hasPrefix("Dr.") || name.hasPrefix("Dr. ") {
+                        formattedName = name // Keep as is if already has Dr. prefix
+                    } else {
+                        formattedName = "Dr. \(name)" // Add prefix if not present
+                    }
+                    
+                    print("FETCH DOCTOR: Formatted name with Dr. prefix: \(formattedName)")
+                    
+                    await MainActor.run {
+                        self.doctorName = formattedName
+                        isLoadingDoctorInfo = false
+                    }
+                } else {
+                    print("FETCH DOCTOR: Doctor record found but name field is missing, empty, or not a string")
+                    
+                    // Debug available fields
+                    let availableFields = Array(doctorData.keys).joined(separator: ", ")
+                    print("FETCH DOCTOR: Available fields: \(availableFields)")
+                    
+                    // Try to extract ID as a last resort if name is not available
+                    let doctorDisplayName: String
+                    if let id = doctorData["id"] as? String, !id.isEmpty {
+                        doctorDisplayName = "Dr. \(id)" // Always add prefix to ID
+                        print("FETCH DOCTOR: Using ID as fallback with Dr. prefix: \(doctorDisplayName)")
+                    } else {
+                        doctorDisplayName = "Dr. Doctor" // Default with prefix
+                        print("FETCH DOCTOR: Using default name with Dr. prefix")
+                    }
+                    
+                    await MainActor.run {
+                        self.doctorName = doctorDisplayName
+                        isLoadingDoctorInfo = false
+                    }
+                }
+            } catch {
+                print("FETCH DOCTOR ERROR: \(error.localizedDescription)")
+                await MainActor.run {
+                    isLoadingDoctorInfo = false
+                    // Keep doctorName empty, UI will show fallback
+                }
+            }
         }
     }
     
