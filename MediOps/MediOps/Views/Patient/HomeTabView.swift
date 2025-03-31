@@ -131,103 +131,124 @@ struct HomeTabView: View {
     
     private var homeTab: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    headerSection
-                    searchAndFilterSection
-                    
-                    if !hospitalVM.searchText.isEmpty {
-                        searchResultsSection
-                    } else {
-                        upcomingAppointmentsSection
+            ZStack(alignment: .top) {
+                // Background color
+                Color(.systemGray6)
+                    .ignoresSafeArea()
+                
+                VStack(spacing: 0) {
+                    // Fixed Header - This will stay in place while scrolling
+                    VStack(spacing: 15) {
+                        headerSection
+                            .padding(.top, 8)
                         
-                        // Show all hospitals when not searching
-                        VStack(alignment: .leading, spacing: 15) {
-                            HStack {
-                                Text("All Hospitals")
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                
-                                Spacer()
-                            }
-                            .padding(.horizontal)
-                            
-                            if hospitalVM.isLoading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle())
-                                    .scaleEffect(1.5)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                            } else if let error = hospitalVM.error {
-                                VStack {
-                                    Text("Error loading hospitals")
-                                        .foregroundColor(.red)
-                                        .padding(.bottom, 4)
-                                    
-                                    Text(error.localizedDescription)
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                        .multilineTextAlignment(.center)
-                                        .padding(.horizontal)
-                                    
-                                    Button("Try Again") {
-                                        Task {
-                                            await refreshHospitals()
-                                        }
-                                    }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 16)
-                                    .background(Color.teal)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(8)
-                                    .padding(.top, 8)
-                                }
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                            } else if !hospitalVM.hospitals.isEmpty {
-                                ForEach(hospitalVM.hospitals) { hospital in
-                                    NavigationLink {
-                                        DoctorListView(hospital: hospital)
-                                    } label: {
-                                        HospitalCard(hospital: hospital)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                    .padding(.horizontal)
-                                }
+                        searchAndFilterSection
+                        
+                        Divider()
+                            .background(Color.gray.opacity(0.3))
+                            .padding(.horizontal, 8)
+                    }
+                    .padding(.bottom, 5)
+                    .background(Color(.systemGray6))
+                    .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 3)
+                    .zIndex(1) // Keep header on top
+                    
+                    // Scrollable Content
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            if !hospitalVM.searchText.isEmpty {
+                                searchResultsSection
+                                    .padding(.top, 5)
                             } else {
-                                VStack(spacing: 12) {
-                                    Text("No hospitals found")
-                                        .foregroundColor(.gray)
-                                    
-                                    Button("Refresh") {
-                                        Task {
-                                            await refreshHospitals()
-                                        }
+                                upcomingAppointmentsSection
+                                    .padding(.top, 5)
+                                
+                                // Show all hospitals when not searching
+                                VStack(alignment: .leading, spacing: 15) {
+                                    HStack {
+                                        Text("All Hospitals")
+                                            .font(.title2)
+                                            .fontWeight(.bold)
+                                        
+                                        Spacer()
                                     }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 16)
-                                    .background(Color.teal)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(8)
+                                    .padding(.horizontal)
+                                    
+                                    if hospitalVM.isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle())
+                                            .scaleEffect(1.5)
+                                            .frame(maxWidth: .infinity)
+                                            .padding()
+                                    } else if let error = hospitalVM.error {
+                                        VStack {
+                                            Text("Error loading hospitals")
+                                                .foregroundColor(.red)
+                                                .padding(.bottom, 4)
+                                            
+                                            Text(error.localizedDescription)
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                                .multilineTextAlignment(.center)
+                                                .padding(.horizontal)
+                                            
+                                            Button("Try Again") {
+                                                Task {
+                                                    await refreshHospitals()
+                                                }
+                                            }
+                                            .padding(.vertical, 8)
+                                            .padding(.horizontal, 16)
+                                            .background(Color.teal)
+                                            .foregroundColor(.white)
+                                            .cornerRadius(8)
+                                            .padding(.top, 8)
+                                        }
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                    } else if !hospitalVM.hospitals.isEmpty {
+                                        ForEach(hospitalVM.hospitals) { hospital in
+                                            NavigationLink {
+                                                DoctorListView(hospital: hospital)
+                                            } label: {
+                                                HospitalCard(hospital: hospital)
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+                                            .padding(.horizontal)
+                                        }
+                                    } else {
+                                        VStack(spacing: 12) {
+                                            Text("No hospitals found")
+                                                .foregroundColor(.gray)
+                                            
+                                            Button("Refresh") {
+                                                Task {
+                                                    await refreshHospitals()
+                                                }
+                                            }
+                                            .padding(.vertical, 8)
+                                            .padding(.horizontal, 16)
+                                            .background(Color.teal)
+                                            .foregroundColor(.white)
+                                            .cornerRadius(8)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                    }
                                 }
-                                .frame(maxWidth: .infinity)
-                                .padding()
+                                .padding(.bottom, 30) // Extra padding at bottom for tab bar
                             }
                         }
-                        .padding(.bottom, 30) // Extra padding at bottom for tab bar
+                        .padding(.top, 10) // Add padding to separate from fixed header
+                        .padding(.bottom, 80) // Extra padding at bottom for tab bar
+                    }
+                    .refreshable {
+                        await refreshHospitals()
                     }
                 }
-                .padding(.top, 1) // Tiny padding to prevent scroll content from going under status bar
             }
-            .refreshable {
-                await refreshHospitals()
-            }
-            .background(Color(.systemGray6))
             .navigationBarHidden(true)
             .ignoresSafeArea(.container, edges: .bottom) // Only ignore bottom safe area
-            .safeAreaInset(edge: .top) {
-                Color.clear.frame(height: 1) // This ensures content starts below status bar
-            }
             .task {
                 print("🔄 Home tab task started - refreshing hospitals")
                 await refreshHospitals()
@@ -235,12 +256,25 @@ struct HomeTabView: View {
                 if let userId = userId {
                     print("🔄 Fetching appointments for user ID: \(userId)")
                     try? await hospitalVM.fetchAppointments(for: userId)
+                    
+                    // Load patient profile data
+                    if profileController.patient == nil {
+                        print("🔄 Loading patient profile data")
+                        await profileController.loadProfile(userId: userId)
+                    }
                 }
             }
             .onAppear {
                 if let userId = userId {
                     print("📱 Home tab appeared with user ID: \(userId)")
                     appointmentManager.refreshAppointments()
+                    
+                    // Ensure profile data is loaded when tab appears
+                    if profileController.patient == nil {
+                        Task {
+                            await profileController.loadProfile(userId: userId)
+                        }
+                    }
                 }
             }
         }
@@ -368,12 +402,15 @@ struct HomeTabView: View {
     private var headerSection: some View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Welcome Back!")
-                    .font(.title)
-                    .fontWeight(.bold)
-                Text("Your Health Dashboard")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
+                if let patientName = profileController.patient?.name {
+                    Text("Welcome Back, \(patientName)!")
+                        .font(.title)
+                        .fontWeight(.bold)
+                } else {
+                    Text("Welcome Back!")
+                        .font(.title)
+                        .fontWeight(.bold)
+                }
             }
             Spacer()
 

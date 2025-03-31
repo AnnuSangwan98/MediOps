@@ -26,7 +26,8 @@ struct AppointmentView: View {
     
     private func formatTimeSlot(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
         let startTime = formatter.string(from: date)
         
         if let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: date) {

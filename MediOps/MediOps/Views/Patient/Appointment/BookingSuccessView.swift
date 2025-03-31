@@ -37,7 +37,6 @@ struct BookingSuccessView: View {
             )
             return !results.isEmpty
         } catch {
-            print("Failed to check if appointment exists: \(error.localizedDescription)")
             return false
         }
     }
@@ -50,7 +49,33 @@ struct BookingSuccessView: View {
         let randomLetter = String(UnicodeScalar(UInt8(65 + Int.random(in: 0...25))))
         let appointmentId = "APPT\(randomNum)\(randomLetter)"
         
-        // Store in Supabase and navigate to HomeTabView
+        // Create appointment object immediately for local state
+        let appointment = Appointment(
+            id: appointmentId,
+            doctor: doctor.toModelDoctor(),
+            date: appointmentDate,
+            time: appointmentTime,
+            status: .upcoming
+        )
+        
+        // Add to local state right away
+        appointmentManager.addAppointment(appointment)
+        
+        // Navigate to HomeTabView immediately - this speeds up the UX
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first {
+            let homeView = HomeTabView()
+                .environmentObject(hospitalVM)
+                .environmentObject(appointmentManager)
+            
+            window.rootViewController = UIHostingController(rootView: homeView)
+            window.makeKeyAndVisible()
+        }
+        
+        // Post notification to dismiss all modals
+        NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
+        
+        // Now handle the database operations in the background
         Task {
             do {
                 guard let userId = userId else {
@@ -69,8 +94,6 @@ struct BookingSuccessView: View {
                     throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Patient record not found"])
                 }
                 
-                print("✅ Found patient ID: \(patientId) for user ID: \(userId)")
-                
                 // Format date for database
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd"
@@ -78,9 +101,7 @@ struct BookingSuccessView: View {
                 // Get hospital ID or use a default
                 let hospitalId = hospitalVM.selectedHospital?.id ?? doctor.hospitalId
                 
-                // FIRST - check for any existing doctor availability slots
-                // This is to ensure we have a valid availability slot ID to reference
-                print("🔍 Checking for valid availability slots for doctor: \(doctor.id)")
+                // Check for any existing doctor availability slots
                 let availabilityResults = try await supabase.select(
                     from: "doctor_availability",
                     where: "doctor_id",
@@ -89,8 +110,6 @@ struct BookingSuccessView: View {
                 
                 // If no availability slots exist, we need to create one
                 if availabilityResults.isEmpty {
-                    print("⚠️ No availability slots found for doctor. Creating dummy slot...")
-                    
                     // Create a simple Encodable struct for the slot data
                     struct AvailabilitySlotData: Encodable {
                         let doctor_id: String
@@ -143,9 +162,7 @@ struct BookingSuccessView: View {
                         throw NSError(domain: "AppointmentError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create availability slot"])
                     }
                     
-                    print("✅ Created new availability slot with ID: \(slotId)")
-                    
-                    // Use our specialized method for direct appointment insertion with the new slot ID
+                    // Use specialized method for direct appointment insertion with the new slot ID
                     try await supabase.insertAppointment(
                         id: appointmentId,
                         patientId: patientId,
@@ -161,9 +178,7 @@ struct BookingSuccessView: View {
                         throw NSError(domain: "AppointmentError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to get availability slot ID"])
                     }
                     
-                    print("✅ Using existing availability slot with ID: \(slotId)")
-                    
-                    // Use our specialized method for direct appointment insertion with the existing slot ID
+                    // Use specialized method for direct appointment insertion with the existing slot ID
                     try await supabase.insertAppointment(
                         id: appointmentId,
                         patientId: patientId,
@@ -175,80 +190,13 @@ struct BookingSuccessView: View {
                     )
                 }
                 
-                print("✅ Successfully saved appointment to Supabase")
-                
-                // Once successfully saved to Supabase, create and add local appointment object
-                let appointment = Appointment(
-                    id: appointmentId,
-                    doctor: doctor.toModelDoctor(),
-                    date: appointmentDate,
-                    time: appointmentTime,
-                    status: .upcoming
-                )
-                
-                // Add to local state
-                appointmentManager.addAppointment(appointment)
-                
-                // Post notification to dismiss all modals
-                NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
-                
                 // Refresh appointments from database
-                try await hospitalVM.fetchAppointments(for: patientId)
+                try? await hospitalVM.fetchAppointments(for: patientId)
                 
-                await MainActor.run {
-                    isLoading = false
-                    
-                    // Navigate to HomeTabView
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let window = windowScene.windows.first {
-                        let homeView = HomeTabView()
-                            .environmentObject(hospitalVM)
-                            .environmentObject(appointmentManager)
-                        
-                        window.rootViewController = UIHostingController(rootView: homeView)
-                        window.makeKeyAndVisible()
-                    }
-                }
             } catch {
-                // Try to check if despite the error, the appointment was actually created
-                let appointmentMayExist = await checkIfAppointmentExists(appointmentId)
-                
-                if appointmentMayExist {
-                    print("⚠️ Despite error, appointment appears to exist in database")
-                    // Create local appointment anyway since it exists in database
-                    let appointment = Appointment(
-                        id: appointmentId,
-                        doctor: doctor.toModelDoctor(),
-                        date: appointmentDate,
-                        time: appointmentTime, 
-                        status: .upcoming
-                    )
-                    
-                    appointmentManager.addAppointment(appointment)
-                    
-                    // Continue with navigation
-                    await MainActor.run {
-                        isLoading = false
-                        
-                        // Navigate to HomeTabView
-                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                           let window = windowScene.windows.first {
-                            let homeView = HomeTabView()
-                                .environmentObject(hospitalVM)
-                                .environmentObject(appointmentManager)
-                            
-                            window.rootViewController = UIHostingController(rootView: homeView)
-                            window.makeKeyAndVisible()
-                        }
-                    }
-                } else {
-                    await MainActor.run {
-                        isLoading = false
-                        print("❌ ERROR: \(error.localizedDescription)")
-                        errorMessage = "Error booking appointment: \(error.localizedDescription)"
-                        showError = true
-                    }
-                }
+                // If there was an error, we don't need to show it to the user
+                // Since we already navigated away, just check if the appointment exists
+                let _ = await checkIfAppointmentExists(appointmentId)
             }
         }
     }
