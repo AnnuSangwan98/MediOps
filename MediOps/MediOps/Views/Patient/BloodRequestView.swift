@@ -3,83 +3,96 @@ import SwiftUI
 struct BloodRequestView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var hasActiveRequest: Bool
+    @State private var selectedBloodType: String = "A+"
     @State private var selectedDate = Date()
-    @State private var selectedBloodGroup = "A+"
-    @State private var showRequestSuccess = false
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
     
-    let bloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+    let bloodTypes = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+    @StateObject private var profileController = PatientProfileController()
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Header
-                    Text("Request Blood")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .padding(.bottom)
-                    
-                    // Terms and Guidelines
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Important Guidelines")
-                            .font(.headline)
-                        
-                        VStack(alignment: .leading, spacing: 12) {
-                            GuidelineRow(text: "Request must be genuine and for medical purposes only")
-                            GuidelineRow(text: "Required documentation may be needed at the donation center")
-                            GuidelineRow(text: "Request will be matched with available donors")
-                            GuidelineRow(text: "Emergency requests will be prioritized")
-                            GuidelineRow(text: "Keep your contact information updated")
-                        }
+                VStack(spacing: 20) {
+                    // Information Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        RequestInfoRow(title: "Request Status", value: "Will be matched with available donors")
+                        RequestInfoRow(title: "Priority", value: "Emergency requests will be prioritized")
+                        RequestInfoRow(title: "Contact Info", value: "Keep your contact information updated")
                     }
                     .padding()
                     .background(Color(.systemGray6))
                     .cornerRadius(12)
+                    .padding(.horizontal)
                     
                     // Blood Group Selection
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading) {
                         Text("Required Blood Group")
                             .font(.headline)
+                            .padding(.horizontal)
                         
-                        Picker("Blood Group", selection: $selectedBloodGroup) {
-                            ForEach(bloodGroups, id: \.self) { group in
-                                Text(group).tag(group)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(bloodTypes, id: \.self) { type in
+                                    BloodTypeButton(
+                                        type: type,
+                                        isSelected: selectedBloodType == type,
+                                        action: { selectedBloodType = type }
+                                    )
+                                }
                             }
+                            .padding(.horizontal)
                         }
-                        .pickerStyle(SegmentedPickerStyle())
                     }
-                    .padding(.vertical)
                     
-                    // Date Selection
-                    VStack(alignment: .leading, spacing: 10) {
+                    // Required Date
+                    VStack(alignment: .leading) {
                         Text("Required Date")
                             .font(.headline)
+                            .padding(.horizontal)
                         
                         DatePicker(
                             "Select Date",
                             selection: $selectedDate,
                             in: Date()...,
-                            displayedComponents: [.date]
+                            displayedComponents: .date
                         )
-                        .datePickerStyle(GraphicalDatePickerStyle())
+                        .datePickerStyle(.graphical)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
                     }
                     
-                    // Request Button
+                    // Submit Button
                     Button(action: {
-                        showRequestSuccess = true
+                        Task {
+                            await submitRequest()
+                        }
                     }) {
-                        Text("Submit Request")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.red)
-                            .cornerRadius(10)
+                        ZStack {
+                            Text("Submit Request")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.red)
+                                .cornerRadius(10)
+                                .opacity(isLoading ? 0 : 1)
+                            
+                            if isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            }
+                        }
                     }
-                    .padding(.top)
+                    .disabled(isLoading)
+                    .padding(.horizontal)
                 }
-                .padding()
             }
+            .navigationTitle("Blood Request")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -88,54 +101,97 @@ struct BloodRequestView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showRequestSuccess) {
-                RequestSuccessView(hasActiveRequest: $hasActiveRequest, dismiss: dismiss)
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
             }
+            .onAppear {
+                // Load patient profile when view appears
+                if let userId = UserDefaults.standard.string(forKey: "userId") {
+                    Task {
+                        await profileController.loadProfile(userId: userId)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func submitRequest() async {
+        guard let patient = profileController.patient else {
+            errorMessage = "Unable to load patient profile"
+            showError = true
+            return
+        }
+        
+        isLoading = true
+        do {
+            // Check if patient already has an active request
+            let hasExisting = try await BloodDonationController.shared.hasActiveRequest(patientId: patient.id)
+            if hasExisting {
+                errorMessage = "You already have an active blood request"
+                showError = true
+                isLoading = false
+                return
+            }
+            
+            let dateFormatter = ISO8601DateFormatter()
+            let requestData: [String: String] = [
+                "id": patient.id,
+                "blood_type": selectedBloodType,
+                "donation_date": dateFormatter.string(from: selectedDate),
+                "created_at": dateFormatter.string(from: Date()),
+                "updated_at": dateFormatter.string(from: Date())
+            ]
+            
+            // Insert into blood_donation table
+            try await SupabaseController.shared.insert(into: "blood_donation", data: requestData)
+            
+            isLoading = false
+            hasActiveRequest = true
+            dismiss()
+        } catch {
+            isLoading = false
+            errorMessage = error.localizedDescription
+            showError = true
         }
     }
 }
 
-struct GuidelineRow: View {
-    let text: String
+struct RequestInfoRow: View {
+    let title: String
+    let value: String
     
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "info.circle.fill")
-                .foregroundColor(.red)
-            Text(text)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundColor(.gray)
+            Text(value)
                 .font(.subheadline)
         }
     }
 }
 
-struct RequestSuccessView: View {
-    @Binding var hasActiveRequest: Bool
-    let dismiss: DismissAction
+struct BloodTypeButton: View {
+    let type: String
+    let isSelected: Bool
+    let action: () -> Void
     
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.green)
-            
-            Text("Request Submitted!")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            Text("Your blood request has been submitted successfully. We will notify you when a matching donor is found.")
-                .multilineTextAlignment(.center)
-                .foregroundColor(.gray)
-            
-            Button("Done") {
-                hasActiveRequest = true
-                dismiss()
-            }
-            .padding()
-            .background(Color.red)
-            .foregroundColor(.white)
-            .cornerRadius(10)
+        Button(action: action) {
+            Text(type)
+                .font(.headline)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(isSelected ? Color.red : Color.white)
+                .foregroundColor(isSelected ? .white : .red)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.red, lineWidth: 1)
+                )
         }
-        .padding()
     }
 }
 
