@@ -1,6 +1,21 @@
 import SwiftUI
 import PDFKit
 
+// Add ShareSheet definition at the top
+struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: nil
+        )
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
 struct PrescriptionDetailView: View {
     let appointment: Appointment
     @StateObject private var controller = PrescriptionController()
@@ -12,32 +27,34 @@ struct PrescriptionDetailView: View {
             VStack(spacing: 20) {
                 if controller.isLoading {
                     ProgressView()
+                } else if let error = controller.error {
+                    ErrorView(error: error)
                 } else if let prescription = controller.prescription {
                     // Hospital Card
                     if let hospital = controller.hospital {
-                        hospitalCard(hospital: hospital)
+                        HospitalHeaderView(hospital: hospital)
                     }
                     
                     // Doctor Information
                     if let doctor = controller.doctor {
-                        doctorInformationCard(doctor: doctor)
+                        DoctorInfoView(doctor: doctor)
                     }
                     
                     // Medications
-                    medicationsCard(medications: prescription.medications)
+                    MedicationsView(medications: prescription.medications)
                     
                     // Lab Tests
                     if let labTests = prescription.labTests {
-                        labTestsCard(tests: labTests)
+                        LabTestsView(tests: labTests)
                     }
                     
                     // Doctor's Advice
                     if let precautions = prescription.precautions {
-                        doctorAdviceCard(precautions: precautions)
+                        DoctorAdviceView(precautions: precautions)
                     }
                     
                     // Signature Section
-                    signatureSection
+                    SignatureView()
                 } else {
                     Text("No prescription found")
                         .foregroundColor(.gray)
@@ -47,7 +64,7 @@ struct PrescriptionDetailView: View {
         }
         .background(
             LinearGradient(
-                gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.blue.opacity(0.05)]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -76,98 +93,131 @@ struct PrescriptionDetailView: View {
     }
     
     private func generateAndSharePDF() {
-        guard let hospital = controller.hospital,
-              let doctor = controller.doctor,
-              let prescription = controller.prescription else {
+        guard let prescription = controller.prescription,
+              let hospital = controller.hospital,
+              let doctor = controller.doctor else {
             return
         }
+
+        let pageRect = CGRect(x: 0, y: 0, width: 595.2, height: 841.8) // A4 size in points
         
-        let pageWidth = 8.27 * 72.0
-        let pageHeight = 11.69 * 72.0
-        let pageRect = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
+        let pdfMetaData = [
+            kCGPDFContextCreator: "MediOps",
+            kCGPDFContextAuthor: doctor.name,
+            kCGPDFContextTitle: "Medical Prescription"
+        ]
         
         let format = UIGraphicsPDFRendererFormat()
-        let metadata = [
-            kCGPDFContextCreator: "MediOps",
-            kCGPDFContextAuthor: doctor.name
-        ]
-        format.documentInfo = metadata as [String: Any]
+        format.documentInfo = pdfMetaData as [String: Any]
         
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
         
         pdfData = renderer.pdfData { context in
             context.beginPage()
             
-            // Draw content
-            let titleFont = UIFont.boldSystemFont(ofSize: 24.0)
-            let headerFont = UIFont.boldSystemFont(ofSize: 16.0)
-            let regularFont = UIFont.systemFont(ofSize: 12.0)
+            let drawContext = context.cgContext
             
-            // Hospital Info
-            let hospitalTitle = hospital.hospitalName as NSString
-            hospitalTitle.draw(at: CGPoint(x: 50, y: 50), withAttributes: [.font: titleFont])
+            // Set up fonts
+            let titleFont = UIFont.boldSystemFont(ofSize: 24)
+            let headerFont = UIFont.boldSystemFont(ofSize: 18)
+            let regularFont = UIFont.systemFont(ofSize: 12)
             
-            let hospitalAddress = hospital.hospitalAddress as NSString
-            hospitalAddress.draw(at: CGPoint(x: 50, y: 80), withAttributes: [.font: regularFont])
+            // Colors
+            let tealColor = UIColor.systemTeal.cgColor
+            drawContext.setStrokeColor(tealColor)
             
-            // Doctor Info
-            let doctorTitle = "Doctor Information" as NSString
-            doctorTitle.draw(at: CGPoint(x: 50, y: 120), withAttributes: [.font: headerFont])
+            // Draw hospital header
+            var yPosition: CGFloat = 50
             
+            let hospitalName = hospital.hospitalName as NSString
+            hospitalName.draw(at: CGPoint(x: 50, y: yPosition),
+                            withAttributes: [.font: titleFont])
+            
+            yPosition += 30
+            let address = hospital.hospitalAddress as NSString
+            address.draw(at: CGPoint(x: 50, y: yPosition),
+                       withAttributes: [.font: regularFont])
+            
+            // Draw doctor info
+            yPosition += 50
+            let doctorHeader = "Doctor Information" as NSString
+            doctorHeader.draw(at: CGPoint(x: 50, y: yPosition),
+                            withAttributes: [.font: headerFont])
+            
+            yPosition += 30
             let doctorInfo = """
             Name: \(doctor.name)
             Specialization: \(doctor.specialization)
             Qualification: \(doctor.qualifications.joined(separator: ", "))
             Experience: \(doctor.experience) years
             """ as NSString
-            doctorInfo.draw(at: CGPoint(x: 50, y: 150), withAttributes: [.font: regularFont])
+            doctorInfo.draw(at: CGPoint(x: 50, y: yPosition),
+                          withAttributes: [.font: regularFont])
             
-            // Medications
-            let medicationsTitle = "Medications" as NSString
-            medicationsTitle.draw(at: CGPoint(x: 50, y: 250), withAttributes: [.font: headerFont])
+            // Draw medications
+            yPosition += 100
+            let medicationsHeader = "Medications" as NSString
+            medicationsHeader.draw(at: CGPoint(x: 50, y: yPosition),
+                                withAttributes: [.font: headerFont])
             
-            var yPos = 280.0
-            for (name, details) in prescription.medications {
-                let medicationText = "\(name): \(details)" as NSString
-                medicationText.draw(at: CGPoint(x: 50, y: yPos), withAttributes: [.font: regularFont])
-                yPos += 20
+            yPosition += 30
+            for (medicine, details) in prescription.medications {
+                let medicationText = "\(medicine): \(details)" as NSString
+                medicationText.draw(at: CGPoint(x: 50, y: yPosition),
+                                 withAttributes: [.font: regularFont])
+                yPosition += 20
             }
             
-            // Lab Tests
+            // Draw lab tests if available
             if let labTests = prescription.labTests {
-                let labTestsTitle = "Lab Tests" as NSString
-                labTestsTitle.draw(at: CGPoint(x: 50, y: yPos + 20), withAttributes: [.font: headerFont])
+                yPosition += 30
+                let labTestsHeader = "Lab Tests" as NSString
+                labTestsHeader.draw(at: CGPoint(x: 50, y: yPosition),
+                                 withAttributes: [.font: headerFont])
                 
-                yPos += 50
+                yPosition += 30
                 for (test, description) in labTests {
-                    let testText = "• \(test): \(description)" as NSString
-                    testText.draw(at: CGPoint(x: 50, y: yPos), withAttributes: [.font: regularFont])
-                    yPos += 20
+                    let testText = "\(test): \(description)" as NSString
+                    testText.draw(at: CGPoint(x: 50, y: yPosition),
+                                withAttributes: [.font: regularFont])
+                    yPosition += 20
                 }
             }
             
-            // Precautions/Doctor's Advice
+            // Draw precautions if available
             if let precautions = prescription.precautions {
-                let precautionsTitle = "Doctor's Advice" as NSString
-                precautionsTitle.draw(at: CGPoint(x: 50, y: yPos + 20), withAttributes: [.font: headerFont])
+                yPosition += 30
+                let precautionsHeader = "Doctor's Advice" as NSString
+                precautionsHeader.draw(at: CGPoint(x: 50, y: yPosition),
+                                    withAttributes: [.font: headerFont])
                 
-                yPos += 50
+                yPosition += 30
                 let precautionsText = precautions as NSString
-                precautionsText.draw(at: CGPoint(x: 50, y: yPos), withAttributes: [.font: regularFont])
+                precautionsText.draw(at: CGPoint(x: 50, y: yPosition),
+                                  withAttributes: [.font: regularFont])
             }
             
-            // Footer
-            let footerText = "This prescription is electronically generated and does not require a signature." as NSString
-            footerText.draw(at: CGPoint(x: 50, y: pageHeight - 100), withAttributes: [.font: regularFont])
-            
+            // Draw signature
+            yPosition = pageRect.height - 100
             let signatureText = "Doctor's Signature" as NSString
-            signatureText.draw(at: CGPoint(x: pageWidth - 150, y: pageHeight - 50), withAttributes: [.font: regularFont])
+            signatureText.draw(at: CGPoint(x: pageRect.width - 150, y: yPosition),
+                             withAttributes: [.font: regularFont])
+            
+            // Draw footer
+            yPosition += 30
+            let footerText = "This prescription is electronically generated and does not require a signature." as NSString
+            footerText.draw(at: CGPoint(x: 50, y: yPosition),
+                          withAttributes: [.font: regularFont])
         }
         
         showShareSheet = true
     }
+}
+
+struct HospitalHeaderView: View {
+    let hospital: HospitalModel
     
-    private func hospitalCard(hospital: HospitalModel) -> some View {
+    var body: some View {
         VStack(spacing: 12) {
             Text(hospital.hospitalName)
                 .font(.title)
@@ -185,8 +235,6 @@ struct PrescriptionDetailView: View {
             .font(.subheadline)
             .foregroundColor(.teal)
             
-            Divider()
-            
             HStack(spacing: 20) {
                 Text("License No.: \(hospital.licence)")
                 Text("Accreditation: \(hospital.hospitalAccreditation)")
@@ -196,32 +244,50 @@ struct PrescriptionDetailView: View {
         }
         .padding()
         .frame(maxWidth: .infinity)
-        .background(Color.white)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.white, Color.teal.opacity(0.1)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
         .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
     }
+}
+
+struct DoctorInfoView: View {
+    let doctor: HospitalDoctor
     
-    private func doctorInformationCard(doctor: HospitalDoctor) -> some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Doctor Information")
                 .font(.title3)
                 .foregroundColor(.teal)
             
-            VStack(spacing: 15) {
-                InfoRow(title: "Name", value: doctor.name)
-                InfoRow(title: "Specialization", value: doctor.specialization)
-                InfoRow(title: "Qualification", value: doctor.qualifications.joined(separator: ", "))
-                InfoRow(title: "Experience", value: "\(doctor.experience) years")
-            }
+            InfoRow(title: "Name", value: doctor.name)
+            InfoRow(title: "Specialization", value: doctor.specialization)
+            InfoRow(title: "Qualification", value: doctor.qualifications.joined(separator: ", "))
+            InfoRow(title: "Experience", value: "\(doctor.experience) years")
         }
         .padding()
         .frame(maxWidth: .infinity)
-        .background(Color.white)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.white, Color.blue.opacity(0.05)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
         .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
     }
+}
+
+struct MedicationsView: View {
+    let medications: [String: String]
     
-    private func medicationsCard(medications: [String: String]) -> some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Medications")
                 .font(.title3)
@@ -247,29 +313,41 @@ struct PrescriptionDetailView: View {
                 ForEach(medications.sorted(by: { $0.key < $1.key }), id: \.key) { name, details in
                     VStack(spacing: 0) {
                         HStack {
-                            VStack(alignment: .leading) {
-                                Text(name)
-                                Text("Brand Name")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                            }
+                            Text(name)
+                                .fontWeight(.medium)
                             Spacer()
                             Text(details)
+                                .foregroundColor(.gray)
                         }
                         .padding()
+                        Text("Brand Name")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal)
+                            .padding(.bottom, 8)
                         Divider()
                     }
                 }
             }
         }
         .padding()
-        .frame(maxWidth: .infinity)
-        .background(Color.white)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.white, Color.teal.opacity(0.05)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
         .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
     }
+}
+
+struct LabTestsView: View {
+    let tests: [String: String]
     
-    private func labTestsCard(tests: [String: String]) -> some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
                 Image(systemName: "cross.case.fill")
@@ -278,25 +356,39 @@ struct PrescriptionDetailView: View {
             .font(.title3)
             .foregroundColor(.teal)
             
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(tests.sorted(by: { $0.key < $1.key }), id: \.key) { name, description in
-                    HStack(spacing: 12) {
-                        Image(systemName: "chevron.right.circle.fill")
-                            .foregroundColor(.teal)
+            ForEach(tests.sorted(by: { $0.key < $1.key }), id: \.key) { name, description in
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "chevron.right.circle.fill")
+                        .foregroundColor(.teal)
+                    VStack(alignment: .leading) {
                         Text(name)
-                            .font(.body)
+                            .fontWeight(.medium)
+                        Text(description)
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
                     }
                 }
+                .padding(.vertical, 4)
             }
         }
         .padding()
-        .frame(maxWidth: .infinity)
-        .background(Color.white)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.white, Color.blue.opacity(0.05)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
         .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
     }
+}
+
+struct DoctorAdviceView: View {
+    let precautions: String
     
-    private func doctorAdviceCard(precautions: String) -> some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
                 Image(systemName: "text.book.closed.fill")
@@ -305,24 +397,30 @@ struct PrescriptionDetailView: View {
             .font(.title3)
             .foregroundColor(.teal)
             
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(precautions.components(separatedBy: "\n"), id: \.self) { precaution in
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                        Text(precaution)
-                    }
+            ForEach(precautions.components(separatedBy: "\n"), id: \.self) { precaution in
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text(precaution)
                 }
             }
         }
         .padding()
-        .frame(maxWidth: .infinity)
-        .background(Color.white)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.white, Color.teal.opacity(0.05)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
         .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
     }
-    
-    private var signatureSection: some View {
+}
+
+struct SignatureView: View {
+    var body: some View {
         VStack(spacing: 20) {
             Text("This prescription is electronically generated and does not require a signature.")
                 .font(.caption)
@@ -339,9 +437,41 @@ struct PrescriptionDetailView: View {
         }
         .padding()
         .frame(maxWidth: .infinity)
-        .background(Color.white)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.white, Color.blue.opacity(0.05)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
         .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
+    }
+}
+
+struct ErrorView: View {
+    let error: Error
+    
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.largeTitle)
+                .foregroundColor(.orange)
+            Text(error.localizedDescription)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.gray)
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.white, Color.orange.opacity(0.05)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .cornerRadius(15)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
     }
 }
 
@@ -353,46 +483,9 @@ struct InfoRow: View {
         HStack {
             Text(title)
                 .foregroundColor(.black)
-                .frame(width: 120, alignment: .leading)
             Spacer()
             Text(value)
                 .foregroundColor(.gray)
         }
     }
-}
-
-struct ShareSheet: UIViewControllerRepresentable {
-    let activityItems: [Any]
-    
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(
-            activityItems: activityItems,
-            applicationActivities: nil
-        )
-        return controller
-    }
-    
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
-
-struct MedicationData {
-    let name: String
-    let dosage: String
-    let frequency: String
-    let duration: String
-}
-
-struct LabTestData {
-    let test: String
-    let reason: String
-}
-
-struct HistoryAppointmentData {
-    let doctorName: String
-    let specialty: String
-    let date: String
-    let medications: [MedicationData]
-    let labTests: [LabTestData]
-    let precautions: String
-    let additionalNotes: String
 }

@@ -2,10 +2,10 @@ import Foundation
 
 struct Prescription: Codable {
     let id: String
-    let appointmentId: String
+    let appointmentId: String 
     let doctorId: String
     let patientId: String
-    let prescriptionDate: String 
+    let prescriptionDate: String
     let medications: [String: String]
     let labTests: [String: String]?
     let precautions: String?
