@@ -45,11 +45,57 @@ class SupabaseController {
     
     /// Generic method to insert data into a table
     func insert<T: Encodable>(into table: String, data: T) async throws {
-        print("SUPABASE: Inserting data into \(table)")
-        try await client.database
-            .from(table)
-            .insert(data)
-            .execute()
+        print("📝 SUPABASE: Inserting data into \(table) table")
+        
+        // Use direct URL session for more reliable insertion with detailed error reporting
+        let url = URL(string: "\(supabaseURL)/rest/v1/\(table)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("return=representation", forHTTPHeaderField: "Prefer")
+        
+        do {
+            // Convert to JSON data
+            let jsonEncoder = JSONEncoder()
+            jsonEncoder.outputFormatting = .prettyPrinted
+            let jsonData = try jsonEncoder.encode(data)
+            
+            // For debugging - print the exact JSON being sent
+            if let jsonString = String(data: jsonData, encoding: .utf8) {
+                print("📤 SUPABASE DATA PAYLOAD: \(jsonString)")
+            }
+            
+            request.httpBody = jsonData
+            
+            let (responseData, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ SUPABASE ERROR: Invalid response type")
+                throw SupabaseError.invalidResponse
+            }
+            
+            print("📊 SUPABASE: Response status code: \(httpResponse.statusCode)")
+            
+            // Log the response body for debugging
+            if let responseString = String(data: responseData, encoding: .utf8) {
+                print("📥 SUPABASE RESPONSE: \(responseString)")
+            }
+            
+            if httpResponse.statusCode >= 400 {
+                if let errorStr = String(data: responseData, encoding: .utf8) {
+                    print("❌ SUPABASE ERROR: Failed to insert - \(errorStr)")
+                }
+                throw SupabaseError.requestFailed("Failed to insert into \(table), status: \(httpResponse.statusCode)")
+            }
+            
+            print("✅ SUPABASE: Successfully inserted into \(table)")
+        } catch {
+            print("❌ SUPABASE ERROR: Insert failed - \(error.localizedDescription)")
+            print("❌ STACK TRACE: \(Thread.callStackSymbols.joined(separator: "\n"))")
+            throw error
+        }
     }
     
     /// Attempt to rollback a previously inserted record if a subsequent operation fails

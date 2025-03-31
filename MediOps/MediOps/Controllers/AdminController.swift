@@ -7,6 +7,101 @@ class AdminController {
     private let userController = UserController.shared
     private let hospitalController = HospitalController.shared
     
+    // Create Encodable struct exactly matching the database schema
+    private struct DoctorAvailabilityRecord: Encodable {
+        let doctor_id: String
+        let hospital_id: String
+        let date: String
+        let slot_time: String
+        let slot_end_time: String
+        let max_normal_patients: Int
+        let max_premium_patients: Int
+        let total_bookings: Int
+    }
+    
+    // Create Encodable struct for the new efficient doctor availability table
+    private struct DoctorAvailabilityEfficientRecord: Encodable {
+        let doctor_id: String
+        let hospital_id: String
+        let weekly_schedule: [String: [TimeSlotJSON]]
+        let effective_from: String
+        let effective_until: String?
+        let max_normal_patients: Int
+        let max_premium_patients: Int
+        
+        // Custom encoding to handle the weekly_schedule JSON structure
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            
+            try container.encode(doctor_id, forKey: .doctor_id)
+            try container.encode(hospital_id, forKey: .hospital_id)
+            try container.encode(effective_from, forKey: .effective_from)
+            try container.encode(effective_until, forKey: .effective_until)
+            try container.encode(max_normal_patients, forKey: .max_normal_patients)
+            try container.encode(max_premium_patients, forKey: .max_premium_patients)
+            
+            // Create a nested container for the weekly schedule
+            var scheduleContainer = container.nestedContainer(keyedBy: DynamicCodingKey.self, forKey: .weekly_schedule)
+            
+            // For each day in the schedule, encode the slots array
+            for (day, slots) in weekly_schedule {
+                let dayKey = DynamicCodingKey(stringValue: day)
+                try scheduleContainer.encode(slots, forKey: dayKey)
+            }
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case doctor_id
+            case hospital_id
+            case weekly_schedule
+            case effective_from
+            case effective_until
+            case max_normal_patients
+            case max_premium_patients
+        }
+        
+        // Dynamic coding key to handle string-based keys
+        private struct DynamicCodingKey: CodingKey {
+            var stringValue: String
+            var intValue: Int?
+            
+            init(stringValue: String) {
+                self.stringValue = stringValue
+                self.intValue = nil
+            }
+            
+            init?(intValue: Int) {
+                self.stringValue = "\(intValue)"
+                self.intValue = intValue
+            }
+        }
+    }
+    
+    // JSON-encodable struct for time slot
+    private struct TimeSlotJSON: Encodable {
+        let start: String
+        let end: String
+        let available: Bool
+    }
+    
+    // Structure for time slot
+    private struct TimeSlot: Encodable {
+        let start: String
+        let end: String
+        let available: Bool
+        
+        init(start: String, end: String, available: Bool = true) {
+            self.start = start
+            self.end = end
+            self.available = available
+        }
+        
+        // Convert to JSON-friendly format
+        func toJSON() -> TimeSlotJSON {
+            return TimeSlotJSON(start: start, end: end, available: available)
+        }
+    }
+    
     private init() {}
     
     // MARK: - Hospital Admin Management
@@ -1158,6 +1253,469 @@ class AdminController {
             lastModifiedBy: lastModifiedBy,
             imageData: nil
         )
+    }
+    
+    // Add doctor availability using the efficient JSON approach
+    func addDoctorSchedule(doctorId: String, hospitalId: String, weekdaySlots: Set<String>, weekendSlots: Set<String>) async throws {
+        print("🔍 Creating availability schedule for Doctor ID: \(doctorId) - Hospital ID: \(hospitalId)")
+        
+        // Initialize empty schedule for all days
+        var weeklySchedule: [String: [TimeSlot]] = [
+            "monday": [],
+            "tuesday": [],
+            "wednesday": [],
+            "thursday": [],
+            "friday": [],
+            "saturday": [],
+            "sunday": []
+        ]
+        
+        // Parse and add weekday slots
+        if !weekdaySlots.isEmpty {
+            let weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday"]
+            
+            // Add the same slots to all weekdays
+            for slot in weekdaySlots {
+                if let (startTime, endTime) = parseTimeSlot(slot) {
+                    let timeSlot = TimeSlot(start: startTime, end: endTime)
+                    
+                    // Add to each weekday
+                    for day in weekdays {
+                        weeklySchedule[day]?.append(timeSlot)
+                    }
+                } else {
+                    print("⚠️ Invalid time slot format: \(slot)")
+                }
+            }
+        }
+        
+        // Parse and add weekend slots
+        if !weekendSlots.isEmpty {
+            let weekends = ["saturday", "sunday"]
+            
+            // Add the same slots to weekend days
+            for slot in weekendSlots {
+                if let (startTime, endTime) = parseTimeSlot(slot) {
+                    let timeSlot = TimeSlot(start: startTime, end: endTime)
+                    
+                    // Add to each weekend day
+                    for day in weekends {
+                        weeklySchedule[day]?.append(timeSlot)
+                    }
+                } else {
+                    print("⚠️ Invalid time slot format: \(slot)")
+                }
+            }
+        }
+        
+        // Convert weekly schedule to JSON format
+        let jsonSchedule = convertToJsonSchedule(weeklySchedule)
+        
+        // Create dates
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let today = Date()
+        let effectiveFrom = dateFormatter.string(from: today)
+        
+        // Create the availability record
+        let record = DoctorAvailabilityEfficientRecord(
+            doctor_id: doctorId,
+            hospital_id: hospitalId,
+            weekly_schedule: jsonSchedule,
+            effective_from: effectiveFrom,
+            effective_until: nil,
+            max_normal_patients: 6,
+            max_premium_patients: 2
+        )
+        
+        print("📅 Creating availability schedule starting from \(effectiveFrom)")
+        print("📊 Doctor ID: \(record.doctor_id)")
+        print("📊 Hospital ID: \(record.hospital_id)")
+        
+        // Log the schedule for debugging
+        for (day, slots) in jsonSchedule {
+            print("📊 \(day): \(slots.count) slots")
+        }
+        
+        // Save to database using Supabase
+        do {
+            print("🔄 Attempting to insert schedule via Supabase")
+            try await supabase.insert(into: "doctor_availability_efficient", data: record)
+            print("✅ Successfully saved weekly schedule for doctor \(doctorId)")
+        } catch let error as SupabaseError {
+            print("❌ Supabase error: \(error.localizedDescription)")
+            print("🔄 Trying direct insertion as fallback")
+            await insertDoctorScheduleDirectly(record: record)
+        } catch {
+            print("❌ Failed to insert schedule: \(error.localizedDescription)")
+            print("❌ Error type: \(type(of: error))")
+            print("🔄 Trying direct insertion as fallback")
+            await insertDoctorScheduleDirectly(record: record)
+        }
+    }
+    
+    // Helper function to parse time slot in format "HH:MM-HH:MM"
+    private func parseTimeSlot(_ slot: String) -> (String, String)? {
+        let components = slot.split(separator: "-")
+        guard components.count == 2 else { return nil }
+        
+        let startTimeString = String(components[0]).trimmingCharacters(in: .whitespaces)
+        let endTimeString = String(components[1]).trimmingCharacters(in: .whitespaces)
+        
+        // Add seconds if not present
+        let start = startTimeString.contains(":") && !startTimeString.contains(":00")
+            ? startTimeString + ":00"
+            : startTimeString
+            
+        let end = endTimeString.contains(":") && !endTimeString.contains(":00")
+            ? endTimeString + ":00"
+            : endTimeString
+            
+        return (start, end)
+    }
+    
+    // Convert Swift dictionary to JSON format
+    private func convertToJsonSchedule(_ schedule: [String: [TimeSlot]]) -> [String: [TimeSlotJSON]] {
+        var jsonSchedule: [String: [TimeSlotJSON]] = [:]
+        
+        for (day, slots) in schedule {
+            jsonSchedule[day] = slots.map { $0.toJSON() }
+        }
+        
+        return jsonSchedule
+    }
+    
+    // Direct insertion method for the new format
+    private func insertDoctorScheduleDirectly(record: DoctorAvailabilityEfficientRecord) async {
+        print("🔄 Trying direct insertion of schedule to database")
+        do {
+            // Create direct URL request to Supabase
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/doctor_availability_efficient")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            // Encode and send data
+            let jsonData = try JSONEncoder().encode(record)
+            request.httpBody = jsonData
+            
+            // Log request for debugging
+            print("📊 Request URL: \(url.absoluteString)")
+            
+            // Send request
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            // Check response
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid response type")
+                return
+            }
+            
+            print("📊 Response status code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("✅ Direct insertion of schedule successful")
+            } else {
+                print("❌ Direct insertion failed with status code: \(httpResponse.statusCode)")
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("Response: \(responseString)")
+                }
+                
+                // Try calling the database function
+                await insertScheduleWithFunction(record: record)
+            }
+        } catch {
+            print("❌ Direct insertion error: \(error.localizedDescription)")
+            print("❌ Error type: \(type(of: error))")
+            await insertScheduleWithFunction(record: record)
+        }
+    }
+    
+    // Insert using the database function
+    private func insertScheduleWithFunction(record: DoctorAvailabilityEfficientRecord) async {
+        print("🔄 Attempting to insert schedule using database function")
+        
+        do {
+            // Create SQL function URL
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/rpc/set_doctor_weekly_schedule")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            // Create an encodable struct for function parameters
+            struct FunctionParams: Encodable {
+                let p_doctor_id: String
+                let p_hospital_id: String
+                let p_weekly_schedule: [String: [TimeSlotJSON]]
+                let p_effective_from: String
+                let p_effective_until: String?
+                let p_max_normal: Int
+                let p_max_premium: Int
+            }
+            
+            // Create parameters
+            let params = FunctionParams(
+                p_doctor_id: record.doctor_id,
+                p_hospital_id: record.hospital_id,
+                p_weekly_schedule: record.weekly_schedule,
+                p_effective_from: record.effective_from,
+                p_effective_until: record.effective_until,
+                p_max_normal: record.max_normal_patients,
+                p_max_premium: record.max_premium_patients
+            )
+            
+            // Encode parameters using JSONEncoder
+            let jsonData = try JSONEncoder().encode(params)
+            request.httpBody = jsonData
+            
+            // Execute request
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid function response")
+                return
+            }
+            
+            print("📊 Function response status: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("✅ Function call successful")
+            } else {
+                print("❌ Function call failed with status: \(httpResponse.statusCode)")
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("Response: \(responseString)")
+                }
+            }
+        } catch {
+            print("❌ Function call error: \(error.localizedDescription)")
+        }
+    }
+    
+    // Fetch doctor availability schedule
+    func getDoctorSchedule(doctorId: String, hospitalId: String) async throws -> (weekdaySlots: Set<String>, weekendSlots: Set<String>) {
+        print("🔍 Fetching availability schedule for Doctor ID: \(doctorId) - Hospital ID: \(hospitalId)")
+        
+        do {
+            // Query the database for this doctor's schedule
+            let results = try await supabase.select(
+                from: "doctor_availability_efficient",
+                where: "doctor_id",
+                equals: doctorId
+            )
+            
+            // Check if we got any results
+            if results.isEmpty {
+                print("⚠️ No availability schedule found for doctor \(doctorId)")
+                return (Set<String>(), Set<String>())
+            }
+            
+            // Get the most recent schedule
+            guard let scheduleData = results.first else {
+                throw NSError(domain: "AdminController", code: 400, userInfo: [NSLocalizedDescriptionKey: "Failed to get schedule data"])
+            }
+            
+            print("📊 Retrieved schedule data: \(scheduleData)")
+            
+            // Get the weekly schedule from the JSON
+            guard let weeklyScheduleJSON = scheduleData["weekly_schedule"] as? [String: Any] else {
+                print("❌ Could not parse weekly_schedule from data")
+                return (Set<String>(), Set<String>())
+            }
+            
+            // Extract and process slot data
+            var weekdaySlots = Set<String>()
+            var weekendSlots = Set<String>()
+            
+            let weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday"]
+            let weekends = ["saturday", "sunday"]
+            
+            // Function to process slots for a specific day
+            func processSlots(for day: String, isWeekend: Bool) {
+                guard let daySlots = weeklyScheduleJSON[day] as? [[String: Any]] else {
+                    print("⚠️ No slots found for \(day)")
+                    return
+                }
+                
+                for slot in daySlots {
+                    guard let start = slot["start"] as? String,
+                          let end = slot["end"] as? String else {
+                        continue
+                    }
+                    
+                    // Clean up time strings - remove seconds if present
+                    let cleanStart = start.components(separatedBy: ":").prefix(2).joined(separator: ":")
+                    let cleanEnd = end.components(separatedBy: ":").prefix(2).joined(separator: ":")
+                    
+                    let timeSlotString = "\(cleanStart)-\(cleanEnd)"
+                    
+                    if isWeekend {
+                        weekendSlots.insert(timeSlotString)
+                    } else {
+                        weekdaySlots.insert(timeSlotString)
+                    }
+                }
+            }
+            
+            // Process weekdays
+            for day in weekdays {
+                processSlots(for: day, isWeekend: false)
+            }
+            
+            // Process weekends
+            for day in weekends {
+                processSlots(for: day, isWeekend: true)
+            }
+            
+            print("✅ Parsed availability: \(weekdaySlots.count) weekday slots, \(weekendSlots.count) weekend slots")
+            return (weekdaySlots, weekendSlots)
+            
+        } catch {
+            print("❌ Error fetching doctor schedule: \(error.localizedDescription)")
+            throw error
+        }
+    }
+    
+    // Update doctor's availability schedule
+    func updateDoctorSchedule(doctorId: String, hospitalId: String, weekdaySlots: Set<String>, weekendSlots: Set<String>) async throws {
+        print("🔄 Updating availability schedule for Doctor ID: \(doctorId) - Hospital ID: \(hospitalId)")
+        print("🔍 Weekday slots: \(weekdaySlots)")
+        print("🔍 Weekend slots: \(weekendSlots)")
+        
+        // First try to find if the doctor already has a schedule
+        let results = try await supabase.select(
+            from: "doctor_availability_efficient",
+            where: "doctor_id",
+            equals: doctorId
+        )
+        
+        if results.isEmpty {
+            // If no existing schedule, create a new one
+            print("ℹ️ No existing schedule found, creating new schedule")
+            try await addDoctorSchedule(
+                doctorId: doctorId,
+                hospitalId: hospitalId,
+                weekdaySlots: weekdaySlots,
+                weekendSlots: weekendSlots
+            )
+            return
+        }
+        
+        // If schedule exists, update it using the same structure as addDoctorSchedule
+        // Initialize empty schedule for all days
+        var weeklySchedule: [String: [TimeSlot]] = [
+            "monday": [],
+            "tuesday": [],
+            "wednesday": [],
+            "thursday": [],
+            "friday": [],
+            "saturday": [],
+            "sunday": []
+        ]
+        
+        // Parse and add weekday slots
+        if !weekdaySlots.isEmpty {
+            let weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday"]
+            
+            // Add the same slots to all weekdays
+            for slot in weekdaySlots {
+                print("🔄 Processing weekday slot: \(slot)")
+                if let (startTime, endTime) = parseTimeSlot(slot) {
+                    let timeSlot = TimeSlot(start: startTime, end: endTime)
+                    
+                    // Add to each weekday
+                    for day in weekdays {
+                        weeklySchedule[day]?.append(timeSlot)
+                    }
+                } else {
+                    print("⚠️ Could not parse weekday slot: \(slot)")
+                }
+            }
+        }
+        
+        // Parse and add weekend slots
+        if !weekendSlots.isEmpty {
+            let weekends = ["saturday", "sunday"]
+            
+            // Add the same slots to weekend days
+            for slot in weekendSlots {
+                print("🔄 Processing weekend slot: \(slot)")
+                if let (startTime, endTime) = parseTimeSlot(slot) {
+                    let timeSlot = TimeSlot(start: startTime, end: endTime)
+                    
+                    // Add to each weekend day
+                    for day in weekends {
+                        weeklySchedule[day]?.append(timeSlot)
+                    }
+                } else {
+                    print("⚠️ Could not parse weekend slot: \(slot)")
+                }
+            }
+        }
+        
+        // Convert weekly schedule to JSON format
+        let jsonSchedule = convertToJsonSchedule(weeklySchedule)
+        
+        // Get the ID of the existing record to update
+        guard let existingRecord = results.first,
+              let recordId = existingRecord["id"] as? Int else {
+            print("❌ Failed to get existing schedule ID")
+            throw NSError(domain: "AdminController", code: 400, userInfo: [NSLocalizedDescriptionKey: "Failed to get existing schedule ID"])
+        }
+        
+        print("ℹ️ Found existing record with ID: \(recordId)")
+        
+        // Use direct URL request to update the record
+        do {
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/doctor_availability_efficient?id=eq.\(recordId)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            // Create the update data
+            let updateDict: [String: Any] = [
+                "weekly_schedule": jsonSchedule,
+                "updated_at": ISO8601DateFormatter().string(from: Date())
+            ]
+            
+            // Serialize to JSON
+            let jsonData: Data
+            do {
+                jsonData = try JSONSerialization.data(withJSONObject: updateDict)
+                print("✅ Successfully serialized update data to JSON")
+            } catch {
+                print("❌ Failed to serialize JSON: \(error.localizedDescription)")
+                throw error
+            }
+            request.httpBody = jsonData
+            
+            print("🔄 Sending update request to Supabase")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid response type")
+                throw NSError(domain: "AdminController", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid response type"])
+            }
+            
+            print("📊 Response status code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("✅ Successfully updated weekly schedule for doctor \(doctorId)")
+            } else {
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("❌ Failed to update schedule: \(responseString)")
+                }
+                throw NSError(domain: "AdminController", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to update schedule with status code \(httpResponse.statusCode)"])
+            }
+        } catch {
+            print("❌ Failed to update schedule: \(error.localizedDescription)")
+            throw error
+        }
     }
 }
 

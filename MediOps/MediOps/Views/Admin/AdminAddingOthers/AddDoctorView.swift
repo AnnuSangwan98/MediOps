@@ -27,6 +27,11 @@ struct AddDoctorView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var password = "" // Added password for account creation
+    @State private var selectedWeekdaySlots: Set<String> = ["9:00-10:00", "4:00-5:00"]
+    @State private var selectedWeekendSlots: Set<String> = []
+    @State private var hospitalId: String = ""
+    @State private var doctorId: String = "" // Added to store generated doctor ID
+    @State private var showSuccessInfo: Bool = false // To control doctor info display
     
     // Add controllers
     private let adminController = AdminController.shared
@@ -65,12 +70,64 @@ struct AddDoctorView: View {
         !selectedQualifications.isEmpty &&
         isValidLicense(license) &&
         !address.isEmpty &&
-        isValidPincode(pincode) // Add pincode validation
+        isValidPincode(pincode) && // Add pincode validation
+        hasSlotsSelected // At least one slot must be selected
+    }
+    
+    // Check if any slots are selected
+    private var hasSlotsSelected: Bool {
+        return !selectedWeekdaySlots.isEmpty || !selectedWeekendSlots.isEmpty
     }
     
     var body: some View {
         NavigationStack {
             Form {
+                // Only show Doctor ID when available
+                if !doctorId.isEmpty && showSuccessInfo {
+                    Section(header: Text("Doctor Information")) {
+                        HStack {
+                            Text("Doctor ID:")
+                                .foregroundColor(.gray)
+                            Spacer()
+                            Text(doctorId)
+                                .font(.headline)
+                                .foregroundColor(.green)
+                        }
+                        
+                        Text("Doctor ID has been generated successfully. Use this ID for future reference.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Button(action: {
+                            Task {
+                                await testAvailabilityInsertion()
+                            }
+                        }) {
+                            Text("Test Availability Insertion")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.top, 8)
+                        
+                        Button(action: {
+                            resetFormForNewDoctor()
+                        }) {
+                            Text("Create New Doctor")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color.green)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.top, 8)
+                    }
+                }
+                
                 Section(header: Text("Personal Information")) {
                     TextField("Full Name", text: $fullName)
                     
@@ -149,6 +206,184 @@ struct AddDoctorView: View {
                         }
                 }
                 
+                Section(header: Text("Availability Schedule")) {
+                    VStack(alignment: .leading, spacing: 15) {
+                        // Weekdays (MON-FRI) Section
+                        Group {
+                            Text("Weekdays (MON-FRI)")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                                .padding(.bottom, 5)
+                            
+                            // Morning slots
+                            HStack {
+                                Text("Morning Slots")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                    .frame(width: 100, alignment: .leading)
+                                
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        TimeSlotButton(time: "9:00-10:00", isSelected: selectedWeekdaySlots.contains("9:00-10:00"), isWeekend: false) {
+                                            toggleSlot("9:00-10:00", in: &selectedWeekdaySlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "10:00-11:00", isSelected: selectedWeekdaySlots.contains("10:00-11:00"), isWeekend: false) {
+                                            toggleSlot("10:00-11:00", in: &selectedWeekdaySlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "11:00-12:00", isSelected: selectedWeekdaySlots.contains("11:00-12:00"), isWeekend: false) {
+                                            toggleSlot("11:00-12:00", in: &selectedWeekdaySlots)
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Afternoon/Evening slots
+                            HStack {
+                                Text("Afternoon")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                    .frame(width: 100, alignment: .leading)
+                                
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        TimeSlotButton(time: "3:00-4:00", isSelected: selectedWeekdaySlots.contains("3:00-4:00"), isWeekend: false) {
+                                            toggleSlot("3:00-4:00", in: &selectedWeekdaySlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "4:00-5:00", isSelected: selectedWeekdaySlots.contains("4:00-5:00"), isWeekend: false) {
+                                            toggleSlot("4:00-5:00", in: &selectedWeekdaySlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "5:00-6:00", isSelected: selectedWeekdaySlots.contains("5:00-6:00"), isWeekend: false) {
+                                            toggleSlot("5:00-6:00", in: &selectedWeekdaySlots)
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            HStack {
+                                Text("Evening")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                    .frame(width: 100, alignment: .leading)
+                                
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        TimeSlotButton(time: "6:00-7:00", isSelected: selectedWeekdaySlots.contains("6:00-7:00"), isWeekend: false) {
+                                            toggleSlot("6:00-7:00", in: &selectedWeekdaySlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "7:00-8:00", isSelected: selectedWeekdaySlots.contains("7:00-8:00"), isWeekend: false) {
+                                            toggleSlot("7:00-8:00", in: &selectedWeekdaySlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "8:00-9:00", isSelected: selectedWeekdaySlots.contains("8:00-9:00"), isWeekend: false) {
+                                            toggleSlot("8:00-9:00", in: &selectedWeekdaySlots)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 10)
+                        .background(Color(.systemGray6).opacity(0.5))
+                        .cornerRadius(10)
+                        .padding(.bottom, 10)
+                        
+                        // Weekend section (SAT-SUN)
+                        Group {
+                            Text("Weekends (SAT-SUN)")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                                .padding(.bottom, 5)
+                            
+                            // Morning slots
+                            HStack {
+                                Text("Morning Slots")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                    .frame(width: 100, alignment: .leading)
+                                
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        TimeSlotButton(time: "9:00-10:00", isSelected: selectedWeekendSlots.contains("9:00-10:00"), isWeekend: true) {
+                                            toggleSlot("9:00-10:00", in: &selectedWeekendSlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "10:00-11:00", isSelected: selectedWeekendSlots.contains("10:00-11:00"), isWeekend: true) {
+                                            toggleSlot("10:00-11:00", in: &selectedWeekendSlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "11:00-12:00", isSelected: selectedWeekendSlots.contains("11:00-12:00"), isWeekend: true) {
+                                            toggleSlot("11:00-12:00", in: &selectedWeekendSlots)
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Afternoon/Evening slots for weekends
+                            HStack {
+                                Text("Afternoon")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                    .frame(width: 100, alignment: .leading)
+                                
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        TimeSlotButton(time: "3:00-4:00", isSelected: selectedWeekendSlots.contains("3:00-4:00"), isWeekend: true) {
+                                            toggleSlot("3:00-4:00", in: &selectedWeekendSlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "4:00-5:00", isSelected: selectedWeekendSlots.contains("4:00-5:00"), isWeekend: true) {
+                                            toggleSlot("4:00-5:00", in: &selectedWeekendSlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "5:00-6:00", isSelected: selectedWeekendSlots.contains("5:00-6:00"), isWeekend: true) {
+                                            toggleSlot("5:00-6:00", in: &selectedWeekendSlots)
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            HStack {
+                                Text("Evening")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                    .frame(width: 100, alignment: .leading)
+                                
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        TimeSlotButton(time: "6:00-7:00", isSelected: selectedWeekendSlots.contains("6:00-7:00"), isWeekend: true) {
+                                            toggleSlot("6:00-7:00", in: &selectedWeekendSlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "7:00-8:00", isSelected: selectedWeekendSlots.contains("7:00-8:00"), isWeekend: true) {
+                                            toggleSlot("7:00-8:00", in: &selectedWeekendSlots)
+                                        }
+                                        
+                                        TimeSlotButton(time: "8:00-9:00", isSelected: selectedWeekendSlots.contains("8:00-9:00"), isWeekend: true) {
+                                            toggleSlot("8:00-9:00", in: &selectedWeekendSlots)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 10)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(10)
+                        
+                        // Add validation message if no slots selected
+                        if selectedWeekdaySlots.isEmpty && selectedWeekendSlots.isEmpty {
+                            Text("Please select at least one availability slot")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .padding(.top, 5)
+                        }
+                    }
+                    .padding(.vertical, 5)
+                }
+                
                 Section(header: Text("Contact Information")) {
                     TextField("Email Address", text: $email)
                         .keyboardType(.emailAddress)
@@ -211,19 +446,46 @@ struct AddDoctorView: View {
             .navigationTitle("Add Doctor")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         dismiss()
                     }
                 }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
                         isLoading = true
-                        saveDoctor()
+                        Task {
+                            await saveDoctor()
+                        }
                     }
                     .disabled(!isFormValid || isLoading)
                 }
+            }
+            .onAppear {
+                // Load the hospital ID when the view appears
+                if let id = UserDefaults.standard.string(forKey: "hospital_id") {
+                    hospitalId = id
+                    print("Loaded hospital ID: \(id)")
+                } else {
+                    print("Warning: No hospital ID found in UserDefaults")
+                }
+                
+                // Generate initial password when view appears
+                password = generateSecurePassword()
+            }
+            .alert(isPresented: $showAlert) {
+                Alert(
+                    title: Text(alertMessage.starts(with: "Doctor added") ? "Success" : "Error"),
+                    message: Text(alertMessage),
+                    dismissButton: .default(Text("OK")) {
+                        if !errorMessage.isEmpty {
+                            isLoading = false
+                        } else if alertMessage.starts(with: "Doctor added") {
+                            dismiss()
+                        }
+                    }
+                )
             }
             .overlay {
                 if isLoading {
@@ -235,23 +497,10 @@ struct AddDoctorView: View {
                         .cornerRadius(10)
                 }
             }
-            .alert(alertMessage, isPresented: $showAlert) {
-                Button("OK", role: .cancel) {
-                    if !errorMessage.isEmpty {
-                        isLoading = false
-                    } else {
-                        dismiss()
-                    }
-                }
-            }
-            .onAppear {
-                // Generate initial password when view appears
-                password = generateSecurePassword()
-            }
         }
     }
     
-    private func saveDoctor() {
+    private func saveDoctor() async {
         isLoading = true
         
         // Generate a secure password that meets the Supabase constraints
@@ -269,22 +518,19 @@ struct AddDoctorView: View {
                     return
                 }
                 
+                self.hospitalId = hospitalId // Update the state variable
+                
                 print("SAVE DOCTOR: Using hospital ID from UserDefaults: \(hospitalId)")
                 
                 // Prepare the doctor data
-                print("Creating doctor with hospital admin ID: \(hospitalId)")
-                
-                // Convert qualifications for API
-                let qualificationsArray = Array(selectedQualifications)
-                
-                // Create the doctor
+                print("🔄 Creating doctor with email: \(email)")
                 let (doctor, _) = try await adminController.createDoctor(
                     email: email,
                     password: securePassword,
                     name: fullName,
                     specialization: specialization.rawValue,
                     hospitalId: hospitalId,
-                    qualifications: qualificationsArray,
+                    qualifications: Array(selectedQualifications),
                     licenseNo: license,
                     experience: experience,
                     addressLine: address,
@@ -293,6 +539,35 @@ struct AddDoctorView: View {
                     pincode: pincode,
                     contactNumber: phoneNumber
                 )
+                
+                print("✅ Doctor created successfully with ID: \(doctor.id)")
+                
+                // Store the generated doctor ID
+                await MainActor.run {
+                    self.doctorId = doctor.id
+                }
+                
+                // Verify we have a valid doctor ID
+                guard !doctor.id.isEmpty else {
+                    throw NSError(domain: "AddDoctorView", code: 400, userInfo: [NSLocalizedDescriptionKey: "Doctor was created but no ID was returned"])
+                }
+                
+                // Create doctor schedule using JSON approach
+                print("🕒 Creating doctor schedule with \(selectedWeekdaySlots.count) weekday slots and \(selectedWeekendSlots.count) weekend slots for doctor ID: \(doctor.id)")
+                
+                do {
+                    // Create a complete weekly schedule at once
+                    try await adminController.addDoctorSchedule(
+                        doctorId: doctor.id,
+                        hospitalId: hospitalId,
+                        weekdaySlots: selectedWeekdaySlots,
+                        weekendSlots: selectedWeekendSlots
+                    )
+                    print("✅ Successfully created doctor schedule")
+                } catch {
+                    print("⚠️ Failed to create doctor schedule: \(error.localizedDescription)")
+                    // Continue anyway since the doctor was created
+                }
                 
                 // Send credentials to the doctor
                 await sendDoctorCredentials(email: email, password: securePassword)
@@ -307,7 +582,7 @@ struct AddDoctorView: View {
                     gender: gender,
                     dateOfBirth: dateOfBirth,
                     experience: experience,
-                    qualification: qualificationsArray.joined(separator: ", "),
+                    qualification: selectedQualifications.joined(separator: ", "),
                     license: license,
                     address: address
                 )
@@ -325,10 +600,11 @@ struct AddDoctorView: View {
                 )
                 
                 await MainActor.run {
-                    resetForm()
+                    showSuccessInfo = true // Show the doctor info section
                     onSave(activity)
                     isLoading = false
-                    dismiss()
+                    alertMessage = "Doctor added successfully with ID: \(doctor.id). Availability schedule has been created."
+                    showAlert = true
                 }
             } catch {
                 await MainActor.run {
@@ -423,6 +699,7 @@ struct AddDoctorView: View {
     }
     
     private func resetForm() {
+        // Don't reset doctorId or showSuccessInfo to keep displaying doctor info
         fullName = ""
         specialization = Specialization.generalMedicine
         email = ""
@@ -435,6 +712,8 @@ struct AddDoctorView: View {
         address = "" // Reset address
         pincode = "" // Reset pincode
         password = generateSecurePassword() // Generate new password
+        selectedWeekdaySlots = ["9:00-10:00", "4:00-5:00"]
+        selectedWeekendSlots = []
     }
     
     private func isValidEmail(_ email: String) -> Bool {
@@ -451,6 +730,185 @@ struct AddDoctorView: View {
     private func isValidPincode(_ pincode: String) -> Bool {
         let pincodeRegex = #"^[0-9]{6}$"#
         return NSPredicate(format: "SELF MATCHES %@", pincodeRegex).evaluate(with: pincode)
+    }
+    
+    private func toggleSlot(_ time: String, in slots: inout Set<String>) {
+        if slots.contains(time) {
+            slots.remove(time)
+        } else {
+            slots.insert(time)
+        }
+    }
+    
+    private func createTimeFromString(_ timeString: String) -> Date? {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // Clean up the input time string
+        let cleanedTimeString = timeString.trimmingCharacters(in: .whitespaces)
+        print("🔍 Processing time string: '\(cleanedTimeString)'")
+        
+        // Extract hours and minutes
+        var hour = 0
+        var minute = 0
+        
+        // Try different parsing approaches for maximum flexibility
+        if cleanedTimeString.contains(":") {
+            // Format like "9:00" or "10:00"
+            let components = cleanedTimeString.components(separatedBy: ":")
+            if components.count >= 2,
+               let parsedHour = Int(components[0].trimmingCharacters(in: .whitespaces)),
+               let parsedMinute = Int(components[1].trimmingCharacters(in: .whitespaces)) {
+                hour = parsedHour
+                minute = parsedMinute
+                print("✅ Parsed time from colon format: \(hour):\(minute)")
+            } else {
+                print("❌ Failed to parse time with colon: \(cleanedTimeString)")
+                return nil
+            }
+        } else {
+            // Try to extract numeric values for hour
+            let hourString = cleanedTimeString.prefix(while: { $0.isNumber })
+            if let parsedHour = Int(hourString) {
+                hour = parsedHour
+                minute = 0 // Default minutes to 0
+                print("✅ Parsed hour from numeric prefix: \(hour)")
+            } else {
+                print("❌ Failed to parse hour from string: \(cleanedTimeString)")
+                return nil
+            }
+        }
+        
+        // Create a date with the specified hour and minute
+        var dateComponents = calendar.dateComponents([.year, .month, .day], from: now)
+        dateComponents.hour = hour
+        dateComponents.minute = minute
+        dateComponents.second = 0
+        
+        guard let result = calendar.date(from: dateComponents) else {
+            print("❌ Failed to create date from components: \(dateComponents)")
+            return nil
+        }
+        
+        print("✅ Successfully created time: \(result)")
+        return result
+    }
+    
+    // Add a test function for availability insertion
+    private func testAvailabilityInsertion() async {
+        guard !hospitalId.isEmpty, !doctorId.isEmpty else {
+            print("❌ Missing hospital ID or doctor ID for test")
+            return
+        }
+        
+        print("🔍 Testing schedule insertion with Doctor ID: \(doctorId) and Hospital ID: \(hospitalId)")
+        
+        // Create test slots
+        let morningSlots: Set<String> = ["09:00-10:00", "10:00-11:00"]
+        let eveningSlots: Set<String> = ["16:00-17:00"]
+        
+        do {
+            print("🔄 Adding test schedule")
+            try await adminController.addDoctorSchedule(
+                doctorId: doctorId,
+                hospitalId: hospitalId,
+                weekdaySlots: morningSlots,
+                weekendSlots: eveningSlots
+            )
+            
+            await MainActor.run {
+                alertMessage = "Test schedule created successfully!"
+                showAlert = true
+            }
+        } catch {
+            print("❌ Test schedule creation failed: \(error.localizedDescription)")
+            
+            await MainActor.run {
+                alertMessage = "Test schedule creation failed: \(error.localizedDescription)"
+                showAlert = true
+            }
+        }
+    }
+    
+    // Add a function to reset the form for a new doctor while preserving hospital ID
+    private func resetFormForNewDoctor() {
+        fullName = ""
+        specialization = Specialization.generalMedicine
+        email = ""
+        phoneNumber = ""
+        gender = .male
+        dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
+        experience = 0
+        selectedQualifications = ["MBBS"]
+        license = ""
+        address = ""
+        pincode = ""
+        password = generateSecurePassword() 
+        selectedWeekdaySlots = ["9:00-10:00", "4:00-5:00"]
+        selectedWeekendSlots = []
+        
+        // Reset doctor information but keep hospital ID
+        doctorId = ""
+        showSuccessInfo = false
+    }
+}
+
+// Time Slot Button Component
+struct TimeSlotButton: View {
+    let time: String
+    let isSelected: Bool
+    let isWeekend: Bool
+    let action: () -> Void
+    
+    init(time: String, isSelected: Bool, isWeekend: Bool = false, action: @escaping () -> Void) {
+        self.time = time
+        self.isSelected = isSelected
+        self.isWeekend = isWeekend
+        self.action = action
+    }
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12))
+                }
+                
+                Text(time)
+                    .font(.system(size: 14))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(backgroundColor)
+            .foregroundColor(foregroundColor)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(strokeColor, lineWidth: 1)
+            )
+            .animation(.easeInOut(duration: 0.2), value: isSelected)
+        }
+    }
+    
+    private var backgroundColor: Color {
+        if isSelected {
+            return isWeekend ? Color.orange : Color.teal
+        } else {
+            return Color.gray.opacity(0.1)
+        }
+    }
+    
+    private var foregroundColor: Color {
+        isSelected ? .white : .primary
+    }
+    
+    private var strokeColor: Color {
+        if isSelected {
+            return isWeekend ? Color.orange : Color.teal
+        } else {
+            return Color.clear
+        }
     }
 }
 

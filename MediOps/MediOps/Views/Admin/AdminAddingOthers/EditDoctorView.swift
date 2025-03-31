@@ -15,6 +15,13 @@ struct EditDoctorView: View {
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var isLoading = false
+    @State private var hospitalId = UserDefaults.standard.string(forKey: "hospital_id") ?? ""
+    
+    // Doctor availability slots
+    @State private var selectedWeekdaySlots: Set<String> = []
+    @State private var selectedWeekendSlots: Set<String> = []
+    @State private var isLoadingSlots = false
+    @State private var availabilityError = ""
     
     // Add reference to AdminController
     private let adminController = AdminController.shared
@@ -52,6 +59,17 @@ struct EditDoctorView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section(header: Text("Doctor Information")) {
+                    HStack {
+                        Text("Doctor ID:")
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Text(doctor.id)
+                            .font(.headline)
+                            .foregroundColor(.blue)
+                    }
+                }
+                
                 Section(header: Text("Personal Information")) {
                     TextField("Full Name", text: $fullName)
                     
@@ -107,6 +125,162 @@ struct EditDoctorView: View {
                     
                     TextField("Address", text: $address)
                 }
+                
+                // Availability Schedule Section
+                Section(header: HStack {
+                    Text("Availability Schedule")
+                    Spacer()
+                    if isLoadingSlots {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    }
+                }) {
+                    if !availabilityError.isEmpty {
+                        Text(availabilityError)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                    }
+                    
+                    // Weekday slots
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Weekday Slots (MON-FRI)")
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                            .padding(.bottom, 5)
+                        
+                        // Morning slots
+                        HStack {
+                            Text("Morning")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .frame(width: 70, alignment: .leading)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    TimeSlotButton(time: "9:00-10:00", isSelected: selectedWeekdaySlots.contains("9:00-10:00"), isWeekend: false) {
+                                        toggleSlot("9:00-10:00", in: &selectedWeekdaySlots)
+                                    }
+                                    
+                                    TimeSlotButton(time: "10:00-11:00", isSelected: selectedWeekdaySlots.contains("10:00-11:00"), isWeekend: false) {
+                                        toggleSlot("10:00-11:00", in: &selectedWeekdaySlots)
+                                    }
+                                    
+                                    TimeSlotButton(time: "11:00-12:00", isSelected: selectedWeekdaySlots.contains("11:00-12:00"), isWeekend: false) {
+                                        toggleSlot("11:00-12:00", in: &selectedWeekdaySlots)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Afternoon slots
+                        HStack {
+                            Text("Afternoon")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .frame(width: 70, alignment: .leading)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    TimeSlotButton(time: "1:00-2:00", isSelected: selectedWeekdaySlots.contains("1:00-2:00"), isWeekend: false) {
+                                        toggleSlot("1:00-2:00", in: &selectedWeekdaySlots)
+                                    }
+                                    
+                                    TimeSlotButton(time: "2:00-3:00", isSelected: selectedWeekdaySlots.contains("2:00-3:00"), isWeekend: false) {
+                                        toggleSlot("2:00-3:00", in: &selectedWeekdaySlots)
+                                    }
+                                    
+                                    TimeSlotButton(time: "3:00-4:00", isSelected: selectedWeekdaySlots.contains("3:00-4:00"), isWeekend: false) {
+                                        toggleSlot("3:00-4:00", in: &selectedWeekdaySlots)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Evening slots
+                        HStack {
+                            Text("Evening")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .frame(width: 70, alignment: .leading)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    TimeSlotButton(time: "4:00-5:00", isSelected: selectedWeekdaySlots.contains("4:00-5:00"), isWeekend: false) {
+                                        toggleSlot("4:00-5:00", in: &selectedWeekdaySlots)
+                                    }
+                                    
+                                    TimeSlotButton(time: "5:00-6:00", isSelected: selectedWeekdaySlots.contains("5:00-6:00"), isWeekend: false) {
+                                        toggleSlot("5:00-6:00", in: &selectedWeekdaySlots)
+                                    }
+                                    
+                                    TimeSlotButton(time: "6:00-7:00", isSelected: selectedWeekdaySlots.contains("6:00-7:00"), isWeekend: false) {
+                                        toggleSlot("6:00-7:00", in: &selectedWeekdaySlots)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 5)
+                    
+                    Divider()
+                    
+                    // Weekend slots
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Weekend Slots (SAT-SUN)")
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                            .padding(.bottom, 5)
+                        
+                        // Morning slots
+                        HStack {
+                            Text("Morning")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .frame(width: 70, alignment: .leading)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    TimeSlotButton(time: "9:00-10:00", isSelected: selectedWeekendSlots.contains("9:00-10:00"), isWeekend: true) {
+                                        toggleSlot("9:00-10:00", in: &selectedWeekendSlots)
+                                    }
+                                    
+                                    TimeSlotButton(time: "10:00-11:00", isSelected: selectedWeekendSlots.contains("10:00-11:00"), isWeekend: true) {
+                                        toggleSlot("10:00-11:00", in: &selectedWeekendSlots)
+                                    }
+                                    
+                                    TimeSlotButton(time: "11:00-12:00", isSelected: selectedWeekendSlots.contains("11:00-12:00"), isWeekend: true) {
+                                        toggleSlot("11:00-12:00", in: &selectedWeekendSlots)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Afternoon slots
+                        HStack {
+                            Text("Afternoon")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .frame(width: 70, alignment: .leading)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    TimeSlotButton(time: "1:00-2:00", isSelected: selectedWeekendSlots.contains("1:00-2:00"), isWeekend: true) {
+                                        toggleSlot("1:00-2:00", in: &selectedWeekendSlots)
+                                    }
+                                    
+                                    TimeSlotButton(time: "2:00-3:00", isSelected: selectedWeekendSlots.contains("2:00-3:00"), isWeekend: true) {
+                                        toggleSlot("2:00-3:00", in: &selectedWeekendSlots)
+                                    }
+                                    
+                                    TimeSlotButton(time: "3:00-4:00", isSelected: selectedWeekendSlots.contains("3:00-4:00"), isWeekend: true) {
+                                        toggleSlot("3:00-4:00", in: &selectedWeekendSlots)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 5)
+                }
             }
             .navigationTitle("Edit Doctor")
             .navigationBarTitleDisplayMode(.inline)
@@ -123,6 +297,10 @@ struct EditDoctorView: View {
                     }
                     .disabled(!isFormValid || isLoading)
                 }
+            }
+            .onAppear {
+                // Fetch doctor's availability schedule when the view appears
+                fetchDoctorSchedule()
             }
             .overlay {
                 if isLoading {
@@ -149,6 +327,39 @@ struct EditDoctorView: View {
         let ageComponents = calendar.dateComponents([.year], from: dateOfBirth, to: Date())
         let age = ageComponents.year ?? 0
         return max(0, age - 25)
+    }
+    
+    private func fetchDoctorSchedule() {
+        isLoadingSlots = true
+        availabilityError = ""
+        
+        Task {
+            do {
+                let (weekdaySlots, weekendSlots) = try await adminController.getDoctorSchedule(
+                    doctorId: doctor.id, 
+                    hospitalId: hospitalId
+                )
+                
+                await MainActor.run {
+                    self.selectedWeekdaySlots = weekdaySlots
+                    self.selectedWeekendSlots = weekendSlots
+                    isLoadingSlots = false
+                }
+            } catch {
+                await MainActor.run {
+                    availabilityError = "Could not load availability: \(error.localizedDescription)"
+                    isLoadingSlots = false
+                }
+            }
+        }
+    }
+    
+    private func toggleSlot(_ time: String, in slots: inout Set<String>) {
+        if slots.contains(time) {
+            slots.remove(time)
+        } else {
+            slots.insert(time)
+        }
     }
     
     private func updateDoctor() {
@@ -190,13 +401,21 @@ struct EditDoctorView: View {
                     contactNumber: phoneNumber
                 )
                 
+                // Update the doctor's availability schedule
+                try await adminController.updateDoctorSchedule(
+                    doctorId: doctor.id,
+                    hospitalId: hospitalId,
+                    weekdaySlots: selectedWeekdaySlots,
+                    weekendSlots: selectedWeekendSlots
+                )
+                
                 // Update UI on success
                 await MainActor.run {
                     // Call the update callback
                     onUpdate(updatedDoctor)
                     
                     // Show success message
-                    alertMessage = "Doctor information updated successfully in database"
+                    alertMessage = "Doctor information and availability updated successfully"
                     showAlert = true
                     isLoading = false
                 }
@@ -219,4 +438,6 @@ struct EditDoctorView: View {
         let licenseRegex = #"^[A-Z]{2}\d{5}$"#
         return NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: license)
     }
-} 
+}
+
+// Time Slot Button Component is already defined in AddDoctorView.swift 
