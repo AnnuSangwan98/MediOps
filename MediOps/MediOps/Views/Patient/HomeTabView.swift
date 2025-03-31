@@ -15,6 +15,10 @@ struct HomeTabView: View {
     @AppStorage("current_user_id") private var currentUserId: String?
     @AppStorage("userId") private var userId: String?
     @StateObject private var profileController = PatientProfileController()
+    @State private var showBloodDonationRegistration = false
+    @State private var isRegisteredDonor = false
+    @State private var showBloodRequest = false
+    @State private var hasActiveBloodRequest = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -307,8 +311,151 @@ struct HomeTabView: View {
     }
     
     private var bloodDonateTab: some View {
-        Text("Blood Donation")
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    if isRegisteredDonor {
+                        // Registered Donor Card
+                        VStack(spacing: 15) {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 40))
+                                .foregroundColor(.red)
+                            
+                            Text("Registered Blood Donor")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            
+                            Text("Thank you for your commitment to saving lives!")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                            
+                            // Additional donor information or actions
+//                            HStack(spacing: 15) {
+//                                VStack {
+//                                    Image(systemName: "calendar")
+//                                        .font(.title2)
+//                                    Text("Next Eligible")
+//                                        .font(.caption)
+//                                    Text("3 months")
+//                                        .font(.caption2)
+//                                        .foregroundColor(.gray)
+//                                }
+//                                .padding()
+//                                .background(Color.white)
+//                                .cornerRadius(10)
+//                                .shadow(radius: 2)
+//                                
+//                                VStack {
+//                                    Image(systemName: "location")
+//                                        .font(.title2)
+//                                    Text("Donation Center")
+//                                        .font(.caption)
+//                                    Text("Find Nearby")
+//                                        .font(.caption2)
+//                                        .foregroundColor(.blue)
+//                                }
+//                                .padding()
+//                                .background(Color.white)
+//                                .cornerRadius(10)
+//                                .shadow(radius: 2)
+//                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(15)
+                        .padding()
+                    }
+                    
+                    // Active Blood Request Card (if exists)
+                    if hasActiveBloodRequest {
+                        VStack(spacing: 15) {
+                            HStack {
+                                Image(systemName: "drop.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.red)
+                                Text("Active Blood Request")
+                                    .font(.headline)
+                            }
+                            
+                            Text("Your request is being processed. We will notify you when a matching donor is found.")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                            
+                            Button(action: {
+                                hasActiveBloodRequest = false
+                            }) {
+                                Text("Cancel Request")
+                                    .font(.subheadline)
+                                    .foregroundColor(.red)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(15)
+                        .padding(.horizontal)
+                    }
+                    
+                    // Main Actions
+                    VStack(spacing: 15) {
+                        if !isRegisteredDonor {
+                            Text("Blood Donation")
+                                .font(.title)
+                                .fontWeight(.bold)
+                            
+                            Text("Be a lifesaver by donating blood")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            Button(action: {
+                                showBloodDonationRegistration = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "heart.fill")
+                                    Text("Register as Blood Donor")
+                                }
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.teal)
+                                .cornerRadius(10)
+                            }
+                            .padding(.horizontal)
+                        }
+                        
+                        if !hasActiveBloodRequest {
+                            Button(action: {
+                                showBloodRequest = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "drop.fill")
+                                    Text("Request Blood")
+                                }
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.red)
+                                .cornerRadius(10)
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.top)
+            }
             .navigationTitle("Blood Donation")
+            .sheet(isPresented: $showBloodDonationRegistration) {
+                BloodDonationRegistrationView(isRegistered: $isRegisteredDonor)
+            }
+            .sheet(isPresented: $showBloodRequest) {
+                BloodRequestView(hasActiveRequest: $hasActiveBloodRequest)
+            }
+        }
     }
     
     private var searchResultsSection: some View {
