@@ -53,24 +53,16 @@ class DoctorViewModel: ObservableObject {
         print("Loading doctors for hospital: \(hospital.id)")
         
         do {
-            // First try to fetch using hospital_id
-            var results = try await supabase.select(
+            // Only fetch doctors for the specific hospital
+            let results = try await supabase.select(
                 from: "doctors",
                 where: "hospital_id",
                 equals: hospital.id
             )
             
-            print("Initial query returned \(results.count) doctors")
-            
-            // If no results, try without the where clause to see all doctors
-            if results.isEmpty {
-                print("No doctors found with hospital_id, fetching all doctors")
-                results = try await supabase.select(from: "doctors")
-                print("Found \(results.count) total doctors")
-            }
+            print("Query returned \(results.count) doctors")
             
             self.doctors = results.compactMap { data in
-                // Instead of using do-catch here, we'll handle errors differently
                 guard let id = data["id"] as? String,
                       let name = data["name"] as? String,
                       let specialization = data["specialization"] as? String,
@@ -80,7 +72,6 @@ class DoctorViewModel: ObservableObject {
                     return nil
                 }
                 
-                // Optional fields with default values
                 let hospitalId = data["hospital_id"] as? String ?? hospital.id
                 let qualifications = data["qualifications"] as? [String] ?? []
                 let licenseNo = data["license_no"] as? String ?? "N/A"
