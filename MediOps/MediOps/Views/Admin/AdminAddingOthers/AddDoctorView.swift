@@ -27,7 +27,7 @@ struct AddDoctorView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var password = "" // Added password for account creation
-    @State private var selectedWeekdaySlots: Set<String> = ["9:00-10:00", "4:00-5:00"]
+    @State private var selectedWeekdaySlots: Set<String> = ["9:00AM-10:00AM", "4:00PM-5:00PM"]
     @State private var selectedWeekendSlots: Set<String> = []
     @State private var hospitalId: String = ""
     @State private var doctorId: String = "" // Added to store generated doctor ID
@@ -130,6 +130,10 @@ struct AddDoctorView: View {
                 
                 Section(header: Text("Personal Information")) {
                     TextField("Full Name", text: $fullName)
+                        .onChange(of: fullName) { _, newValue in
+                            // Filter out any numbers from the name
+                            fullName = newValue.filter { !$0.isNumber }
+                        }
                     
                     Picker("Specialization", selection: $specialization) {
                         ForEach(Specialization.allCases, id: \.id) { specialization in
@@ -190,11 +194,16 @@ struct AddDoctorView: View {
                     }
                     .padding(.vertical, 5)
                     
-                    // Updated license field with more general format hint
-                    TextField("License Number", text: $license)
+                    // Updated license field with specific format and 7-character limit
+                    TextField("License Number (Format: AB12345)", text: $license)
                         .onChange(of: license) { _, newValue in
-                            // Format license to uppercase
-                            license = newValue.uppercased()
+                            // Format license to uppercase and limit to 7 characters
+                            let uppercased = newValue.uppercased()
+                            if uppercased.count > 7 {
+                                license = String(uppercased.prefix(7))
+                            } else {
+                                license = uppercased
+                            }
                         }
                     
                     Stepper("Experience: \(experience) years", value: $experience, in: 0...maximumExperience)
@@ -217,23 +226,18 @@ struct AddDoctorView: View {
                             
                             // Morning slots
                             HStack {
-                                Text("Morning Slots")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                                    .frame(width: 100, alignment: .leading)
-                                
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 10) {
-                                        TimeSlotButton(time: "9:00-10:00", isSelected: selectedWeekdaySlots.contains("9:00-10:00"), isWeekend: false) {
-                                            toggleSlot("9:00-10:00", in: &selectedWeekdaySlots)
+                                        TimeSlotButton(time: "9:00AM-10:00AM", isSelected: selectedWeekdaySlots.contains("9:00AM-10:00AM"), isWeekend: false) {
+                                            toggleSlot("9:00AM-10:00AM", in: &selectedWeekdaySlots)
                                         }
                                         
-                                        TimeSlotButton(time: "10:00-11:00", isSelected: selectedWeekdaySlots.contains("10:00-11:00"), isWeekend: false) {
-                                            toggleSlot("10:00-11:00", in: &selectedWeekdaySlots)
+                                        TimeSlotButton(time: "10:00AM-11:00AM", isSelected: selectedWeekdaySlots.contains("10:00AM-11:00AM"), isWeekend: false) {
+                                            toggleSlot("10:00AM-11:00AM", in: &selectedWeekdaySlots)
                                         }
                                         
-                                        TimeSlotButton(time: "11:00-12:00", isSelected: selectedWeekdaySlots.contains("11:00-12:00"), isWeekend: false) {
-                                            toggleSlot("11:00-12:00", in: &selectedWeekdaySlots)
+                                        TimeSlotButton(time: "11:00AM-12:00PM", isSelected: selectedWeekdaySlots.contains("11:00AM-12:00PM"), isWeekend: false) {
+                                            toggleSlot("11:00AM-12:00PM", in: &selectedWeekdaySlots)
                                         }
                                     }
                                 }
@@ -241,46 +245,36 @@ struct AddDoctorView: View {
                             
                             // Afternoon/Evening slots
                             HStack {
-                                Text("Afternoon")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                                    .frame(width: 100, alignment: .leading)
-                                
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 10) {
-                                        TimeSlotButton(time: "3:00-4:00", isSelected: selectedWeekdaySlots.contains("3:00-4:00"), isWeekend: false) {
-                                            toggleSlot("3:00-4:00", in: &selectedWeekdaySlots)
+                                        TimeSlotButton(time: "3:00PM-4:00PM", isSelected: selectedWeekdaySlots.contains("3:00PM-4:00PM"), isWeekend: false) {
+                                            toggleSlot("3:00PM-4:00PM", in: &selectedWeekdaySlots)
                                         }
                                         
-                                        TimeSlotButton(time: "4:00-5:00", isSelected: selectedWeekdaySlots.contains("4:00-5:00"), isWeekend: false) {
-                                            toggleSlot("4:00-5:00", in: &selectedWeekdaySlots)
+                                        TimeSlotButton(time: "4:00PM-5:00PM", isSelected: selectedWeekdaySlots.contains("4:00PM-5:00PM"), isWeekend: false) {
+                                            toggleSlot("4:00PM-5:00PM", in: &selectedWeekdaySlots)
                                         }
                                         
-                                        TimeSlotButton(time: "5:00-6:00", isSelected: selectedWeekdaySlots.contains("5:00-6:00"), isWeekend: false) {
-                                            toggleSlot("5:00-6:00", in: &selectedWeekdaySlots)
+                                        TimeSlotButton(time: "5:00PM-6:00PM", isSelected: selectedWeekdaySlots.contains("5:00PM-6:00PM"), isWeekend: false) {
+                                            toggleSlot("5:00PM-6:00PM", in: &selectedWeekdaySlots)
                                         }
                                     }
                                 }
                             }
                             
                             HStack {
-                                Text("Evening")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                                    .frame(width: 100, alignment: .leading)
-                                
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 10) {
-                                        TimeSlotButton(time: "6:00-7:00", isSelected: selectedWeekdaySlots.contains("6:00-7:00"), isWeekend: false) {
-                                            toggleSlot("6:00-7:00", in: &selectedWeekdaySlots)
+                                        TimeSlotButton(time: "6:00PM-7:00PM", isSelected: selectedWeekdaySlots.contains("6:00PM-7:00PM"), isWeekend: false) {
+                                            toggleSlot("6:00PM-7:00PM", in: &selectedWeekdaySlots)
                                         }
                                         
-                                        TimeSlotButton(time: "7:00-8:00", isSelected: selectedWeekdaySlots.contains("7:00-8:00"), isWeekend: false) {
-                                            toggleSlot("7:00-8:00", in: &selectedWeekdaySlots)
+                                        TimeSlotButton(time: "7:00PM-8:00PM", isSelected: selectedWeekdaySlots.contains("7:00PM-8:00PM"), isWeekend: false) {
+                                            toggleSlot("7:00PM-8:00PM", in: &selectedWeekdaySlots)
                                         }
                                         
-                                        TimeSlotButton(time: "8:00-9:00", isSelected: selectedWeekdaySlots.contains("8:00-9:00"), isWeekend: false) {
-                                            toggleSlot("8:00-9:00", in: &selectedWeekdaySlots)
+                                        TimeSlotButton(time: "8:00PM-9:00PM", isSelected: selectedWeekdaySlots.contains("8:00PM-9:00PM"), isWeekend: false) {
+                                            toggleSlot("8:00PM-9:00PM", in: &selectedWeekdaySlots)
                                         }
                                     }
                                 }
@@ -300,23 +294,18 @@ struct AddDoctorView: View {
                             
                             // Morning slots
                             HStack {
-                                Text("Morning Slots")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                                    .frame(width: 100, alignment: .leading)
-                                
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 10) {
-                                        TimeSlotButton(time: "9:00-10:00", isSelected: selectedWeekendSlots.contains("9:00-10:00"), isWeekend: true) {
-                                            toggleSlot("9:00-10:00", in: &selectedWeekendSlots)
+                                        TimeSlotButton(time: "9:00AM-10:00AM", isSelected: selectedWeekendSlots.contains("9:00AM-10:00AM"), isWeekend: false) {
+                                            toggleSlot("9:00AM-10:00AM", in: &selectedWeekendSlots)
                                         }
                                         
-                                        TimeSlotButton(time: "10:00-11:00", isSelected: selectedWeekendSlots.contains("10:00-11:00"), isWeekend: true) {
-                                            toggleSlot("10:00-11:00", in: &selectedWeekendSlots)
+                                        TimeSlotButton(time: "10:00AM-11:00AM", isSelected: selectedWeekendSlots.contains("10:00AM-11:00AM"), isWeekend: false) {
+                                            toggleSlot("10:00AM-11:00AM", in: &selectedWeekendSlots)
                                         }
                                         
-                                        TimeSlotButton(time: "11:00-12:00", isSelected: selectedWeekendSlots.contains("11:00-12:00"), isWeekend: true) {
-                                            toggleSlot("11:00-12:00", in: &selectedWeekendSlots)
+                                        TimeSlotButton(time: "11:00AM-12:00PM", isSelected: selectedWeekendSlots.contains("11:00AM-12:00PM"), isWeekend: false) {
+                                            toggleSlot("11:00AM-12:00PM", in: &selectedWeekendSlots)
                                         }
                                     }
                                 }
@@ -324,53 +313,43 @@ struct AddDoctorView: View {
                             
                             // Afternoon/Evening slots for weekends
                             HStack {
-                                Text("Afternoon")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                                    .frame(width: 100, alignment: .leading)
-                                
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 10) {
-                                        TimeSlotButton(time: "3:00-4:00", isSelected: selectedWeekendSlots.contains("3:00-4:00"), isWeekend: true) {
-                                            toggleSlot("3:00-4:00", in: &selectedWeekendSlots)
+                                        TimeSlotButton(time: "3:00PM-4:00PM", isSelected: selectedWeekendSlots.contains("3:00PM-4:00PM"), isWeekend: false) {
+                                            toggleSlot("3:00PM-4:00PM", in: &selectedWeekendSlots)
                                         }
                                         
-                                        TimeSlotButton(time: "4:00-5:00", isSelected: selectedWeekendSlots.contains("4:00-5:00"), isWeekend: true) {
-                                            toggleSlot("4:00-5:00", in: &selectedWeekendSlots)
+                                        TimeSlotButton(time: "4:00PM-5:00PM", isSelected: selectedWeekendSlots.contains("4:00PM-5:00PM"), isWeekend: false) {
+                                            toggleSlot("4:00PM-5:00PM", in: &selectedWeekendSlots)
                                         }
                                         
-                                        TimeSlotButton(time: "5:00-6:00", isSelected: selectedWeekendSlots.contains("5:00-6:00"), isWeekend: true) {
-                                            toggleSlot("5:00-6:00", in: &selectedWeekendSlots)
+                                        TimeSlotButton(time: "5:00PM-6:00PM", isSelected: selectedWeekendSlots.contains("5:00PM-6:00PM"), isWeekend: false) {
+                                            toggleSlot("5:00PM-6:00PM", in: &selectedWeekendSlots)
                                         }
                                     }
                                 }
                             }
                             
                             HStack {
-                                Text("Evening")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                                    .frame(width: 100, alignment: .leading)
-                                
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 10) {
-                                        TimeSlotButton(time: "6:00-7:00", isSelected: selectedWeekendSlots.contains("6:00-7:00"), isWeekend: true) {
-                                            toggleSlot("6:00-7:00", in: &selectedWeekendSlots)
+                                        TimeSlotButton(time: "6:00PM-7:00PM", isSelected: selectedWeekendSlots.contains("6:00PM-7:00PM"), isWeekend: false) {
+                                            toggleSlot("6:00PM-7:00PM", in: &selectedWeekendSlots)
                                         }
                                         
-                                        TimeSlotButton(time: "7:00-8:00", isSelected: selectedWeekendSlots.contains("7:00-8:00"), isWeekend: true) {
-                                            toggleSlot("7:00-8:00", in: &selectedWeekendSlots)
+                                        TimeSlotButton(time: "7:00PM-8:00PM", isSelected: selectedWeekendSlots.contains("7:00PM-8:00PM"), isWeekend: false) {
+                                            toggleSlot("7:00PM-8:00PM", in: &selectedWeekendSlots)
                                         }
                                         
-                                        TimeSlotButton(time: "8:00-9:00", isSelected: selectedWeekendSlots.contains("8:00-9:00"), isWeekend: true) {
-                                            toggleSlot("8:00-9:00", in: &selectedWeekendSlots)
+                                        TimeSlotButton(time: "8:00PM-9:00PM", isSelected: selectedWeekendSlots.contains("8:00PM-9:00PM"), isWeekend: false) {
+                                            toggleSlot("8:00PM-9:00PM", in: &selectedWeekendSlots)
                                         }
                                     }
                                 }
                             }
                         }
                         .padding(.vertical, 10)
-                        .background(Color.orange.opacity(0.1))
+                        .background(Color(.systemGray6).opacity(0.5))
                         .cornerRadius(10)
                         
                         // Add validation message if no slots selected
@@ -712,7 +691,7 @@ struct AddDoctorView: View {
         address = "" // Reset address
         pincode = "" // Reset pincode
         password = generateSecurePassword() // Generate new password
-        selectedWeekdaySlots = ["9:00-10:00", "4:00-5:00"]
+        selectedWeekdaySlots = ["9:00AM-10:00AM", "4:00PM-5:00PM"]
         selectedWeekendSlots = []
     }
     
@@ -722,8 +701,9 @@ struct AddDoctorView: View {
     }
     
     private func isValidLicense(_ license: String) -> Bool {
+        // Format AB12345: 2 letters followed by 5 digits
         let licenseRegex = #"^[A-Z]{2}\d{5}$"#
-        return NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: license)
+        return license.count == 7 && NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: license)
     }
     
     // Add validation for pincode (must be exactly 6 digits)
@@ -804,8 +784,8 @@ struct AddDoctorView: View {
         print("🔍 Testing schedule insertion with Doctor ID: \(doctorId) and Hospital ID: \(hospitalId)")
         
         // Create test slots
-        let morningSlots: Set<String> = ["09:00-10:00", "10:00-11:00"]
-        let eveningSlots: Set<String> = ["16:00-17:00"]
+        let morningSlots: Set<String> = ["09:00AM-10:00AM", "10:00AM-11:00AM"]
+        let eveningSlots: Set<String> = ["4:00PM-5:00PM"]
         
         do {
             print("🔄 Adding test schedule")
@@ -844,7 +824,7 @@ struct AddDoctorView: View {
         address = ""
         pincode = ""
         password = generateSecurePassword() 
-        selectedWeekdaySlots = ["9:00-10:00", "4:00-5:00"]
+        selectedWeekdaySlots = ["9:00AM-10:00AM", "4:00PM-5:00PM"]
         selectedWeekendSlots = []
         
         // Reset doctor information but keep hospital ID
@@ -885,15 +865,16 @@ struct TimeSlotButton: View {
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(strokeColor, lineWidth: 1)
+                    .stroke(strokeColor, lineWidth: isSelected ? 2 : 1)
             )
+            .shadow(color: isSelected ? Color.teal.opacity(0.5) : Color.clear, radius: 3, x: 0, y: 0)
             .animation(.easeInOut(duration: 0.2), value: isSelected)
         }
     }
     
     private var backgroundColor: Color {
         if isSelected {
-            return isWeekend ? Color.orange : Color.teal
+            return Color.teal.opacity(0.9)
         } else {
             return Color.gray.opacity(0.1)
         }
@@ -905,7 +886,7 @@ struct TimeSlotButton: View {
     
     private var strokeColor: Color {
         if isSelected {
-            return isWeekend ? Color.orange : Color.teal
+            return Color.teal
         } else {
             return Color.clear
         }
