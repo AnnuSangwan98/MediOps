@@ -46,10 +46,57 @@ class SupabaseController {
     /// Generic method to insert data into a table
     func insert<T: Encodable>(into table: String, data: T) async throws {
         print("SUPABASE: Inserting data into \(table)")
-        try await client.database
-            .from(table)
-            .insert(data)
-            .execute()
+        
+        // For debugging purposes, print out the data structure for lab_admins
+        if table == "lab_admins" {
+            do {
+                let jsonData = try JSONEncoder().encode(data)
+                if let jsonString = String(data: jsonData, encoding: .utf8) {
+                    print("SUPABASE DEBUG - lab_admins data: \(jsonString)")
+                }
+            } catch {
+                print("SUPABASE WARNING: Unable to encode lab_admins data for debugging: \(error.localizedDescription)")
+            }
+        }
+        
+        do {
+            try await client.database
+                .from(table)
+                .insert(data)
+                .execute()
+            print("SUPABASE: Successfully inserted data into \(table)")
+        } catch {
+            print("SUPABASE ERROR: Failed to insert into \(table): \(error.localizedDescription)")
+            
+            // For more detailed error inspection for lab_admins insertions
+            if table == "lab_admins" {
+                // Try to extract more detailed error information
+                if let supabaseError = error as? PostgrestError {
+                    let errorMessage = supabaseError.message ?? "No detailed message"
+                    let errorCode = supabaseError.code ?? "No error code"
+                    
+                    print("SUPABASE DETAILED ERROR: \(errorMessage)")
+                    print("SUPABASE ERROR CODE: \(errorCode)")
+                    
+                    // Check for common constraints
+                    if errorMessage.contains("violates check constraint") {
+                        if errorMessage.contains("lab_admins_id_format") {
+                            throw SupabaseError.invalidData("Lab admin ID must be in the format LAB followed by 3 digits")
+                        } else if errorMessage.contains("lab_admins_contact_number_format") {
+                            throw SupabaseError.invalidData("Contact number must be exactly 10 digits")
+                        } else if errorMessage.contains("lab_admins_password_format") {
+                            throw SupabaseError.invalidData("Password must be at least 8 characters with at least one uppercase letter, one lowercase letter, one digit, and one special character")
+                        } else if errorMessage.contains("lab_admins_department_check") {
+                            throw SupabaseError.invalidData("Department must be 'Pathology & Laboratory'")
+                        }
+                    } else if errorMessage.contains("duplicate key") && errorMessage.contains("email") {
+                        throw SupabaseError.invalidData("Email address is already in use")
+                    }
+                }
+            }
+            
+            throw error
+        }
     }
     
     /// Attempt to rollback a previously inserted record if a subsequent operation fails
@@ -249,11 +296,28 @@ class SupabaseController {
     /// Generic method to delete data from a table
     func delete(from table: String, where column: String, equals value: String) async throws {
         print("SUPABASE: Deleting from \(table) where \(column) = \(value)")
-        try await client.database
-            .from(table)
-            .delete()
-            .eq(column, value: value)
-            .execute()
+        do {
+            let result = try await client.database
+                .from(table)
+                .delete()
+                .eq(column, value: value)
+                .execute()
+            
+            // Add logging about the deletion result
+            print("SUPABASE: Delete operation completed successfully")
+            print("SUPABASE: Response status: \(result.status)")
+            
+            // Check if any rows were affected (deleted)
+            if let count = result.count, count > 0 {
+                print("SUPABASE: Successfully deleted \(count) records")
+            } else {
+                print("SUPABASE WARNING: Delete operation completed but no records were affected")
+            }
+        } catch {
+            print("SUPABASE ERROR: Delete operation failed: \(error.localizedDescription)")
+            print("SUPABASE ERROR DETAILS: \(String(describing: error))")
+            throw error
+        }
     }
     
     // MARK: - Helper Methods

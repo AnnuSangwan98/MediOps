@@ -14,6 +14,11 @@ struct LabAdminsListView: View {
     @State private var showSuccessMessage = false
     @State private var successMessage = ""
     
+    // Add state for debug options
+    @State private var showDebugOptions = false
+    @State private var currentHospitalId = ""
+    @State private var showCreateTestAdminConfirmation = false
+    
     private let adminController = AdminController.shared
     
     init(labAdmins: Binding<[UILabAdmin]>) {
@@ -31,6 +36,17 @@ struct LabAdminsListView: View {
             VStack(spacing: 0) {
                 // Custom Navigation Bar
                 HStack {
+                    Button(action: {
+                        dismiss()
+                    }) {
+                        Image(systemName: "chevron.left")
+                            .foregroundColor(.teal)
+                            .font(.system(size: 16, weight: .semibold))
+                            .padding(10)
+                            .background(Circle().fill(Color.white))
+                            .shadow(color: .gray.opacity(0.2), radius: 3)
+                    }
+                    
                     Spacer()
                     
                     Text("Lab Admins")
@@ -38,16 +54,42 @@ struct LabAdminsListView: View {
                         .fontWeight(.bold)
                     
                     Spacer()
+                    
+                    // Refresh button
+                    Button(action: { 
+                        Task {
+                            await fetchLabAdmins()
+                        }
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(.teal)
+                            .padding(8)
+                            .background(Color.white.opacity(0.8))
+                            .clipShape(Circle())
+                            .shadow(color: .gray.opacity(0.2), radius: 2)
+                    }
                 }
                 .padding()
                 .background(Color.white.opacity(0.9))
+                
+                // Status bar
+                if !labAdmins.isEmpty {
+                    HStack {
+                        Text("\(labAdmins.count) lab admin\(labAdmins.count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
                 
                 // Lab Admins List
                 ScrollView {
                     VStack(spacing: 20) {
                         if isLoading {
                             ProgressView("Loading lab admins...")
-                                .padding()
+                                .padding(.top, 40)
                         } else if labAdmins.isEmpty {
                             VStack(spacing: 15) {
                                 Image(systemName: "flask.fill")
@@ -107,7 +149,33 @@ struct LabAdminsListView: View {
                 }
                 .padding(.bottom, 20)
             }
+            
+            // Loading overlay
+            if isLoading {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .overlay(
+                        VStack {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(1.5)
+                                .padding()
+                            
+                            Text(labAdminToDelete != nil ? "Deleting \(labAdminToDelete!.fullName)..." : "Loading...")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .padding(.top, 10)
+                        }
+                        .padding(25)
+                        .background(Color.gray.opacity(0.8))
+                        .cornerRadius(10)
+                        .shadow(radius: 10)
+                    )
+                    .allowsHitTesting(true) // Prevent interaction with underlying views
+            }
         }
+        .navigationBarHidden(true) // Hide the default navigation bar
+        .toolbar(.hidden, for: .navigationBar) // Alternative way to hide navigation bar in newer SwiftUI
         .sheet(isPresented: $showAddLabAdmin) {
             AddLabAdminView { activity in
                 // Refresh the list after adding a lab admin
@@ -134,20 +202,46 @@ struct LabAdminsListView: View {
         }
         // Delete confirmation alert
         .alert("Delete Lab Admin", isPresented: $showDeleteConfirmation) {
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) {
+                labAdminToDelete = nil
+            }
             Button("Delete", role: .destructive) {
                 if let labAdmin = labAdminToDelete {
                     confirmDeleteLabAdmin(labAdmin)
                 }
             }
         } message: {
-            Text("Are you sure you want to delete this lab admin? This action cannot be undone.")
+            if let labAdmin = labAdminToDelete {
+                Text("Are you sure you want to delete \(labAdmin.fullName)?\n\nID: \(labAdmin.originalId ?? "Unknown")\nEmail: \(labAdmin.email)\n\nThis action cannot be undone.")
+            } else {
+                Text("Are you sure you want to delete this lab admin? This action cannot be undone.")
+            }
         }
         // Success message alert
         .alert("Success", isPresented: $showSuccessMessage) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(successMessage)
+        }
+        // Debug options alert
+        .alert("Database Connection", isPresented: $showDebugOptions) {
+            Button("Create Test Admin", role: .none) {
+                showCreateTestAdminConfirmation = true
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(successMessage)
+        }
+        // Confirm test admin creation
+        .alert("Create Test Lab Admin?", isPresented: $showCreateTestAdminConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Create", role: .none) {
+                Task {
+                    await createTestLabAdmin(for: currentHospitalId)
+                }
+            }
+        } message: {
+            Text("This will create a test lab admin with random credentials for the current hospital.")
         }
         .task {
             await fetchLabAdmins()
@@ -168,9 +262,43 @@ struct LabAdminsListView: View {
             
             print("FETCH LAB ADMINS: Using hospital ID from UserDefaults: \(hospitalId)")
             
+            // Validate hospital ID format
+            if hospitalId.isEmpty {
+                print("FETCH LAB ADMINS ERROR: Hospital ID is empty")
+                errorMessage = "Invalid hospital ID format. Please login again."
+                showError = true
+                isLoading = false
+                return
+            }
+            
+            // Log additional debug info about the Supabase controller
+            do {
+                let diagnosticInfo = try await adminController.getDatabaseDiagnosticInfo()
+                if let supabaseURL = diagnosticInfo["supabaseURL"] as? String {
+                    print("FETCH LAB ADMINS: Supabase URL being used: \(supabaseURL)")
+                }
+            } catch {
+                print("FETCH LAB ADMINS: Could not get Supabase diagnostic info: \(error.localizedDescription)")
+            }
+            
+            // First try to verify the hospital exists to provide better error messages
+            do {
+                let hospital = try await adminController.getHospital(id: hospitalId)
+                print("FETCH LAB ADMINS: Verified hospital exists with name: \(hospital.name)")
+            } catch {
+                print("FETCH LAB ADMINS WARNING: Could not verify hospital: \(error.localizedDescription)")
+                // Continue anyway, as the getLabAdmins method will handle this
+            }
+            
             // Fetch lab admins for the specific hospital ID from Supabase
+            print("FETCH LAB ADMINS: Calling getLabAdmins with hospital ID: \(hospitalId)")
             let fetchedLabAdmins = try await adminController.getLabAdmins(hospitalAdminId: hospitalId)
             print("FETCH LAB ADMINS: Successfully retrieved \(fetchedLabAdmins.count) lab admins")
+            
+            if fetchedLabAdmins.isEmpty {
+                print("FETCH LAB ADMINS: No lab admins found for hospital ID: \(hospitalId)")
+                // This is not an error, just an empty state
+            }
             
             // Map to UI models
             await MainActor.run {
@@ -190,6 +318,12 @@ struct LabAdminsListView: View {
                     )
                 }
                 isLoading = false
+                
+                // Show success message if needed
+                if !labAdmins.isEmpty {
+                    successMessage = "Successfully retrieved \(labAdmins.count) lab admins"
+                    showSuccessMessage = true
+                }
             }
         } catch {
             await MainActor.run {
@@ -321,79 +455,226 @@ struct LabAdminsListView: View {
         }
     }
     
-    private func deleteLabAdmin(_ labAdmin: UILabAdmin) {
-        Task {
-            isLoading = true
-            do {
-                // Get the lab admin ID to use with the API (using originalId when available)
-                let labAdminId: String
-                if let originalId = labAdmin.originalId, !originalId.isEmpty {
-                    labAdminId = originalId
-                } else {
-                    labAdminId = String(describing: labAdmin.id)
-                }
-                
-                print("DELETE LAB ADMIN: Deleting lab admin with ID: \(labAdminId)")
-                try await adminController.deleteLabAdmin(id: labAdminId)
-                print("DELETE LAB ADMIN: Successfully deleted lab admin")
-                await fetchLabAdmins() // Refresh the list
-            } catch {
-                print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
-                if let adminError = error as? AdminError {
-                    errorMessage = "Failed to delete lab admin: \(adminError.errorDescription ?? "Unknown error")"
-                } else {
-                    errorMessage = "Failed to delete lab admin: \(error.localizedDescription)"
-                }
-                showError = true
-                isLoading = false
-            }
-        }
-    }
-    
+    // This method is now handled by confirmDeleteLabAdmin
     private func editLabAdmin(_ labAdmin: UILabAdmin) {
         labAdminToEdit = labAdmin
         showEditLabAdmin = true
     }
     
+    // Main method for handling lab admin deletion with confirmation and feedback
     private func confirmDeleteLabAdmin(_ labAdmin: UILabAdmin) {
-        isLoading = true
+        print("DELETE LAB ADMIN: Starting deletion process for lab admin with UUID: \(labAdmin.id)")
+        print("DELETE LAB ADMIN: Original ID (from Supabase): \(labAdmin.originalId ?? "nil")")
+        print("DELETE LAB ADMIN: Full Name: \(labAdmin.fullName)")
         
+        // First check if the lab admin ID is valid
+        guard let originalId = labAdmin.originalId, !originalId.isEmpty else {
+            errorMessage = "Cannot delete: Invalid lab admin ID (originalId is nil or empty)"
+            showError = true
+            return
+        }
+        
+        // Verify the lab admin in the database first
         Task {
+            isLoading = true
             do {
-                // Get the lab admin ID to use with the API
-                let labAdminId: String
-                if let originalId = labAdmin.originalId, !originalId.isEmpty {
-                    labAdminId = originalId
-                } else {
-                    labAdminId = String(describing: labAdmin.id)
+                // Check if lab admin exists in database before attempting deletion
+                let verifyResult = try await adminController.verifyLabAdminExists(id: originalId)
+                let exists = verifyResult["exists"] as? Bool ?? false
+                
+                if !exists {
+                    // Lab admin doesn't exist in the database, but still in the UI
+                    // This is a sync issue - remove from UI list
+                    await MainActor.run {
+                        withAnimation {
+                            if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
+                                labAdmins.remove(at: index)
+                                successMessage = "Lab admin was already deleted from the database. UI has been updated."
+                                showSuccessMessage = true
+                                clearLabAdminToDelete()
+                            } else {
+                                errorMessage = "Could not find lab admin in the list."
+                                showError = true
+                                clearLabAdminToDelete()
+                            }
+                        }
+                    }
+                    return
                 }
                 
-                print("DELETE LAB ADMIN: Deleting lab admin with ID: \(labAdminId)")
+                // Now that we confirmed the lab admin exists, attempt deletion
+                isLoading = true
+                labAdminToDelete = labAdmin
                 
-                // Call the AdminController to delete the lab admin
-                try await adminController.deleteLabAdmin(id: labAdminId)
+                print("DELETE LAB ADMIN: Calling adminController.deleteLabAdmin with ID: \(originalId)")
+                
+                // Call the AdminController to delete the lab admin from Supabase
+                try await adminController.deleteLabAdmin(id: originalId)
+                print("DELETE LAB ADMIN: Successfully deleted lab admin from database")
                 
                 await MainActor.run {
-                    // Remove from UI list
-                    withAnimation {
+                    // Remove from UI list with animation
+                    print("DELETE LAB ADMIN: Removing lab admin from UI list")
+                    withAnimation(.easeInOut(duration: 0.3)) {
                         if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
                             labAdmins.remove(at: index)
+                            print("DELETE LAB ADMIN: Removed lab admin at index \(index)")
+                        } else {
+                            print("DELETE LAB ADMIN WARNING: Could not find lab admin in UI list with UUID: \(labAdmin.id)")
                         }
                     }
                     
                     // Show success message
-                    successMessage = "Lab admin successfully removed"
+                    successMessage = "Lab admin \(labAdmin.fullName) successfully removed from the system"
                     showSuccessMessage = true
-                    isLoading = false
+                    clearLabAdminToDelete()
+                }
+            } catch let error as AdminError {
+                await MainActor.run {
+                    print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
+                    
+                    // Provide specific error messages based on error type
+                    switch error {
+                    case .labAdminNotFound:
+                        errorMessage = "The lab admin could not be found in the database. It may have been already deleted."
+                    case .invalidData(let message):
+                        errorMessage = "Invalid data: \(message)"
+                    case .customError(let message):
+                        errorMessage = message
+                    default:
+                        errorMessage = "Failed to delete lab admin: \(error.errorDescription ?? "Unknown error")"
+                    }
+                    
+                    showError = true
+                    clearLabAdminToDelete()
                 }
             } catch {
                 await MainActor.run {
                     print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
+                    print("DELETE LAB ADMIN ERROR DETAILS: \(String(describing: error))")
                     errorMessage = "Failed to delete lab admin: \(error.localizedDescription)"
                     showError = true
-                    isLoading = false
+                    clearLabAdminToDelete()
                 }
             }
+        }
+    }
+    
+    // Helper method to clear the labAdminToDelete and set isLoading to false
+    private func clearLabAdminToDelete() {
+        print("DELETE LAB ADMIN: Clearing labAdminToDelete reference and setting isLoading to false")
+        isLoading = false
+        // We keep the reference in labAdminToDelete for a short time to show in the loading overlay
+        // But clear it after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.labAdminToDelete = nil
+            print("DELETE LAB ADMIN: Cleared labAdminToDelete reference after delay")
+        }
+    }
+    
+    // Debug method to check database connection
+    private func checkDatabaseConnection() async {
+        do {
+            isLoading = true
+            
+            // Check hospital ID
+            guard let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") else {
+                errorMessage = "No hospital ID found in UserDefaults"
+                showError = true
+                isLoading = false
+                return
+            }
+            
+            currentHospitalId = hospitalId
+            
+            // Get diagnostic info from AdminController
+            let diagnosticInfo = try await adminController.getDatabaseDiagnosticInfo()
+            var diagMsg = "Connected to database. "
+            
+            if let totalLabAdmins = diagnosticInfo["totalLabAdmins"] as? Int {
+                diagMsg += "Found \(totalLabAdmins) total lab admins in the database. "
+            } else {
+                diagMsg += "Could not count lab admins. "
+            }
+            
+            // Try to check the hospital
+            do {
+                let hospital = try await adminController.getHospital(id: hospitalId)
+                diagMsg += "Hospital found: ID=\(hospital.id), Name=\(hospital.name). "
+                
+                // Try direct query for matching lab admins
+                let labAdminCheck = try await adminController.checkLabAdminsForHospital(hospitalId: hospitalId)
+                
+                if let count = labAdminCheck["count"] as? Int {
+                    diagMsg += "Direct query found \(count) lab admins for this hospital. "
+                }
+                
+                // Show debug options
+                await MainActor.run {
+                    successMessage = diagMsg
+                    showDebugOptions = true
+                }
+                
+            } catch {
+                diagMsg += "Hospital check failed: \(error.localizedDescription). "
+                
+                // Show simple alert for error case
+                await MainActor.run {
+                    successMessage = diagMsg
+                    showSuccessMessage = true
+                }
+            }
+            
+            isLoading = false
+        } catch {
+            errorMessage = "Connection check failed: \(error.localizedDescription)"
+            showError = true
+            isLoading = false
+        }
+    }
+    
+    // Helper method to create a test lab admin
+    private func createTestLabAdmin(for hospitalId: String) async {
+        isLoading = true
+        
+        do {
+            // Generate a test lab admin
+            let testEmail = "testlab\(Int.random(in: 100...999))@example.com"
+            let password = generateSecurePassword()
+            let name = "Test Lab Admin"
+            
+            print("Creating test lab admin for hospital ID: \(hospitalId)")
+            print("Email: \(testEmail)")
+            print("Password: \(password)")
+            
+            let (labAdmin, _) = try await adminController.createLabAdmin(
+                email: testEmail,
+                password: password,
+                name: name,
+                labName: "Pathology & Laboratory",
+                hospitalAdminId: hospitalId,
+                contactNumber: "1234567890",
+                department: "Pathology & Laboratory"
+            )
+            
+            await MainActor.run {
+                successMessage = "Successfully created test lab admin: \(labAdmin.id) - \(labAdmin.name)"
+                showSuccessMessage = true
+                
+                // Refresh the list
+                Task {
+                    await fetchLabAdmins()
+                }
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to create test lab admin: \(error.localizedDescription)"
+                showError = true
+            }
+        }
+        
+        await MainActor.run {
+            isLoading = false
         }
     }
 }
@@ -404,55 +685,114 @@ struct LabAdminCard: View {
     var onDelete: () -> Void
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            // Lab admin header with avatar
+            HStack(spacing: 12) {
+                // Avatar/Icon
+                ZStack {
+                    Circle()
+                        .fill(Color.teal.opacity(0.1))
+                        .frame(width: 50, height: 50)
+                    
+                    Image(systemName: "flask.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.teal)
+                }
+                
                 VStack(alignment: .leading, spacing: 4) {
                     Text(labAdmin.fullName)
                         .font(.headline)
+                        .foregroundColor(.black)
+                    
                     Text(labAdmin.qualification)
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
+                
                 Spacer()
                 
-                Menu {
+                // Action buttons with clear icons
+                HStack(spacing: 12) {
+                    // Edit button
                     Button(action: onEdit) {
-                        Label("Edit", systemImage: "pencil")
+                        Image(systemName: "pencil")
+                            .foregroundColor(.blue)
+                            .padding(8)
+                            .background(Color.blue.opacity(0.1))
+                            .clipShape(Circle())
                     }
+                    .accessibilityLabel("Edit \(labAdmin.fullName)")
                     
-                    Button(role: .destructive, action: onDelete) {
-                        Label("Delete", systemImage: "trash")
+                    // Delete button
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                            .padding(8)
+                            .background(Color.red.opacity(0.1))
+                            .clipShape(Circle())
                     }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .foregroundColor(.gray)
-                        .padding(8)
-                        .contentShape(Rectangle())
+                    .accessibilityLabel("Delete \(labAdmin.fullName)")
                 }
             }
             
-            HStack {
-                Image(systemName: "phone.fill")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                Text(labAdmin.phone)
-                    .font(.caption)
-                Spacer()
-                Image(systemName: "envelope.fill")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                Text(labAdmin.email)
-                    .font(.caption)
+            Divider()
+            
+            // Contact information
+            VStack(spacing: 8) {
+                HStack {
+                    Label {
+                        Text(labAdmin.email)
+                            .font(.footnote)
+                            .foregroundColor(.gray)
+                    } icon: {
+                        Image(systemName: "envelope.fill")
+                            .foregroundColor(.teal)
+                            .font(.system(size: 12))
+                    }
+                    Spacer()
+                }
+                
+                HStack {
+                    Label {
+                        Text(labAdmin.phone.isEmpty ? "No phone" : labAdmin.phone)
+                            .font(.footnote)
+                            .foregroundColor(.gray)
+                    } icon: {
+                        Image(systemName: "phone.fill")
+                            .foregroundColor(.teal)
+                            .font(.system(size: 12))
+                    }
+                    Spacer()
+                }
+                
+                if !labAdmin.address.isEmpty {
+                    HStack {
+                        Label {
+                            Text(labAdmin.address)
+                                .font(.footnote)
+                                .foregroundColor(.gray)
+                        } icon: {
+                            Image(systemName: "location.fill")
+                                .foregroundColor(.teal)
+                                .font(.system(size: 12))
+                        }
+                        Spacer()
+                    }
+                }
             }
             
-            Text("\(labAdmin.experience) years of experience")
-                .font(.caption)
-                .foregroundColor(.gray)
+            // ID display (for debugging purposes)
+            HStack {
+                Spacer()
+                Text("ID: \(labAdmin.originalId ?? "Unknown")")
+                    .font(.caption2)
+                    .foregroundColor(.gray.opacity(0.6))
+            }
         }
         .padding()
         .background(Color.white)
-        .cornerRadius(10)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .cornerRadius(12)
+        .shadow(color: .gray.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 }
 
