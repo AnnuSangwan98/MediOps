@@ -110,6 +110,7 @@ struct AppointmentCard: View {
                 VStack(alignment: .leading) {
                     Text(appointment.doctor.name)
                         .font(.headline)
+                    
                     Text(appointment.doctor.specialization)
                         .font(.subheadline)
                         .foregroundColor(.gray)
@@ -138,32 +139,49 @@ struct AppointmentCard: View {
                 Text(formatTimeRange(appointment.time))
             }
 
-            // Centered Cancel Button
-            Button(action: { showCancelAlert = true }) {
-                Text("Cancel Appointment")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.red)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(8)
+            if appointment.isPremium ?? false {
+                HStack {
+                    Image(systemName: "star.fill")
+                        .foregroundColor(.yellow)
+                        .font(.system(size: 16))
+                        .shadow(color: .orange.opacity(0.3), radius: 2, x: 0, y: 1)
+                    Text("Premium Appointment")
+                        .foregroundColor(.orange)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 8)
+                .background(Color.yellow.opacity(0.1))
+                .cornerRadius(8)
             }
-            .alert(isPresented: $showCancelAlert) {
-                Alert(
-                    title: Text("Cancel Appointment"),
-                    message: Text("Are you sure you want to cancel this appointment?"),
-                    primaryButton: .destructive(Text("Yes")) {
-                        AppointmentManager.shared.cancelAppointment(appointment.id)
-                    },
-                    secondaryButton: .cancel()
-                )
+
+            // Centered Cancel Button
+            if appointment.status == .upcoming {
+                Button(action: { showCancelAlert = true }) {
+                    Text("Cancel Appointment")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.red)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(8)
+                }
             }
         }
         .padding()
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
+        .alert("Cancel Appointment", isPresented: $showCancelAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Yes", role: .destructive) {
+                AppointmentManager.shared.cancelAppointment(appointment.id)
+            }
+        } message: {
+            Text("Are you sure you want to cancel this appointment?")
+        }
     }
 }
 

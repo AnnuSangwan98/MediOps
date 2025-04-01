@@ -73,54 +73,6 @@ struct ReviewAndPayView: View {
                     Text("Patient info")
                         .font(.headline)
                     
-                    Button(action: { showPatientSelector.toggle() }) {
-                        HStack {
-                            Circle()
-                                .fill(Color.gray.opacity(0.2))
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .foregroundColor(.gray)
-                                )
-                            
-                            Text(selectedPatient)
-                                .fontWeight(.medium)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.down")
-                                .foregroundColor(.gray)
-                        }
-                    }
-                    .actionSheet(isPresented: $showPatientSelector) {
-                        ActionSheet(
-                            title: Text("Select Patient"),
-                            buttons: [
-                                .default(Text("Myself")) { selectedPatient = "Myself" },
-                                .default(Text("Other")) { selectedPatient = "Other" },
-                                .cancel()
-                            ]
-                        )
-                    }
-                    
-                    if selectedPatient == "Other" {
-                        VStack(spacing: 15) {
-                            TextField("Patient Name", text: $otherPatientName)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                            
-                            TextField("Age", text: $otherPatientAge)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .keyboardType(.numberPad)
-                            
-                            Picker("Gender", selection: $otherPatientGender) {
-                                ForEach(genderOptions, id: \.self) { gender in
-                                    Text(gender).tag(gender)
-                                }
-                            }
-                            .pickerStyle(SegmentedPickerStyle())
-                        }
-                    }
-                    
                     Text("Note: You can describe your health concerns or any relevant details in the text field below.")
                         .font(.caption)
                         .foregroundColor(.gray)

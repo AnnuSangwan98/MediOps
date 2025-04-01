@@ -69,7 +69,8 @@ struct BookingSuccessView: View {
             doctor: doctor.toModelDoctor(),
             date: appointmentDate,
             time: appointmentTime,
-            status: .upcoming
+            status: .upcoming,
+            isPremium: isPremium
         )
         
         Task {
@@ -160,7 +161,8 @@ struct BookingSuccessView: View {
                         doctor: doctor.toModelDoctor(),
                         date: appointmentDate,
                         time: appointmentTime,
-                        status: .upcoming
+                        status: .upcoming,
+                        isPremium: isPremium
                     )
                     AppointmentManager.shared.addAppointment(appointment)
                 }
