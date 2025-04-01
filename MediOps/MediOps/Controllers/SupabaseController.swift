@@ -14,8 +14,3 @@ func insertSamplePatientReport() async throws {
     try await SupabaseController.shared.insertSamplePatientReport()
 }
 #endif 
-
-// Delegate to the shared instance
-func insert<T: Encodable>(into table: String, data: T) async throws {
-    try await SupabaseController.shared.insert(into: table, data: data)
-} 
