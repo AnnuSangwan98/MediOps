@@ -6,6 +6,7 @@ class AppointmentManager: ObservableObject {
     
     @Published var appointments: [Appointment] = []
     private var isRefreshing = false // Track if refresh is in progress
+    private var appointmentIds: Set<String> = []
     
     private init() {
         print("🏥 AppointmentManager initialized")
@@ -26,12 +27,12 @@ class AppointmentManager: ObservableObject {
     }
     
     func addAppointment(_ appointment: Appointment) {
-        // Check if appointment already exists to avoid duplicates
-        if !appointments.contains(where: { $0.id == appointment.id }) {
+        if !appointmentIds.contains(appointment.id) {
             appointments.append(appointment)
+            appointmentIds.insert(appointment.id)
             print("✅ Added appointment with ID: \(appointment.id), total count: \(appointments.count)")
         } else {
-            print("⚠️ Appointment already exists with ID: \(appointment.id)")
+            print("⚠️ Skipped duplicate appointment with ID: \(appointment.id)")
         }
     }
     
@@ -98,6 +99,7 @@ class AppointmentManager: ObservableObject {
         request.httpBody = jsonData
         
         let (_, response) = try await URLSession.shared.data(for: request)
+        
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
         }
@@ -148,18 +150,44 @@ class AppointmentManager: ObservableObject {
     
     @MainActor
     func setAppointments(_ newAppointments: [Appointment]) {
-        appointments = newAppointments
-        print("✅ Set \(appointments.count) appointments from database")
+        appointments.removeAll()
+        appointmentIds.removeAll()
+        
+        for appointment in newAppointments {
+            addAppointment(appointment)
+        }
+        print("✅ Set \(appointments.count) unique appointments from database")
     }
     
     func clearAppointments() {
         appointments = []
+        appointmentIds = []
         print("🗑 Cleared all appointments")
     }
     
     func refreshAppointments() {
         Task {
             await refreshAppointmentsAsync()
+        }
+    }
+    
+    @MainActor
+    func checkAndUpdatePastAppointments() {
+        let now = Date()
+        for (index, appointment) in appointments.enumerated() {
+            if appointment.status == .upcoming && appointment.date < now {
+                appointments[index].status = .completed
+                
+                // Update status in database
+                Task {
+                    do {
+                        try await updateAppointmentStatus(appointmentId: appointment.id, status: "completed")
+                        print("✅ Automatically marked past appointment as completed: \(appointment.id)")
+                    } catch {
+                        print("❌ Failed to update past appointment status: \(error.localizedDescription)")
+                    }
+                }
+            }
         }
     }
     
@@ -271,7 +299,9 @@ class AppointmentManager: ObservableObject {
             print("❌ Failed to refresh appointments: \(error.localizedDescription)")
         }
         
+        // After fetching appointments, check for past appointments
+        checkAndUpdatePastAppointments()
+        
         isRefreshing = false
     }
 }
-

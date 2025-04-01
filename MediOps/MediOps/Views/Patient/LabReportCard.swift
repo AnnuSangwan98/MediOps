@@ -1,7 +1,13 @@
 import SwiftUI
+import PDFKit
 
 struct LabReportCard: View {
     let report: LabReport
+    @State private var showPdfViewer = false
+    @State private var pdfData: Data?
+    @State private var isGeneratingPDF = false
+    @State private var showError = false
+    @State private var errorMessage = ""
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -28,23 +34,89 @@ struct LabReportCard: View {
                     .padding(.top, 4)
             }
             
-            Link(destination: URL(string: report.fileUrl)!) {
+            Button(action: {
+                handleViewReport()
+            }) {
                 HStack {
                     Image(systemName: "doc.text")
                         .foregroundColor(.blue)
                     Text("View Report")
                         .font(.caption)
                         .foregroundColor(.blue)
+                    if isGeneratingPDF {
+                        Spacer()
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
             .buttonStyle(PlainButtonStyle())
+            .disabled(isGeneratingPDF)
         }
         .padding()
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
+        .sheet(isPresented: $showPdfViewer) {
+            if let pdfData = pdfData {
+                PDFViewerSheet(pdfData: pdfData, report: report)
+            }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+    }
+    
+    private func handleViewReport() {
+        if report.fileUrl.starts(with: "generated_pdf") {
+            isGeneratingPDF = true
+            // Generate PDF
+            generatePDF()
+        } else {
+            // Load PDF from URL
+            loadPDFFromURL()
+        }
+    }
+    
+    private func generatePDF() {
+        let pdfData = LabReportPDFGenerator.generatePDF(for: report)
+        self.pdfData = pdfData
+        self.isGeneratingPDF = false
+        self.showPdfViewer = true
+    }
+    
+    private func loadPDFFromURL() {
+        guard let url = URL(string: report.fileUrl) else {
+            errorMessage = "Invalid URL"
+            showError = true
+            return
+        }
+        
+        isGeneratingPDF = true
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            DispatchQueue.main.async {
+                isGeneratingPDF = false
+                
+                if let error = error {
+                    errorMessage = error.localizedDescription
+                    showError = true
+                    return
+                }
+                
+                guard let data = data else {
+                    errorMessage = "No data received"
+                    showError = true
+                    return
+                }
+                
+                self.pdfData = data
+                self.showPdfViewer = true
+            }
+        }.resume()
     }
     
     private func formatDate(_ date: Date) -> String {
@@ -52,6 +124,129 @@ struct LabReportCard: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+struct PDFViewerSheet: View {
+    let pdfData: Data
+    let report: LabReport
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            PDFKitView(data: pdfData)
+                .navigationTitle("Lab Report")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Close") {
+                            dismiss()
+                        }
+                    }
+                    
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        ShareLink(
+                            item: pdfData,
+                            preview: SharePreview(
+                                "Lab Report - \(report.patientName)",
+                                image: Image(systemName: "doc.text")
+                            )
+                        )
+                    }
+                }
+        }
+    }
+}
+
+struct PDFKitView: UIViewRepresentable {
+    let data: Data
+    
+    func makeUIView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.autoScales = true
+        pdfView.displayMode = .singlePage
+        pdfView.displayDirection = .vertical
+        return pdfView
+    }
+    
+    func updateUIView(_ pdfView: PDFView, context: Context) {
+        if let document = PDFDocument(data: data) {
+            pdfView.document = document
+        }
+    }
+}
+
+enum LabReportPDFGenerator {
+    static func generatePDF(for report: LabReport) -> Data {
+        // Create a PDF renderer with A4 page size
+        let pageWidth: CGFloat = 595.2
+        let pageHeight: CGFloat = 841.8
+        let pageRect = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
+        
+        // Create PDF context
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        
+        // Generate PDF data
+        let pdfData = renderer.pdfData { context in
+            context.beginPage()
+            
+            let textAttributes = [
+                NSAttributedString.Key.font: UIFont.systemFont(ofSize: 12)
+            ]
+            let headerAttributes = [
+                NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 18)
+            ]
+            let subheaderAttributes = [
+                NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 14)
+            ]
+            
+            // Draw title
+            let title = "Lab Report"
+            let titleSize = title.size(withAttributes: headerAttributes)
+            let titleRect = CGRect(x: (pageWidth - titleSize.width) / 2, y: 50, width: titleSize.width, height: titleSize.height)
+            title.draw(in: titleRect, withAttributes: headerAttributes)
+            
+            // Draw line below title
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: 50, y: 80))
+            path.addLine(to: CGPoint(x: pageWidth - 50, y: 80))
+            UIColor.black.setStroke()
+            path.stroke()
+            
+            // Draw patient details
+            let patientTitle = "Patient Details"
+            patientTitle.draw(at: CGPoint(x: 50, y: 100), withAttributes: subheaderAttributes)
+            
+            let nameText = "Name: \(report.patientName)"
+            nameText.draw(at: CGPoint(x: 50, y: 130), withAttributes: textAttributes)
+            
+            let idText = "Patient ID: \(report.patientId)"
+            idText.draw(at: CGPoint(x: 50, y: 150), withAttributes: textAttributes)
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .long
+            let dateText = "Report Date: \(dateFormatter.string(from: report.uploadedAt))"
+            dateText.draw(at: CGPoint(x: 50, y: 170), withAttributes: textAttributes)
+            
+            if let summary = report.summary {
+                let summaryTitle = "Summary"
+                summaryTitle.draw(at: CGPoint(x: 50, y: 200), withAttributes: subheaderAttributes)
+                
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.alignment = .natural
+                paragraphStyle.lineBreakMode = .byWordWrapping
+                
+                let summaryAttributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 12),
+                    .paragraphStyle: paragraphStyle
+                ]
+                
+                let summaryRect = CGRect(x: 50, y: 230, width: pageWidth - 100, height: 200)
+                summary.draw(in: summaryRect, withAttributes: summaryAttributes)
+            }
+        }
+        
+        return pdfData
     }
 }
 
@@ -81,15 +276,3 @@ struct StatusBadge: View {
         }
     }
 }
-
-//#Preview {
-//    LabReportCard(report: LabReport(
-//        id: UUID().uuidString,
-//        patientName: "John Doe",
-//        patientId: "PAT001",
-//        summary: "Annual Health Checkup Report",
-//        fileUrl: "https://example.com/report",
-//        uploadedAt: Date()
-//    ))
-//    .padding()
-//}

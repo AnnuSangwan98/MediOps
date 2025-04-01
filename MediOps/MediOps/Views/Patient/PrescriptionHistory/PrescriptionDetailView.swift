@@ -27,50 +27,80 @@ struct PrescriptionDetailView: View {
             VStack(spacing: 20) {
                 if controller.isLoading {
                     ProgressView()
+                        .scaleEffect(1.5)
+                        .padding(.top, 40)
                 } else if let error = controller.error {
                     ErrorView(error: error)
                 } else if let prescription = controller.prescription {
                     // Hospital Card
                     if let hospital = controller.hospital {
                         HospitalHeaderView(hospital: hospital)
+                            .transition(.scale)
                     }
                     
                     // Doctor Information
                     if let doctor = controller.doctor {
                         DoctorInfoView(doctor: doctor)
+                            .transition(.slide)
                     }
                     
                     // Medications
                     MedicationsView(medications: prescription.medications)
+                        .transition(.opacity)
                     
                     // Lab Tests
                     if let labTests = prescription.labTests {
                         LabTestsView(tests: labTests)
+                            .transition(.slide)
                     }
                     
                     // Doctor's Advice
                     if let precautions = prescription.precautions {
                         DoctorAdviceView(precautions: precautions)
+                            .transition(.scale)
                     }
                     
                     // Signature Section
                     SignatureView()
+                        .padding(.top)
                 } else {
                     Text("No prescription found")
                         .foregroundColor(.gray)
+                        .font(.title2)
+                        .padding(.top, 40)
                 }
             }
             .padding()
         }
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.blue.opacity(0.05)]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            ZStack {
+                // Bottom layer gradient
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.teal.opacity(0.1),
+                        Color.blue.opacity(0.05),
+                        Color.purple.opacity(0.05)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Top pattern overlay
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.white.opacity(0.7),
+                                Color.white.opacity(0.3)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .opacity(0.5)
+            }
         )
-        .navigationTitle("Prescription")
+        .navigationTitle("Prescription Details")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -79,6 +109,7 @@ struct PrescriptionDetailView: View {
                 }) {
                     Image(systemName: "arrow.down.doc")
                         .foregroundColor(.teal)
+                        .font(.system(size: 16, weight: .semibold))
                 }
             }
         }
@@ -161,8 +192,8 @@ struct PrescriptionDetailView: View {
                                 withAttributes: [.font: headerFont])
             
             yPosition += 30
-            for (medicine, details) in prescription.medications {
-                let medicationText = "\(medicine): \(details)" as NSString
+            for medication in prescription.medications {
+                let medicationText = "\(medication.medicineName): \(medication.dosage) - \(medication.frequency) - \(medication.timing)" as NSString
                 medicationText.draw(at: CGPoint(x: 50, y: yPosition),
                                  withAttributes: [.font: regularFont])
                 yPosition += 20
@@ -176,8 +207,8 @@ struct PrescriptionDetailView: View {
                                  withAttributes: [.font: headerFont])
                 
                 yPosition += 30
-                for (test, description) in labTests {
-                    let testText = "\(test): \(description)" as NSString
+                for test in labTests {
+                    let testText = "\(test.testName): \(test.instructions)" as NSString
                     testText.draw(at: CGPoint(x: 50, y: yPosition),
                                 withAttributes: [.font: regularFont])
                     yPosition += 20
@@ -220,8 +251,7 @@ struct HospitalHeaderView: View {
     var body: some View {
         VStack(spacing: 12) {
             Text(hospital.hospitalName)
-                .font(.title)
-                .fontWeight(.bold)
+                .font(.system(size: 24, weight: .bold))
             
             Text(hospital.hospitalAddress)
                 .font(.subheadline)
@@ -245,14 +275,21 @@ struct HospitalHeaderView: View {
         .padding()
         .frame(maxWidth: .infinity)
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.white, Color.teal.opacity(0.1)]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            RoundedRectangle(cornerRadius: 15)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
         )
-        .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.2), radius: 5)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.teal.opacity(0.5), .blue.opacity(0.3)]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
     }
 }
 
@@ -273,79 +310,139 @@ struct DoctorInfoView: View {
         .padding()
         .frame(maxWidth: .infinity)
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.white, Color.blue.opacity(0.05)]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            RoundedRectangle(cornerRadius: 15)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
         )
-        .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.2), radius: 5)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.teal.opacity(0.5), .blue.opacity(0.3)]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
     }
 }
 
 struct MedicationsView: View {
-    let medications: [String: String]
+    let medications: [MedicationDetails]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Medications")
-                .font(.title3)
-                .foregroundColor(.teal)
+            // Header
+            HStack {
+                Image(systemName: "pills.circle.fill")
+                    .foregroundColor(.teal)
+                    .font(.title2)
+                Text("Medications")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.teal)
+            }
+            .padding(.bottom, 5)
             
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Text("Medicine")
-                    Spacer()
-                    Text("Dosage")
-                    Spacer()
-                    Text("Frequency")
-                    Spacer()
-                    Text("Timing")
-                }
-                .padding(.vertical, 10)
-                .padding(.horizontal)
-                .background(Color.teal)
-                .foregroundColor(.white)
-                
-                // Medications List
-                ForEach(medications.sorted(by: { $0.key < $1.key }), id: \.key) { name, details in
-                    VStack(spacing: 0) {
-                        HStack {
-                            Text(name)
-                                .fontWeight(.medium)
-                            Spacer()
-                            Text(details)
-                                .foregroundColor(.gray)
-                        }
-                        .padding()
-                        Text("Brand Name")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal)
-                            .padding(.bottom, 8)
-                        Divider()
-                    }
-                }
+            // Medications List
+            ForEach(medications, id: \.medicineName) { medication in
+                MedicationCard(medication: medication)
             }
         }
         .padding()
+        .frame(maxWidth: .infinity)
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.white, Color.teal.opacity(0.05)]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            RoundedRectangle(cornerRadius: 15)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
         )
-        .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.2), radius: 5)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.teal.opacity(0.5), .blue.opacity(0.3)]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+    }
+}
+
+struct MedicationCard: View {
+    let medication: MedicationDetails
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Medicine Name and Brand
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(medication.medicineName)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    if !medication.brandName.isEmpty {
+                        Text("Brand: \(medication.brandName)")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                }
+                Spacer()
+                Text(medication.dosage)
+                    .font(.system(.body, design: .rounded))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.teal.opacity(0.1))
+                    .foregroundColor(.teal)
+                    .cornerRadius(8)
+            }
+            
+            Divider()
+            
+            // Frequency and Timing
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.fill")
+                        .foregroundColor(.teal)
+                        .font(.subheadline)
+                    Text(medication.frequency)
+                        .font(.subheadline)
+                }
+                Spacer()
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .foregroundColor(.teal)
+                        .font(.subheadline)
+                    Text(medication.timing)
+                        .font(.subheadline)
+                }
+            }
+            .foregroundColor(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.teal.opacity(0.5), .blue.opacity(0.3)]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
     }
 }
 
 struct LabTestsView: View {
-    let tests: [String: String]
+    let tests: [LabTestDetails]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -356,32 +453,41 @@ struct LabTestsView: View {
             .font(.title3)
             .foregroundColor(.teal)
             
-            ForEach(tests.sorted(by: { $0.key < $1.key }), id: \.key) { name, description in
+            ForEach(tests, id: \.testName) { test in
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "chevron.right.circle.fill")
                         .foregroundColor(.teal)
                     VStack(alignment: .leading) {
-                        Text(name)
+                        Text(test.testName)
                             .fontWeight(.medium)
-                        Text(description)
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
+                        if !test.instructions.isEmpty {
+                            Text(test.instructions)
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
                     }
                 }
                 .padding(.vertical, 4)
             }
         }
         .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.white, Color.blue.opacity(0.05)]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            RoundedRectangle(cornerRadius: 15)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
         )
-        .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.2), radius: 5)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.teal.opacity(0.5), .blue.opacity(0.3)]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
     }
 }
 
@@ -406,16 +512,23 @@ struct DoctorAdviceView: View {
             }
         }
         .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.white, Color.teal.opacity(0.05)]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            RoundedRectangle(cornerRadius: 15)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
         )
-        .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.2), radius: 5)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.teal.opacity(0.5), .blue.opacity(0.3)]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
     }
 }
 
@@ -438,14 +551,21 @@ struct SignatureView: View {
         .padding()
         .frame(maxWidth: .infinity)
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.white, Color.blue.opacity(0.05)]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            RoundedRectangle(cornerRadius: 15)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
         )
-        .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.2), radius: 5)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.teal.opacity(0.5), .blue.opacity(0.3)]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
     }
 }
 
@@ -464,14 +584,21 @@ struct ErrorView: View {
         .padding()
         .frame(maxWidth: .infinity)
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.white, Color.orange.opacity(0.05)]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            RoundedRectangle(cornerRadius: 15)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
         )
-        .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.2), radius: 5)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.orange.opacity(0.5), .red.opacity(0.3)]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
     }
 }
 

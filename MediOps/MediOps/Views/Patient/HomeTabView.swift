@@ -262,25 +262,32 @@ struct HomeTabView: View {
 
                 if selectedHistoryType == 0 {
                     List {
-                        if appointmentManager.appointments.filter({ $0.status == .completed || $0.status == .cancelled }).isEmpty {
+                        let completedAppointments = appointmentManager.appointments.filter { $0.status == .completed }
+                        let cancelledAppointments = appointmentManager.appointments.filter { $0.status == .cancelled }
+                        
+                        if completedAppointments.isEmpty && cancelledAppointments.isEmpty {
                             Text("No appointment history")
                                 .foregroundColor(.gray)
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .padding()
                         } else {
-                            Section(header: Text("Completed Appointments")) {
-                                ForEach(appointmentManager.appointments.filter { $0.status == .completed }, id: \.id) { appointment in
-                                    NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
-                                        AppointmentHistoryCard(appointment: appointment)
-                                            .listRowBackground(Color.green.opacity(0.1))
+                            if !completedAppointments.isEmpty {
+                                Section(header: Text("Completed Appointments")) {
+                                    ForEach(completedAppointments, id: \.id) { appointment in
+                                        NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
+                                            AppointmentHistoryCard(appointment: appointment)
+                                                .listRowBackground(Color.green.opacity(0.1))
+                                        }
                                     }
                                 }
                             }
                             
-                            Section(header: Text("Cancelled Appointments")) {
-                                ForEach(appointmentManager.appointments.filter { $0.status == .cancelled }, id: \.id) { appointment in
-                                    AppointmentHistoryCard(appointment: appointment, isCancelled: true)
-                                        .listRowBackground(Color.red.opacity(0.1))
+                            if !cancelledAppointments.isEmpty {
+                                Section(header: Text("Cancelled Appointments")) {
+                                    ForEach(cancelledAppointments, id: \.id) { appointment in
+                                        AppointmentHistoryCard(appointment: appointment, isCancelled: true)
+                                            .listRowBackground(Color.red.opacity(0.1))
+                                    }
                                 }
                             }
                         }
@@ -704,6 +711,7 @@ struct HomeTabView: View {
 struct AppointmentHistoryCard: View {
     let appointment: Appointment
     var isCancelled: Bool = false
+    @State private var isLoading = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -717,13 +725,18 @@ struct AppointmentHistoryCard: View {
                 }
                 Spacer()
                 
-                Text(isCancelled ? "Cancelled" : "Completed")
-                    .font(.caption)
-                    .foregroundColor(isCancelled ? .red : .green)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(isCancelled ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
-                    .cornerRadius(8)
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Text(isCancelled ? "Cancelled" : "Completed")
+                        .font(.caption)
+                        .foregroundColor(isCancelled ? .red : .green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(isCancelled ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
+                        .cornerRadius(8)
+                }
             }
             
             HStack {
@@ -741,6 +754,12 @@ struct AppointmentHistoryCard: View {
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
+        .onAppear {
+            isLoading = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isLoading = false
+            }
+        }
     }
 }
 

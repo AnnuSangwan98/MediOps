@@ -18,7 +18,22 @@ class PrescriptionController: ObservableObject {
         print("🔍 DEBUG: Fetching prescription for appointmentId: \(appointmentId)")
         
         do {
-            // 1. First fetch prescription
+            // First get the appointment to get the correct patient_id format
+            let appointmentResults = try await supabase.select(
+                from: "appointments",
+                where: "id",
+                equals: appointmentId
+            )
+            
+            guard let appointmentData = appointmentResults.first,
+                  let patientId = appointmentData["patient_id"] as? String else {
+                print("❌ Could not find appointment or patient_id")
+                throw NSError(domain: "PrescriptionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Appointment not found"])
+            }
+            
+            print("✅ Found patient_id: \(patientId) for appointment: \(appointmentId)")
+            
+            // Now fetch prescription using appointment_id
             let prescriptionResults = try await supabase.select(
                 from: "prescriptions",
                 where: "appointment_id",
@@ -30,7 +45,7 @@ class PrescriptionController: ObservableObject {
                 let jsonData = try JSONSerialization.data(withJSONObject: prescriptionData)
                 self.prescription = try JSONDecoder().decode(Prescription.self, from: jsonData)
                 
-                // 2. Get doctor ID from prescription and fetch doctor details
+                // Get doctor details using the correct doctor_id format
                 if let doctorId = prescriptionData["doctor_id"] as? String {
                     print("🔍 Fetching doctor details for ID: \(doctorId)")
                     let doctorResults = try await supabase.select(
@@ -59,7 +74,7 @@ class PrescriptionController: ObservableObject {
                             consultationFee: doctorData["consultation_fee"] as? Double ?? 0.0
                         )
                         
-                        // 3. Use hospital ID from doctor to fetch hospital details
+                        // Get hospital details using the correct hospital_id format
                         if !hospitalId.isEmpty {
                             print("🔍 Fetching hospital details for ID: \(hospitalId)")
                             let hospitalResults = try await supabase.select(
@@ -96,6 +111,8 @@ class PrescriptionController: ObservableObject {
                         }
                     }
                 }
+            } else {
+                print("⚠️ No prescription found for appointment: \(appointmentId)")
             }
             
         } catch {

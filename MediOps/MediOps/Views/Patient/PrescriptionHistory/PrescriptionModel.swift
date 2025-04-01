@@ -1,13 +1,40 @@
 import Foundation
 
+// Define the medication and lab test structures
+struct MedicationDetails: Codable {
+    let dosage: String
+    let timing: String
+    let frequency: String
+    let brandName: String
+    let medicineName: String
+    
+    enum CodingKeys: String, CodingKey {
+        case dosage
+        case timing
+        case frequency
+        case brandName = "brand_name"
+        case medicineName = "medicine_name"
+    }
+}
+
+struct LabTestDetails: Codable {
+    let testName: String
+    let instructions: String
+    
+    enum CodingKeys: String, CodingKey {
+        case testName = "test_name"
+        case instructions
+    }
+}
+
 struct Prescription: Codable {
     let id: String
     let appointmentId: String 
     let doctorId: String
     let patientId: String
     let prescriptionDate: String
-    let medications: [String: String]
-    let labTests: [String: String]?
+    let medications: [MedicationDetails]
+    let labTests: [LabTestDetails]?
     let precautions: String?
     let previousPrescriptionURL: String?
     let labReportsURL: String?
@@ -30,13 +57,24 @@ struct Prescription: Codable {
     }
 }
 
+// Extension to convert to display models
 extension Prescription {
     var medicationsArray: [MedicationItem] {
-        medications.map { MedicationItem(name: $0.key, details: $0.value) }
+        medications.map { medication in
+            MedicationItem(
+                name: medication.medicineName,
+                details: "\(medication.dosage) - \(medication.frequency) (\(medication.timing))"
+            )
+        }
     }
     
     var labTestsArray: [LabTestItem] {
-        (labTests ?? [:]).map { LabTestItem(name: $0.key, description: $0.value) }
+        (labTests ?? []).map { test in
+            LabTestItem(
+                name: test.testName,
+                description: test.instructions
+            )
+        }
     }
 }
 
