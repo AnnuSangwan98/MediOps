@@ -1348,14 +1348,6 @@ struct PatientReportsView: View {
                 
                 Spacer()
                 
-                // Status badge
-                Text("Active")
-                    .font(.caption)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.green))
-                
                 // Three dots menu
                 Menu {
                     Button(action: {
@@ -1384,9 +1376,9 @@ struct PatientReportsView: View {
             Divider()
                 .padding(.horizontal)
             
-            // Report details section
+            // Report details section - only date and time
             VStack(alignment: .leading, spacing: 12) {
-                // First row: Hospital ID and License (mimicking the hospital card layout)
+                // Date and time row
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Date")
@@ -1408,29 +1400,11 @@ struct PatientReportsView: View {
                             .foregroundColor(.blue)
                     }
                 }
-                
-                // Second row: Address (summary in this case)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Summary")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    
-                    if let summary = report.summary, !summary.isEmpty {
-                        Text(summary)
-                            .font(.subheadline)
-                            .lineLimit(2)
-                    } else {
-                        Text("No summary available")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .italic()
-                    }
-                }
             }
             .padding(.horizontal, 15)
             .padding(.vertical, 12)
             
-            // Phone/Report action button - mimics the phone number button in hospital card
+            // View Report button
             Button(action: {
                 selectedReport = report
                 showReportDetail = true
