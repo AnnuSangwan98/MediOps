@@ -697,7 +697,7 @@ class AdminController {
         print("- Department: \(labAdminData["department"] ?? "") (required: 'Pathology & Laboratory')")
         
         do {
-            try await supabase.insert(into: "lab_admins", data: labAdminData)
+        try await supabase.insert(into: "lab_admins", data: labAdminData)
             print("CREATE LAB ADMIN: Successfully inserted data into lab_admins table")
         } catch {
             print("CREATE LAB ADMIN ERROR: Failed to insert lab admin: \(error.localizedDescription)")
@@ -798,7 +798,7 @@ class AdminController {
                 verifiedHospitalId = hospitalAdminId // Use the original ID if hospital exists
             } catch {
                 print("GET LAB ADMINS WARNING: Could not verify hospital either: \(error.localizedDescription)")
-                // Continue with the provided ID, but log the warning
+            // Continue with the provided ID, but log the warning
             }
         }
         
@@ -806,17 +806,17 @@ class AdminController {
         
         // Fetch lab admins with the verified ID
         do {
-            let labAdmins = try await supabase.select(
-                from: "lab_admins",
-                where: "hospital_id",
-                equals: verifiedHospitalId
-            )
-            
-            print("GET LAB ADMINS: Found \(labAdmins.count) lab admins for hospital ID: \(verifiedHospitalId)")
-            
-            // If no lab admins are found, it's not necessarily an error, could just be an empty list
-            if labAdmins.isEmpty {
-                print("GET LAB ADMINS: No lab admins found for hospital ID: \(verifiedHospitalId)")
+        let labAdmins = try await supabase.select(
+            from: "lab_admins",
+            where: "hospital_id",
+            equals: verifiedHospitalId
+        )
+        
+        print("GET LAB ADMINS: Found \(labAdmins.count) lab admins for hospital ID: \(verifiedHospitalId)")
+        
+        // If no lab admins are found, it's not necessarily an error, could just be an empty list
+        if labAdmins.isEmpty {
+            print("GET LAB ADMINS: No lab admins found for hospital ID: \(verifiedHospitalId)")
                 
                 // Check if the lab_admins table exists and has any records at all
                 let allLabAdmins = try await supabase.select(from: "lab_admins", columns: "count(*)")
@@ -824,24 +824,24 @@ class AdminController {
                     print("GET LAB ADMINS INFO: Total lab admins in database: \(count)")
                 }
                 
-                return []
-            }
-            
-            // Parse each lab admin record
-            var parsedLabAdmins: [LabAdmin] = []
+            return []
+        }
+        
+        // Parse each lab admin record
+        var parsedLabAdmins: [LabAdmin] = []
             for (index, labAdminData) in labAdmins.enumerated() {
-                do {
+            do {
                     print("GET LAB ADMINS: Processing lab admin \(index + 1) of \(labAdmins.count)")
-                    let labAdmin = try parseLabAdminData(labAdminData)
+                let labAdmin = try parseLabAdminData(labAdminData)
                     print("GET LAB ADMINS: Successfully parsed lab admin: ID=\(labAdmin.id), Name=\(labAdmin.name)")
-                    parsedLabAdmins.append(labAdmin)
-                } catch {
+                parsedLabAdmins.append(labAdmin)
+            } catch {
                     print("GET LAB ADMINS WARNING: Failed to parse lab admin \(index + 1): \(error.localizedDescription)")
-                    // Continue with other records
-                }
+                // Continue with other records
             }
-            
-            return parsedLabAdmins
+        }
+        
+        return parsedLabAdmins
         } catch {
             print("GET LAB ADMINS ERROR: Failed to fetch lab admins: \(error.localizedDescription)")
             throw error

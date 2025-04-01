@@ -601,6 +601,8 @@ struct AddReportView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var isValidatingPatient = false
+    @State private var patientValidated = false
     
     private let supabase = SupabaseController.shared
     
@@ -611,7 +613,35 @@ struct AddReportView: View {
             Form {
                 Section(header: Text("Patient Information")) {
                     TextField("Patient Name", text: $patientName)
-                    TextField("Patient ID", text: $patientId)
+                    
+                    HStack {
+                        TextField("Patient ID", text: Binding(
+                            get: { patientId },
+                            set: { patientId = $0.uppercased() }
+                        ))
+                        .autocapitalization(.allCharacters)
+                        
+                        if isValidatingPatient {
+                            ProgressView()
+                                .padding(.leading, 4)
+                        } else if !patientId.isEmpty {
+                            Button("Verify") {
+                                verifyPatient()
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.blue)
+                            .disabled(patientId.isEmpty || isValidatingPatient)
+                        }
+                    }
+                    
+                    if patientValidated {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Patient verified")
+                                .foregroundColor(.green)
+                        }
+                    }
                 }
                 
                 Section(header: Text("Report Details")) {
@@ -629,7 +659,7 @@ struct AddReportView: View {
                             }
                         }
                     }
-                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty)
+                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty || !patientValidated)
                 }
             }
             .navigationTitle("Add New Report")
@@ -645,11 +675,78 @@ struct AddReportView: View {
             } message: {
                 Text(errorMessage)
             }
+            .onChange(of: patientId) { _, _ in
+                // Reset validation when patient ID changes
+                patientValidated = false
+            }
+            .onChange(of: patientName) { _, _ in
+                // Reset validation when patient name changes
+                patientValidated = false
+            }
+        }
+    }
+    
+    private func verifyPatient() {
+        if patientId.isEmpty {
+            errorMessage = "Please enter a patient ID to verify"
+            showError = true
+            return
+        }
+        
+        isValidatingPatient = true
+        
+        Task {
+            do {
+                // Query the patients table to verify the patient exists
+                let patients = try await supabase.select(
+                    from: "patients",
+                    where: "patient_id",
+                    equals: patientId
+                )
+                
+                await MainActor.run {
+                    isValidatingPatient = false
+                    
+                    if patients.isEmpty {
+                        errorMessage = "No patient found with ID: \(patientId)"
+                        showError = true
+                    } else if let patient = patients.first, let patientNameFromDB = patient["name"] as? String {
+                        if patientName.isEmpty {
+                            // If patient name field is empty, auto-fill it
+                            patientName = patientNameFromDB
+                            patientValidated = true
+                        } else if patientName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != patientNameFromDB.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                            // If patient name doesn't match the one in database
+                            errorMessage = "Patient name doesn't match the name in our records for patient ID: \(patientId). The correct name is '\(patientNameFromDB)'."
+                            showError = true
+                        } else {
+                            // Patient verified successfully
+                            patientValidated = true
+                        }
+                    }
+                }
+            } catch {
+                print("ERROR verifying patient: \(error.localizedDescription)")
+                
+                await MainActor.run {
+                    isValidatingPatient = false
+                    errorMessage = "Failed to verify patient: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
         }
     }
     
     private func addReport() {
         isLoading = true
+        
+        // Verify patient one more time before creating report
+        if !patientValidated {
+            errorMessage = "Please verify the patient information first"
+            showError = true
+            isLoading = false
+            return
+        }
         
         // Generate a placeholder for the file_url, which will be used to identify this is a generated PDF
         let placeholderUrl = "generated_pdf_\(UUID().uuidString)"
@@ -709,6 +806,8 @@ struct EditReportView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var isValidatingPatient = false
+    @State private var patientValidated = true // Initially true because we're editing an existing report
     
     private let supabase = SupabaseController.shared
     private let report: PatientReport
@@ -728,7 +827,35 @@ struct EditReportView: View {
             Form {
                 Section(header: Text("Patient Information")) {
                     TextField("Patient Name", text: $patientName)
-                    TextField("Patient ID", text: $patientId)
+                    
+                    HStack {
+                        TextField("Patient ID", text: Binding(
+                            get: { patientId },
+                            set: { patientId = $0.uppercased() }
+                        ))
+                        .autocapitalization(.allCharacters)
+                        
+                        if isValidatingPatient {
+                            ProgressView()
+                                .padding(.leading, 4)
+                        } else if !patientId.isEmpty {
+                            Button("Verify") {
+                                verifyPatient()
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.blue)
+                            .disabled(patientId.isEmpty || isValidatingPatient)
+                        }
+                    }
+                    
+                    if patientValidated {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Patient verified")
+                                .foregroundColor(.green)
+                        }
+                    }
                 }
                 
                 Section(header: Text("Report Details")) {
@@ -746,7 +873,7 @@ struct EditReportView: View {
                             }
                         }
                     }
-                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty)
+                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty || !patientValidated)
                 }
             }
             .navigationTitle("Edit Report")
@@ -762,11 +889,78 @@ struct EditReportView: View {
             } message: {
                 Text(errorMessage)
             }
+            .onChange(of: patientId) { _, _ in
+                // Reset validation when patient ID changes
+                patientValidated = false
+            }
+            .onChange(of: patientName) { _, _ in
+                // Reset validation when patient name changes
+                patientValidated = false
+            }
+        }
+    }
+    
+    private func verifyPatient() {
+        if patientId.isEmpty {
+            errorMessage = "Please enter a patient ID to verify"
+            showError = true
+            return
+        }
+        
+        isValidatingPatient = true
+        
+        Task {
+            do {
+                // Query the patients table to verify the patient exists
+                let patients = try await supabase.select(
+                    from: "patients",
+                    where: "patient_id",
+                    equals: patientId
+                )
+                
+                await MainActor.run {
+                    isValidatingPatient = false
+                    
+                    if patients.isEmpty {
+                        errorMessage = "No patient found with ID: \(patientId)"
+                        showError = true
+                    } else if let patient = patients.first, let patientNameFromDB = patient["name"] as? String {
+                        if patientName.isEmpty {
+                            // If patient name field is empty, auto-fill it
+                            patientName = patientNameFromDB
+                            patientValidated = true
+                        } else if patientName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != patientNameFromDB.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                            // If patient name doesn't match the one in database
+                            errorMessage = "Patient name doesn't match the name in our records for patient ID: \(patientId). The correct name is '\(patientNameFromDB)'."
+                            showError = true
+                        } else {
+                            // Patient verified successfully
+                            patientValidated = true
+                        }
+                    }
+                }
+            } catch {
+                print("ERROR verifying patient: \(error.localizedDescription)")
+                
+                await MainActor.run {
+                    isValidatingPatient = false
+                    errorMessage = "Failed to verify patient: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
         }
     }
     
     private func updateReport() {
         isLoading = true
+        
+        // Verify patient one more time before updating report
+        if !patientValidated {
+            errorMessage = "Please verify the patient information first"
+            showError = true
+            isLoading = false
+            return
+        }
         
         // Create an updated report object with only the fields we want to update
         var updatedReport: [String: Any] = [
@@ -912,90 +1106,94 @@ struct PatientReportsView: View {
     @State private var reportToEdit: PatientReport?
     @State private var showDeleteConfirmation = false
     @State private var reportToDelete: PatientReport?
+    @State private var selectedFilter: String = "All Patients"
     
     private let supabase = SupabaseController.shared
     
+    // Available filters
+    private let filters = ["All Patients", "Recent", "Pending"]
+    
     var filteredReports: [PatientReport] {
-        if searchQuery.isEmpty {
-            return reports
-        } else {
-            return reports.filter { report in
+        var filtered = reports
+        
+        // Filter by search query
+        if !searchQuery.isEmpty {
+            filtered = filtered.filter { report in
                 report.patientName.lowercased().contains(searchQuery.lowercased()) ||
                 report.patientId.lowercased().contains(searchQuery.lowercased()) ||
                 (report.summary?.lowercased().contains(searchQuery.lowercased()) ?? false)
             }
         }
+        
+        // Apply category filter
+        switch selectedFilter {
+        case "Recent":
+            // Filter reports from the last 7 days
+            let oneWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+            filtered = filtered.filter { $0.uploadedAt > oneWeekAgo }
+        case "Pending":
+            // Example filter - in a real app this would filter by a status field
+            // For now, we'll just show the most recent 3 as "pending"
+            if filtered.count > 3 {
+                filtered = Array(filtered.prefix(3))
+            }
+        default:
+            // "All Patients" - no additional filtering
+            break
+        }
+        
+        return filtered
     }
     
     var body: some View {
         ZStack {
-            // Background with a gradient
-            LinearGradient(gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.white]),
-                         startPoint: .topLeading,
-                         endPoint: .bottomTrailing)
+            // Background with a light color
+            Color(.systemGray6)
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Enhanced header
-                VStack(spacing: 5) {
-                    // Title
-                    HStack {
-                        Text("Lab Reports")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        // Report count badge
-                        Text("\(reports.count) Reports")
-                            .font(.subheadline)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(Color.blue))
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 10)
+                // Search bar (moved to top, replacing header)
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.gray)
                     
-                    // Search bar
-                    HStack {
-                        HStack {
-                            Image(systemName: "magnifyingglass")
+                    TextField("Search reports...", text: $searchQuery)
+                        .padding(.vertical, 10)
+                    
+                    if !searchQuery.isEmpty {
+                        Button(action: {
+                            searchQuery = ""
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.gray)
-                                .padding(.leading, 8)
-                            
-                            TextField("Search by patient name or ID", text: $searchQuery)
-                                .padding(.vertical, 10)
-                            
-                            if !searchQuery.isEmpty {
-                                Button(action: {
-                                    searchQuery = ""
-                                }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.gray)
-                                }
-                                .padding(.trailing, 8)
-                            }
                         }
-                        .background(Color.white)
-                        .cornerRadius(10)
-                        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom, 10)
                 }
+                .padding(.horizontal)
                 .background(Color.white)
-                .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                .cornerRadius(10)
+                .padding(.horizontal)
+                .padding(.top, 20)
+                .padding(.bottom, 15)
                 
-                // Reports List with improved UI
+                // Reports count (directly after search bar, filter buttons removed)
+                HStack {
+                    Text("\(filteredReports.count) Reports Found")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 10)
+                
+                // Reports List
                 reportsListView
                     .refreshable {
                         await fetchPatientReports()
                     }
             }
             
-            // Floating Add Button with animation
+            // Floating Add Button
             VStack {
                 Spacer()
                 HStack {
@@ -1006,18 +1204,12 @@ struct PatientReportsView: View {
                         Image(systemName: "plus")
                             .font(.system(size: 22, weight: .bold))
                             .foregroundColor(.white)
-                            .frame(width: 60, height: 60)
-                            .background(Circle().fill(
-                                LinearGradient(gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
-                                               startPoint: .topLeading,
-                                               endPoint: .bottomTrailing)
-                            ))
-                            .shadow(color: Color.blue.opacity(0.4), radius: 8, x: 0, y: 4)
+                            .frame(width: 56, height: 56)
+                            .background(Circle().fill(Color.blue))
+                            .shadow(color: Color.blue.opacity(0.4), radius: 4, x: 0, y: 2)
                     }
                     .padding(.trailing, 20)
-                    .padding(.bottom, 30)
-                    .scaleEffect(1.0)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isLoading)
+                    .padding(.bottom, 20)
                 }
             }
         }
@@ -1066,260 +1258,197 @@ struct PatientReportsView: View {
         }
     }
     
-    // MARK: - Improved Reports List View
+    // MARK: - Reports List View
     var reportsListView: some View {
         ScrollView {
             VStack(spacing: 15) {
                 if isLoading {
-                    // Enhanced loading view
-                    VStack(spacing: 15) {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                            .padding()
-                        
-                        Text("Loading reports...")
-                            .font(.headline)
-                            .foregroundColor(.gray)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 100)
-                } else if reports.isEmpty {
-                    // Enhanced empty state
+                    // Loading view
+                    ProgressView("Loading reports...")
+                        .padding(.top, 50)
+                } else if filteredReports.isEmpty {
+                    // Empty state
                     VStack(spacing: 20) {
                         Image(systemName: "doc.text")
                             .font(.system(size: 60))
-                            .foregroundColor(.blue.opacity(0.7))
+                            .foregroundColor(.gray.opacity(0.7))
                         
-                        Text("No Reports Found")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Text("Create your first patient report by tapping the + button")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                        
-                        Button(action: {
-                            showAddReport = true
-                        }) {
-                            Text("Add First Report")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding(.vertical, 12)
-                                .padding(.horizontal, 30)
-                                .background(Capsule().fill(Color.blue))
-                                .shadow(color: Color.blue.opacity(0.3), radius: 5, x: 0, y: 3)
-                        }
-                        .padding(.top, 10)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 60)
-                } else if filteredReports.isEmpty {
-                    // Enhanced no search results
-                    VStack(spacing: 15) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 50))
-                            .foregroundColor(.orange.opacity(0.8))
-                        
-                        Text("No Matching Reports")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Text("Try adjusting your search criteria")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .padding(.bottom, 10)
-                        
-                        Button(action: {
-                            searchQuery = ""
-                        }) {
-                            HStack {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Clear Search")
-                            }
-                            .font(.headline)
-                            .foregroundColor(.blue)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 60)
-                } else {
-                    // Section header with report count
-                    HStack {
                         if !searchQuery.isEmpty {
-                            Text("Found \(filteredReports.count) results")
-                                .font(.subheadline)
+                            Text("No matching reports found")
+                                .font(.title3)
                                 .fontWeight(.medium)
-                                .foregroundColor(.gray)
-                        }
-                        Spacer()
-                        
-                        // Sort button (placeholder for now)
-                        Button(action: {
-                            // Sort functionality could be implemented here
-                        }) {
-                            HStack(spacing: 4) {
-                                Text("Recent")
-                                    .font(.subheadline)
-                                Image(systemName: "arrow.up.arrow.down")
-                                    .font(.caption)
+                            
+                            Button(action: {
+                                searchQuery = ""
+                            }) {
+                                Text("Clear Search")
+                                    .foregroundColor(.blue)
                             }
-                            .foregroundColor(.blue)
+                        } else {
+                            Text("No reports found")
+                                .font(.title3)
+                                .fontWeight(.medium)
+                            
+                            Button(action: {
+                                showAddReport = true
+                            }) {
+                                Text("Add First Report")
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(Color.blue)
+                                    .cornerRadius(8)
+                            }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                    
-                    // Improved report cards
+                    .padding(.top, 60)
+                } else {
+                    // Hospital-card style reports
                     ForEach(filteredReports) { report in
-                        improvedReportCard(report: report)
+                        hospitalStyleReportCard(report: report)
                     }
                     .padding(.horizontal)
-                    .padding(.bottom, 20)
                 }
             }
-            .padding(.vertical)
+            .padding(.bottom, 80) // Extra padding for the FAB
         }
     }
     
-    // MARK: - Improved Report Card
-    private func improvedReportCard(report: PatientReport) -> some View {
+    // MARK: - Hospital Style Report Card
+    private func hospitalStyleReportCard(report: PatientReport) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Patient info section
-            HStack {
+            // Report header with hospital-like layout
+            HStack(alignment: .top, spacing: 15) {
+                // Hospital icon placeholder
+                Image(systemName: "doc.text.viewfinder")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 35, height: 35)
+                    .foregroundColor(.gray)
+                    .padding(10)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+                
+                // Main report details - matches hospital card format
                 VStack(alignment: .leading, spacing: 4) {
                     Text(report.patientName)
                         .font(.headline)
                         .fontWeight(.bold)
                     
-                    Text("ID: \(report.patientId)")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
+                    HStack {
+                        Text("Patient ID")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        
+                        Text(report.patientId)
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                    }
                 }
                 
                 Spacer()
                 
-                // Date badge
-                VStack(alignment: .trailing, spacing: 2) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar")
-                            .font(.caption2)
-                        Text(formatDate(report.uploadedAt, dateOnly: true))
-                            .font(.caption)
+                // Status badge
+                Text("Active")
+                    .font(.caption)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.green))
+                
+                // Three dots menu
+                Menu {
+                    Button(action: {
+                        reportToEdit = report
+                        showEditReport = true
+                    }) {
+                        Label("Edit", systemImage: "pencil")
                     }
-                    .foregroundColor(.gray)
                     
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.caption2)
-                        Text(formatDate(report.uploadedAt, timeOnly: true))
-                            .font(.caption)
+                    Button(role: .destructive, action: {
+                        reportToDelete = report
+                        showDeleteConfirmation = true
+                    }) {
+                        Label("Delete", systemImage: "trash")
                     }
-                    .foregroundColor(.gray)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .padding(10)
+                        .foregroundColor(.gray)
                 }
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 15)
             
             // Divider
-            Rectangle()
-                .fill(Color.gray.opacity(0.1))
-                .frame(height: 1)
-                .padding(.horizontal, 15)
+            Divider()
+                .padding(.horizontal)
             
-            // Summary section
-            VStack(alignment: .leading, spacing: 10) {
-                if let summary = report.summary, !summary.isEmpty {
-                    Text(summary)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .padding(.vertical, 8)
-                } else {
-                    Text("No summary available")
-                        .font(.subheadline)
-                        .foregroundColor(.gray.opacity(0.7))
-                        .italic()
-                        .padding(.vertical, 8)
+            // Report details section
+            VStack(alignment: .leading, spacing: 12) {
+                // First row: Hospital ID and License (mimicking the hospital card layout)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Date")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text(formatDate(report.uploadedAt, dateOnly: true))
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                    }
+                    
+                    Spacer()
+                    
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Time")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text(formatDate(report.uploadedAt, timeOnly: true))
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                    }
+                }
+                
+                // Second row: Address (summary in this case)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Summary")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    
+                    if let summary = report.summary, !summary.isEmpty {
+                        Text(summary)
+                            .font(.subheadline)
+                            .lineLimit(2)
+                    } else {
+                        Text("No summary available")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                            .italic()
+                    }
                 }
             }
             .padding(.horizontal, 15)
+            .padding(.vertical, 12)
             
-            // Action buttons with divider
-            Rectangle()
-                .fill(Color.gray.opacity(0.1))
-                .frame(height: 1)
+            // Phone/Report action button - mimics the phone number button in hospital card
+            Button(action: {
+                selectedReport = report
+                showReportDetail = true
+            }) {
+                HStack {
+                    Image(systemName: "doc.text")
+                        .foregroundColor(.blue)
+                    Text("View Report")
+                        .foregroundColor(.blue)
+                }
+                .padding(.vertical, 12)
                 .padding(.horizontal, 15)
-            
-            HStack(spacing: 0) {
-                // View Button
-                Button(action: {
-                    selectedReport = report
-                    showReportDetail = true
-                }) {
-                    HStack {
-                        Image(systemName: "doc.text.fill")
-                            .foregroundColor(.blue)
-                        Text("View")
-                            .font(.subheadline)
-                            .foregroundColor(.blue)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(PlainButtonStyle())
-                
-                // Vertical divider
-                Rectangle()
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 1, height: 30)
-                
-                // Edit Button
-                Button(action: {
-                    reportToEdit = report
-                    showEditReport = true
-                }) {
-                    HStack {
-                        Image(systemName: "pencil")
-                            .foregroundColor(.green)
-                        Text("Edit")
-                            .font(.subheadline)
-                            .foregroundColor(.green)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(PlainButtonStyle())
-                
-                // Vertical divider
-                Rectangle()
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 1, height: 30)
-                
-                // Delete Button
-                Button(action: {
-                    reportToDelete = report
-                    showDeleteConfirmation = true
-                }) {
-                    HStack {
-                        Image(systemName: "trash")
-                            .foregroundColor(.red)
-                        Text("Delete")
-                            .font(.subheadline)
-                            .foregroundColor(.red)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(PlainButtonStyle())
             }
+            .buttonStyle(PlainButtonStyle())
         }
         .background(Color.white)
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.07), radius: 8, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
     
     // Date formatting functions

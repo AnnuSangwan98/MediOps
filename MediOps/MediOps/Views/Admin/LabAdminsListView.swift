@@ -214,7 +214,7 @@ struct LabAdminsListView: View {
             if let labAdmin = labAdminToDelete {
                 Text("Are you sure you want to delete \(labAdmin.fullName)?\n\nID: \(labAdmin.originalId ?? "Unknown")\nEmail: \(labAdmin.email)\n\nThis action cannot be undone.")
             } else {
-                Text("Are you sure you want to delete this lab admin? This action cannot be undone.")
+            Text("Are you sure you want to delete this lab admin? This action cannot be undone.")
             }
         }
         // Success message alert
@@ -492,7 +492,7 @@ struct LabAdminsListView: View {
                                 successMessage = "Lab admin was already deleted from the database. UI has been updated."
                                 showSuccessMessage = true
                                 clearLabAdminToDelete()
-                            } else {
+                } else {
                                 errorMessage = "Could not find lab admin in the list."
                                 showError = true
                                 clearLabAdminToDelete()
@@ -770,7 +770,7 @@ struct LabAdminCard: View {
                         Label {
                             Text(labAdmin.address)
                                 .font(.footnote)
-                                .foregroundColor(.gray)
+                        .foregroundColor(.gray)
                         } icon: {
                             Image(systemName: "location.fill")
                                 .foregroundColor(.teal)

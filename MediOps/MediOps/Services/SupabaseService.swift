@@ -1005,12 +1005,22 @@ extension SupabaseController {
             CREATE TABLE IF NOT EXISTS public.pat_reports (
               id uuid not null default gen_random_uuid(),
               patient_name text not null,
-              patient_id text not null,
+              patient_id character varying(10) not null,
               summary text null,
               file_url text not null,
               uploaded_at timestamp with time zone not null default timezone('utc'::text, now()),
-              constraint pat_reports_pkey primary key (id)
+              lab_id character varying(255) null,
+              constraint pat_reports_pkey primary key (id),
+              constraint fk_lab_id foreign KEY (lab_id) references lab_admins (id) on delete CASCADE,
+              constraint fk_patient_id foreign KEY (patient_id) references patients (patient_id) on delete CASCADE
             ) TABLESPACE pg_default;
+            
+            CREATE INDEX IF NOT EXISTS idx_pat_reports_lab_id ON public.pat_reports USING btree (lab_id) TABLESPACE pg_default;
+            
+            CREATE INDEX IF NOT EXISTS idx_pat_reports_patient_id ON public.pat_reports USING btree (patient_id) TABLESPACE pg_default;
+            
+            CREATE TRIGGER set_patient_name BEFORE INSERT ON pat_reports FOR EACH ROW
+            EXECUTE FUNCTION fetch_patient_name();
             """
             
             // Execute the SQL through Supabase
@@ -1033,7 +1043,7 @@ extension SupabaseController {
                 throw SupabaseError.requestFailed("Failed to create pat_reports table")
             }
             
-            print("Successfully created pat_reports table")
+            print("Successfully created pat_reports table with lab_id field and constraints")
         }
     }
     
