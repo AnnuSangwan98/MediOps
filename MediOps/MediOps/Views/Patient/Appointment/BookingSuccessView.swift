@@ -62,7 +62,7 @@ struct BookingSuccessView: View {
             print("📋 Using existing appointment ID: \(appointmentId)")
         }
         
-        // Create appointment object immediately for local state
+        // Create appointment object for local state
         let appointment = Appointment(
             id: appointmentId,
             doctor: doctor.toModelDoctor(),
@@ -71,115 +71,48 @@ struct BookingSuccessView: View {
             status: .upcoming
         )
         
-        // Add to local state right away
-        appointmentManager.addAppointment(appointment)
-        
-        // Navigate to HomeTabView immediately - this speeds up the UX
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let window = windowScene.windows.first {
-            print("🔄 Navigating to HomeTabView")
-            let homeView = HomeTabView()
-                .environmentObject(hospitalVM)
-                .environmentObject(appointmentManager)
-            
-            window.rootViewController = UIHostingController(rootView: homeView)
-            window.makeKeyAndVisible()
-        }
-        
-        // Post notification to dismiss all modals
-        NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
-        
-        // Now handle the database operations in the background
         Task {
             do {
-                // Prevent duplicate appointments - check for existing appointments with this doctor on this date
-                print("🔍 Checking for existing appointments with this doctor on this date")
+                // First ensure we have a valid patient_id
                 guard let userId = userId else {
+                    print("❌ No user ID found")
                     throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "User ID not found"])
                 }
                 
-                // First get the patient ID for this user
                 let supabase = SupabaseController.shared
+                
+                // Get patient_id using ensurePatientHasPatientId
                 let patientResults = try await supabase.select(
                     from: "patients",
                     where: "user_id",
                     equals: userId
                 )
                 
-                guard let patientData = patientResults.first, 
-                      let patientRecordId = patientData["id"] as? String,
+                guard let patientData = patientResults.first,
                       let patientId = patientData["patient_id"] as? String else {
-                    throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Patient record not found or patient_id not available"])
+                    print("❌ Could not get or create patient_id")
+                    throw NSError(domain: "AppointmentError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not verify patient record"])
                 }
                 
-                print("✅ Found patient with record ID: \(patientRecordId) and patient_id: \(patientId)")
+                print("✅ Got patient_id: \(patientId)")
                 
                 // Format date for database
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd"
                 let formattedDate = dateFormatter.string(from: appointmentDate)
                 
-                // Check for existing appointments with this doctor on this date
-                let checkSQL = """
-                SELECT id FROM appointments 
-                WHERE patient_id = '\(patientId)' 
-                AND doctor_id = '\(doctor.id)' 
-                AND appointment_date = '\(formattedDate)'::date
-                LIMIT 1;
-                """
-                
-                let existingAppointments = try await supabase.executeSQL(sql: checkSQL)
-                if !existingAppointments.isEmpty {
-                    print("⚠️ Found existing appointment with this doctor on this date: \(existingAppointments)")
-                    if let appointmentDict = existingAppointments.first,
-                       let existingId = appointmentDict["id"] as? String {
-                        print("✅ Using existing appointment ID: \(existingId)")
-                        appointmentId = existingId
-                        appointmentCreated = true
-                        return
-                    }
-                }
-                
-                // First check if the appointment already exists in the database
-                let exists = await checkIfAppointmentExists(appointmentId)
-                if exists {
-                    print("✅ Appointment already exists in database, skipping creation")
-                    appointmentCreated = true
-                    return
-                }
-                
-                print("🔄 Starting appointment creation for ID: \(appointmentId)")
-                
-                // We already have userId and patientId from earlier check
-                print("✅ Found patient ID: \(patientId) for user ID: \(userId)")
-                
-                // Format times as strings (e.g., "09:00" and "10:00")
+                // Format times
                 let timeFormatter = DateFormatter()
                 timeFormatter.dateFormat = "HH:mm:ss"
                 let startTime = timeFormatter.string(from: appointmentTime)
+                let endTime = timeFormatter.string(from: Calendar.current.date(byAdding: .hour, value: 1, to: appointmentTime) ?? appointmentTime)
                 
-                // Calculate end time (1 hour after start)
-                let endTime: String
-                if let endDate = Calendar.current.date(byAdding: .hour, value: 1, to: appointmentTime) {
-                    endTime = timeFormatter.string(from: endDate)
-                } else {
-                    endTime = "23:59:00" // Fallback
-                }
-                
-                // Get hospital ID
-                let hospitalId = hospitalVM.selectedHospital?.id ?? doctor.hospitalId
-                
-                // Create slot JSON
-                let slotJsonb = """
-                {"doctor_id": "\(doctor.id)", "start_time": "\(startTime)", "end_time": "\(endTime)"}
-                """
-                
-                // Prepare appointment data
+                // Create appointment data
                 let appointmentData: [String: Any] = [
                     "id": appointmentId,
                     "patient_id": patientId,
                     "doctor_id": doctor.id,
-                    "hospital_id": hospitalId,
+                    "hospital_id": doctor.hospitalId,
                     "appointment_date": formattedDate,
                     "status": "upcoming",
                     "reason": "Medical consultation",
@@ -187,224 +120,92 @@ struct BookingSuccessView: View {
                     "is_premium": false,
                     "slot_start_time": startTime,
                     "slot_end_time": endTime,
-                    "slot": slotJsonb
+                    "slot": "{\"doctor_id\": \"\(doctor.id)\", \"start_time\": \"\(startTime)\", \"end_time\": \"\(endTime)\"}"
                 ]
                 
-                // Print detailed information
-                print("📊 APPOINTMENT DETAILS:")
-                print("- ID: \(appointmentId)")
-                print("- Patient ID: \(patientId) (using patient_id field from patients table)")
-                print("- Doctor ID: \(doctor.id)")
-                print("- Hospital ID: \(hospitalId)")
-                print("- Date: \(formattedDate)")
-                print("- Time: \(startTime) - \(endTime)")
-                print("- Slot JSON: \(slotJsonb)")
+                // Try to insert the appointment
+                print("🔄 Inserting appointment into database...")
+                try await supabase.insert(into: "appointments", values: appointmentData)
+                print("✅ Successfully inserted appointment")
                 
-                // Use direct REST API approach - most reliable method
-                print("🔄 Using direct REST API approach")
+                // Verify the appointment exists
+                let verifyAppointment = try await supabase.select(
+                    from: "appointments",
+                    where: "id",
+                    equals: appointmentId
+                )
                 
-                // Create the URL for appointments endpoint
-                guard let url = URL(string: "https://cwahmqodmutorxkoxtyz.supabase.co/rest/v1/appointments") else {
-                    throw NSError(domain: "AppointmentError", code: 100, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
+                if verifyAppointment.isEmpty {
+                    print("⚠️ Appointment not found after insert, trying alternative method...")
+                    // Try alternative insert method
+                    try await supabase.executeSQL(sql: """
+                        INSERT INTO appointments (
+                            id, patient_id, doctor_id, hospital_id, appointment_date,
+                            status, reason, isdone, is_premium,
+                            slot_start_time, slot_end_time, slot
+                        ) VALUES (
+                            '\(appointmentId)', '\(patientId)', '\(doctor.id)', '\(doctor.hospitalId)', '\(formattedDate)',
+                            'upcoming', 'Medical consultation', false, false,
+                            '\(startTime)', '\(endTime)', '{"doctor_id": "\(doctor.id)", "start_time": "\(startTime)", "end_time": "\(endTime)"}'
+                        )
+                    """)
                 }
                 
-                // Create a request
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.addValue("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk", forHTTPHeaderField: "apikey")
-                request.addValue("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk", forHTTPHeaderField: "Authorization")
-                request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.addValue("return=representation", forHTTPHeaderField: "Prefer")
-                
-                // Encode data
-                let jsonData = try JSONSerialization.data(withJSONObject: appointmentData)
-                request.httpBody = jsonData
-                
-                // Print the raw JSON being sent for debugging
-                if let jsonString = String(data: jsonData, encoding: .utf8) {
-                    print("📤 JSON Payload: \(jsonString)")
+                // Add to local state
+                await MainActor.run {
+                    // Create and add appointment to local state
+                    let appointment = Appointment(
+                        id: appointmentId,
+                        doctor: doctor.toModelDoctor(),
+                        date: appointmentDate,
+                        time: appointmentTime,
+                        status: .upcoming
+                    )
+                    AppointmentManager.shared.addAppointment(appointment)
                 }
                 
-                // Send request
-                print("🔄 Sending API request...")
-                let (responseData, response) = try await URLSession.shared.data(for: request)
-                
-                // Check response
-                if let httpResponse = response as? HTTPURLResponse {
-                    print("📥 API Response Code: \(httpResponse.statusCode)")
+                // Refresh appointments from database
+                if let userId = UserDefaults.standard.string(forKey: "current_user_id") {
+                    print("🔄 Refreshing appointments after booking with user ID: \(userId)")
                     
-                    // Print response headers
-                    print("📥 Response Headers:")
-                    for (key, value) in httpResponse.allHeaderFields {
-                        print("  \(key): \(value)")
-                    }
+                    // We should get the patient ID again and use that to fetch appointments
+                    let patientResults = try await supabase.select(
+                        from: "patients",
+                        where: "user_id",
+                        equals: userId
+                    )
                     
-                    // Print response body
-                    if let responseString = String(data: responseData, encoding: .utf8) {
-                        print("📥 Response Body: \(responseString)")
-                    }
-                    
-                    if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
-                        print("✅ API request successful")
-                        appointmentCreated = true
-                        
-                        // Verify the appointment was created
-                        let verifyExists = await checkIfAppointmentExists(appointmentId)
-                        print("🔍 Verification after creation: \(verifyExists ? "EXISTS" : "NOT FOUND")")
+                    if let patientData = patientResults.first,
+                       let fetchedPatientId = patientData["id"] as? String ?? patientData["patient_id"] as? String {
+                        try await hospitalVM.fetchAppointments(for: fetchedPatientId)
+                        print("✅ Successfully refreshed appointments after booking")
                     } else {
-                        throw NSError(domain: "AppointmentError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "API request failed with status code \(httpResponse.statusCode)"])
+                        print("⚠️ Could not find patient ID after booking")
                     }
-                } else {
-                    throw NSError(domain: "AppointmentError", code: 101, userInfo: [NSLocalizedDescriptionKey: "Invalid HTTP response"])
                 }
                 
-                // Refresh appointments
-                try? await hospitalVM.fetchAppointments(for: patientId)
+                print("✅ Appointment booking completed successfully")
+                
+                // Now that we've confirmed the appointment is saved, navigate
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = windowScene.windows.first {
+                    print("🔄 Navigating to HomeTabView")
+                    let homeView = HomeTabView()
+                        .environmentObject(hospitalVM)
+                        .environmentObject(appointmentManager)
+                    
+                    window.rootViewController = UIHostingController(rootView: homeView)
+                    window.makeKeyAndVisible()
+                    
+                    // Post notification to dismiss all modals
+                    NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
+                }
                 
             } catch {
-                print("❌ Error creating appointment: \(error.localizedDescription)")
-                
-                // If there was an error, check if the appointment exists anyway
-                // (might have been created despite error)
-                let exists = await checkIfAppointmentExists(appointmentId)
-                
-                if exists {
-                    print("✅ Appointment exists in database despite error")
-                    appointmentCreated = true
-                } else {
-                    // Try a direct alternative approach as a backup
-                    do {
-                        print("🔄 Attempting fallback direct SQL insertion")
-                        
-                        // We need to re-get the patient ID since we're in a different scope
-                        guard let userId = userId else { 
-                            print("❌ No user ID available for fallback approach")
-                            return 
-                        }
-                        
-                        // Get patient ID again for this scope
-                        let supabase = SupabaseController.shared
-                        let patientResults = try await supabase.select(
-                            from: "patients",
-                            where: "user_id",
-                            equals: userId
-                        )
-                        
-                        guard let patientData = patientResults.first, 
-                              let patientRecordId = patientData["id"] as? String,
-                              let patientId = patientData["patient_id"] as? String else {
-                            print("❌ No patient ID found for fallback approach or patient_id not available")
-                            return
-                        }
-                        
-                        print("✅ Fallback: Found patient with record ID: \(patientRecordId) and patient_id: \(patientId)")
-                        
-                        // Format date for database
-                        let dateFormatter = DateFormatter()
-                        dateFormatter.dateFormat = "yyyy-MM-dd"
-                        let formattedDate = dateFormatter.string(from: appointmentDate)
-                        
-                        // Format times as strings (e.g., "09:00" and "10:00")
-                        let timeFormatter = DateFormatter()
-                        timeFormatter.dateFormat = "HH:mm:ss"
-                        let startTime = timeFormatter.string(from: appointmentTime)
-                        
-                        // Calculate end time (1 hour after start)
-                        let endTime: String
-                        if let endDate = Calendar.current.date(byAdding: .hour, value: 1, to: appointmentTime) {
-                            endTime = timeFormatter.string(from: endDate)
-                        } else {
-                            endTime = "23:59:00" // Fallback
-                        }
-                        
-                        // Get hospital ID
-                        let hospitalId = hospitalVM.selectedHospital?.id ?? doctor.hospitalId
-                        
-                        // Direct SQL approach to exactly match the schema requirements
-                        print("🔄 Using direct SQL approach to match exact schema")
-                        let slotJsonb = """
-                        {"doctor_id": "\(doctor.id)", "start_time": "\(startTime)", "end_time": "\(endTime)"}
-                        """
-                        
-                        // Use direct REST API approach here too for consistency
-                        print("🔄 Using direct REST API approach (fallback)")
-                        
-                        // Create the URL for appointments endpoint
-                        guard let url = URL(string: "https://cwahmqodmutorxkoxtyz.supabase.co/rest/v1/appointments") else {
-                            throw NSError(domain: "AppointmentError", code: 100, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
-                        }
-                        
-                        // Create a request
-                        var request = URLRequest(url: url)
-                        request.httpMethod = "POST"
-                        request.addValue("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk", forHTTPHeaderField: "apikey")
-                        request.addValue("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk", forHTTPHeaderField: "Authorization")
-                        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-                        request.addValue("return=representation", forHTTPHeaderField: "Prefer")
-                        
-                        // Prepare appointment data
-                        let appointmentData: [String: Any] = [
-                            "id": appointmentId,
-                            "patient_id": patientId,
-                            "doctor_id": doctor.id,
-                            "hospital_id": hospitalId,
-                            "appointment_date": formattedDate,
-                            "status": "upcoming",
-                            "reason": "Medical consultation",
-                            "isdone": false,
-                            "is_premium": false,
-                            "slot_start_time": startTime,
-                            "slot_end_time": endTime,
-                            "slot": slotJsonb
-                        ]
-                        
-                        // Print detailed information
-                        print("📊 FALLBACK APPOINTMENT DETAILS:")
-                        print("- ID: \(appointmentId)")
-                        print("- Patient ID: \(patientId)")
-                        print("- Doctor ID: \(doctor.id)")
-                        print("- Hospital ID: \(hospitalId)")
-                        print("- Date: \(formattedDate)")
-                        
-                        // Encode data
-                        let jsonData = try JSONSerialization.data(withJSONObject: appointmentData)
-                        request.httpBody = jsonData
-                        
-                        // Print the raw JSON being sent for debugging
-                        if let jsonString = String(data: jsonData, encoding: .utf8) {
-                            print("📤 FALLBACK JSON Payload: \(jsonString)")
-                        }
-                        
-                        // Send request
-                        print("🔄 Sending fallback API request...")
-                        let (responseData, response) = try await URLSession.shared.data(for: request)
-                        
-                        // Check response
-                        if let httpResponse = response as? HTTPURLResponse {
-                            print("📥 Fallback API Response Code: \(httpResponse.statusCode)")
-                            
-                            // Print response body
-                            if let responseString = String(data: responseData, encoding: .utf8) {
-                                print("📥 Fallback Response Body: \(responseString)")
-                            }
-                            
-                            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
-                                print("✅ Fallback API request successful")
-                                appointmentCreated = true
-                                
-                                // Verify the appointment was created
-                                let verifyExists = await checkIfAppointmentExists(appointmentId)
-                                print("🔍 Fallback verification: \(verifyExists ? "EXISTS" : "NOT FOUND")")
-                            } else {
-                                print("❌ Fallback API request failed with status \(httpResponse.statusCode)")
-                            }
-                        }
-                        
-                        // Refresh appointments
-                        try? await hospitalVM.fetchAppointments(for: patientId)
-                    } catch {
-                        print("❌ Fallback approach also failed: \(error.localizedDescription)")
-                    }
+                print("❌ Error saving appointment: \(error.localizedDescription)")
+                // Keep the error state but don't prevent navigation
+                await MainActor.run {
+                    isLoading = false
                 }
             }
         }
@@ -481,7 +282,7 @@ struct BookingSuccessView: View {
                 )
                 
                 guard let patientData = patientResults.first, 
-                      let patientRecordId = patientData["id"] as? String, 
+                      let patientRecordId = patientData["id"] as? String,
                       let patientId = patientData["patient_id"] as? String else {
                     print("🩺 DIAGNOSTIC: No patient ID found for current user")
                     return

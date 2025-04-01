@@ -127,8 +127,8 @@ struct DoctorHomeView: View {
                                         .fontWeight(.bold)
                                     
                                     Text(doctorName.isEmpty ? "Dr. Doctor" : doctorName)
-                                        .font(.title)
-                                        .fontWeight(.bold)
+                                    .font(.title)
+                                    .fontWeight(.bold)
                                 }
                             }
                             Spacer()
@@ -393,13 +393,15 @@ struct DoctorHomeView: View {
             do {
                 let supabase = SupabaseController.shared
                 
-                // Use standard select method with specific fields
+                // Use standard select method with specific fields matching the table structure
                 let result = try await supabase.select(
                     from: "appointments",
-                    columns: "id, patient_id, doctor_id, hospital_id, appointment_date, booking_time, status, reason, isdone, is_premium, availability_slot_id, slot_time, slot_end_time",
+                    columns: "id, patient_id, doctor_id, hospital_id, appointment_date, booking_time, status, reason, isdone, is_premium, slot_start_time, slot_end_time, slot",
                     where: "doctor_id",
                     equals: doctorId
                 )
+                
+                print("FETCH APPOINTMENTS: Raw result: \(result)")
                 
                 // Parse result
                 let appointments = try parseAppointments(result)
@@ -428,7 +430,7 @@ struct DoctorHomeView: View {
                         hospitalName = name
                     }
                     
-                    // Create enhanced appointment - keep original slot times
+                    // Create enhanced appointment
                     let enhancedAppointment = DoctorAppointmentModel(
                         id: appointment.id,
                         patientId: appointment.patientId,
@@ -441,7 +443,7 @@ struct DoctorHomeView: View {
                         reason: appointment.reason,
                         isDone: appointment.isDone,
                         isPremium: appointment.isPremium,
-                        slotId: appointment.slotId,
+                        slotId: 0, // This field is not in the table anymore
                         slotTime: appointment.slotTime,
                         slotEndTime: appointment.slotEndTime
                     )
@@ -449,7 +451,7 @@ struct DoctorHomeView: View {
                     enhancedAppointments.append(enhancedAppointment)
                 }
                 
-                // Generate notifications from appointments (recent bookings, cancellations, completions)
+                // Generate notifications from appointments
                 let recentNotifications = generateNotifications(from: enhancedAppointments)
                 
                 // Update UI on main thread
@@ -460,6 +462,7 @@ struct DoctorHomeView: View {
                     isLoadingAppointments = false
                 }
             } catch {
+                print("FETCH APPOINTMENTS ERROR: \(error)")
                 await MainActor.run {
                     self.error = "Failed to load appointments: \(error.localizedDescription)"
                     isLoadingAppointments = false
@@ -536,6 +539,8 @@ struct DoctorHomeView: View {
         slotTimeFormatter.dateFormat = "HH:mm:ss"
         
         return try data.map { appointmentData in
+            print("PARSING APPOINTMENT: \(appointmentData)")
+            
             // Required fields
             guard let id = appointmentData["id"] as? String else {
                 throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing appointment ID"])
@@ -559,10 +564,6 @@ struct DoctorHomeView: View {
                 throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid status"])
             }
             
-            guard let slotId = appointmentData["availability_slot_id"] as? Int else {
-                throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing slot ID"])
-            }
-            
             // Optional fields with defaults
             let bookingTimeString = appointmentData["booking_time"] as? String ?? ""
             let bookingTime = timeFormatter.date(from: bookingTimeString) ?? Date()
@@ -573,7 +574,7 @@ struct DoctorHomeView: View {
             
             // Get slot times directly from the appointment
             var slotTime = ""
-            if let slotTimeString = appointmentData["slot_time"] as? String {
+            if let slotTimeString = appointmentData["slot_start_time"] as? String {
                 // Format time from "HH:MM:SS" to "HH:MM AM/PM"
                 if let timeDate = slotTimeFormatter.date(from: slotTimeString) {
                     let displayFormatter = DateFormatter()
@@ -598,28 +599,24 @@ struct DoctorHomeView: View {
             
             // Debug slot times
             print("Appointment ID: \(id)")
-            print("Raw slot_time: \(appointmentData["slot_time"] as? String ?? "nil")")
+            print("Raw slot_start_time: \(appointmentData["slot_start_time"] as? String ?? "nil")")
             print("Raw slot_end_time: \(appointmentData["slot_end_time"] as? String ?? "nil")")
             print("Formatted slotTime: \(slotTime)")
             print("Formatted slotEndTime: \(slotEndTime ?? "nil")")
             
-            // Joined fields
-            let patientName = appointmentData["patient_name"] as? String ?? "Unknown Patient"
-            let hospitalName = appointmentData["hospital_name"] as? String ?? "Unknown Hospital"
-            
             return DoctorAppointmentModel(
                 id: id,
                 patientId: patientId,
-                patientName: patientName,
+                patientName: "Unknown Patient", // Will be updated later
                 hospitalId: hospitalId,
-                hospitalName: hospitalName,
+                hospitalName: "Unknown Hospital", // Will be updated later
                 appointmentDate: appointmentDate,
                 bookingTime: bookingTime,
                 status: status,
                 reason: reason,
                 isDone: isDone,
                 isPremium: isPremium,
-                slotId: slotId,
+                slotId: 0, // Not used anymore
                 slotTime: slotTime,
                 slotEndTime: slotEndTime
             )
@@ -716,9 +713,9 @@ struct NotificationRow: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 
-                Text(formattedDate)
-                    .font(.caption)
-                    .foregroundColor(.gray)
+//                Text(formattedDate)
+//                    .font(.caption)
+//                    .foregroundColor(.gray)
             }
         }
         .padding(.vertical, 6)

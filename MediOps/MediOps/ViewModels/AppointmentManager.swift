@@ -11,7 +11,7 @@ class AppointmentManager: ObservableObject {
         // Try to load any appointments from the last session
         if let userId = UserDefaults.standard.string(forKey: "current_user_id") {
             Task {
-                try? await HospitalViewModel.shared.fetchAppointments(for: userId)
+                await refreshAppointmentsAsync()
             }
         }
     }
@@ -143,7 +143,24 @@ class AppointmentManager: ObservableObject {
     
     @MainActor
     func setAppointments(_ newAppointments: [Appointment]) {
-        appointments = newAppointments
+        // Create a set of IDs from new appointments for quick lookup
+        let newAppointmentIds = Set(newAppointments.map { $0.id })
+        
+        // Keep only local appointments that are not in the new set and are upcoming
+        let localOnlyAppointments = appointments.filter { appointment in
+            !newAppointmentIds.contains(appointment.id) && appointment.status == .upcoming
+        }
+        
+        // Combine local-only appointments with new appointments
+        appointments = newAppointments + localOnlyAppointments
+        
+        // Sort appointments by date and time
+        appointments.sort { (a1, a2) -> Bool in
+            if a1.date == a2.date {
+                return a1.time < a2.time
+            }
+            return a1.date < a2.date
+        }
     }
     
     func clearAppointments() {
@@ -164,29 +181,47 @@ class AppointmentManager: ObservableObject {
         }
         
         isRefreshing = true
+        print("🔄 Starting appointment refresh")
         
         guard let userId = UserDefaults.standard.string(forKey: "current_user_id") else {
+            print("❌ No user ID found for refresh")
             isRefreshing = false
             return
         }
         
         do {
-            // First, get the patient ID associated with this user ID
             let supabase = SupabaseController.shared
             
-            // Query patients table to get patient ID for current user
+            // First get the patient record to get the patient_id
+            print("🔍 Looking up patient record for user: \(userId)")
             let patientResults = try await supabase.select(
                 from: "patients",
                 where: "user_id",
                 equals: userId
             )
             
-            if let patientData = patientResults.first, let patientId = patientData["id"] as? String {
-                // Now fetch appointments using the patient ID
-                try await HospitalViewModel.shared.fetchAppointments(for: patientId)
+            guard let patientData = patientResults.first else {
+                print("❌ Could not find patient record for user: \(userId)")
+                isRefreshing = false
+                return
             }
+            
+            // Try both patient_id and id fields, with patient_id taking precedence
+            let patientId = (patientData["patient_id"] as? String) ?? (patientData["id"] as? String)
+            
+            guard let finalPatientId = patientId else {
+                print("❌ Could not find patient_id for user: \(userId)")
+                isRefreshing = false
+                return
+            }
+            
+            print("✅ Found patient_id: \(finalPatientId)")
+            
+            // Now fetch appointments using the patient_id
+            try await HospitalViewModel.shared.fetchAppointments(for: finalPatientId)
+            print("✅ Successfully refreshed appointments")
         } catch {
-            // Error handled silently
+            print("❌ Error refreshing appointments: \(error.localizedDescription)")
         }
         
         isRefreshing = false
