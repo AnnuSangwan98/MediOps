@@ -1,20 +1,16 @@
-//
-//  ContentView.swift
-//  MediOps
-//
-//  Created by Abcom on 13/03/25.
-//
-
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var navigationState = AppNavigationState()
+    
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        NavigationStack {
+            RoleSelectionView()
         }
-        .padding()
+        .environmentObject(navigationState)
     }
+}
+
+#Preview {
+    ContentView()
 }

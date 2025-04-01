@@ -1,0 +1,20 @@
+{
+  "" : {
+    "const-values" : "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/build/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/Functions-master.swiftconstvalues",
+    "dependencies" : "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/build/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/Functions-master.d",
+    "diagnostics" : "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/build/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/Functions-master.dia",
+    "emit-module-dependencies" : "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/build/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/Functions-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/build/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/Functions-master-emit-module.dia",
+    "swift-dependencies" : "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/build/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/Functions-master.swiftdeps"
+  },
+  "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/Sources/Functions/FunctionsClient.swift" : {
+    "index-unit-output-path" : "/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/FunctionsClient.o",
+    "llvm-bc" : "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/build/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/FunctionsClient.bc",
+    "object" : "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/build/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/FunctionsClient.o"
+  },
+  "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/Sources/Functions/Types.swift" : {
+    "index-unit-output-path" : "/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/Types.o",
+    "llvm-bc" : "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/build/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/Types.bc",
+    "object" : "/Users/aryanshukla/Library/Developer/Xcode/DerivedData/MediOps-bbdmfvleqdxkdygblaoifawwtfgn/SourcePackages/checkouts/supabase-swift/build/Supabase.build/Release-iphoneos/Functions.build/Objects-normal/arm64/Types.o"
+  }
+}
