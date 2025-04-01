@@ -1348,14 +1348,6 @@ struct PatientReportsView: View {
                 
                 Spacer()
                 
-                // Status badge
-                Text("Active")
-                    .font(.caption)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.green))
-                
                 // Three dots menu
                 Menu {
                     Button(action: {
@@ -1406,24 +1398,6 @@ struct PatientReportsView: View {
                         Text(formatDate(report.uploadedAt, timeOnly: true))
                             .font(.subheadline)
                             .foregroundColor(.blue)
-                    }
-                }
-                
-                // Second row: Address (summary in this case)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Summary")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    
-                    if let summary = report.summary, !summary.isEmpty {
-                        Text(summary)
-                            .font(.subheadline)
-                            .lineLimit(2)
-                    } else {
-                        Text("No summary available")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .italic()
                     }
                 }
             }
