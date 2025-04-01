@@ -191,10 +191,12 @@ struct AdminHomeView: View {
             .navigationBarBackButtonHidden(true)
             .navigationBarHidden(true)
             .sheet(isPresented: $showAddDoctor) {
-                AddDoctorView { activity in
-                    recentActivities.insert(activity, at: 0)
-                    if let doctor = activity.doctorDetails {
-                        doctors.append(doctor)
+                NavigationStack {
+                    AddDoctorView { activity in
+                        recentActivities.insert(activity, at: 0)
+                        if let doctor = activity.doctorDetails {
+                            doctors.append(doctor)
+                        }
                     }
                 }
             }

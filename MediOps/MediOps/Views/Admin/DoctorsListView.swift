@@ -30,18 +30,7 @@ struct DoctorsListView: View {
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Custom Navigation Bar
-                HStack {
-                    Spacer()
-                    
-                    Text("Doctors")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                    
-                    Spacer()
-                }
-                .padding()
-                .background(Color.white.opacity(0.9))
+                // Remove custom Navigation Bar and use SwiftUI's navigation title
                 
                 // Doctors List
                 ScrollView {
@@ -110,10 +99,12 @@ struct DoctorsListView: View {
             }
         }
         .sheet(isPresented: $showAddDoctor) {
-            AddDoctorView { activity in
-                // Refresh the list after adding a doctor
-                Task {
-                    await fetchDoctors()
+            NavigationStack {
+                AddDoctorView { activity in
+                    // Refresh the list after adding a doctor
+                    Task {
+                        await fetchDoctors()
+                    }
                 }
             }
         }
@@ -153,6 +144,8 @@ struct DoctorsListView: View {
         .task {
             await fetchDoctors()
         }
+        .navigationTitle("Doctors")
+        .navigationBarTitleDisplayMode(.inline)
     }
     
     private func fetchDoctors() async {
