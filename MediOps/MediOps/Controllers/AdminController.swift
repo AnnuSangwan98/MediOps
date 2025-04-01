@@ -538,9 +538,52 @@ class AdminController {
     func deleteDoctor(id: String) async throws {
         print("DELETE DOCTOR: Attempting to delete doctor with ID: \(id)")
         
-        // First try direct deletion (most reliable)
+        // First, attempt to delete any related records that might cause foreign key constraint issues
         do {
-            print("DELETE DOCTOR: Attempting full deletion first")
+            // Delete from doctor_availability_efficient table
+            print("DELETE DOCTOR: Removing doctor availability records")
+            try await supabase.delete(
+                from: "doctor_availability_efficient",
+                where: "doctor_id",
+                equals: id
+            )
+            print("DELETE DOCTOR: Successfully removed availability records")
+        } catch {
+            print("DELETE DOCTOR: No availability records found or error removing them: \(error.localizedDescription)")
+            // Continue with deletion even if this fails
+        }
+        
+        do {
+            // Delete from doctor_slots table if it exists
+            print("DELETE DOCTOR: Removing doctor slots records")
+            try await supabase.delete(
+                from: "doctor_slots",
+                where: "doctor_id",
+                equals: id
+            )
+            print("DELETE DOCTOR: Successfully removed slot records")
+        } catch {
+            print("DELETE DOCTOR: No slot records found or error removing them: \(error.localizedDescription)")
+            // Continue with deletion even if this fails
+        }
+        
+        do {
+            // Delete from appointments table if it exists
+            print("DELETE DOCTOR: Removing appointment records")
+            try await supabase.delete(
+                from: "appointments",
+                where: "doctor_id",
+                equals: id
+            )
+            print("DELETE DOCTOR: Successfully removed appointment records")
+        } catch {
+            print("DELETE DOCTOR: No appointment records found or error removing them: \(error.localizedDescription)")
+            // Continue with deletion even if this fails
+        }
+        
+        // Now try to delete the doctor record
+        do {
+            print("DELETE DOCTOR: Attempting to delete doctor record")
             try await supabase.delete(
                 from: "doctors",
                 where: "id",
@@ -549,44 +592,67 @@ class AdminController {
             print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id)")
             return // Exit if deletion was successful
         } catch {
-            print("DELETE DOCTOR ERROR on full deletion: \(error.localizedDescription)")
-            // If direct deletion fails, try status updates
-        }
-        
-        // Create an Encodable struct for the status update
-        struct DoctorStatusUpdate: Encodable {
-            let doctor_status: String
-            let updated_at: String
-        }
-        
-        // Try various possible status values that might be allowed by the check constraint
-        let possibleStatuses = ["inactive", "deleted", "disabled", "removed", "deactivated", "closed"]
-        
-        for status in possibleStatuses {
+            print("DELETE DOCTOR ERROR on deletion: \(error.localizedDescription)")
+            
+            // Try with a direct URL request instead of executeSql
             do {
-                print("DELETE DOCTOR: Trying status update to '\(status)'")
-                let doctorData = DoctorStatusUpdate(
-                    doctor_status: status,
-                    updated_at: ISO8601DateFormatter().string(from: Date())
-                )
+                print("DELETE DOCTOR: Attempting direct API delete")
                 
-                try await supabase.update(
-                    table: "doctors",
-                    data: doctorData,
-                    where: "id",
-                    equals: id
-                )
+                let url = URL(string: "\(supabase.supabaseURL)/rest/v1/doctors?id=eq.\(id)")!
+                var request = URLRequest(url: url)
+                request.httpMethod = "DELETE"
+                request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+                request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
                 
-                print("DELETE DOCTOR: Successfully updated doctor status to '\(status)' with ID: \(id)")
-                return // Exit the function if this status update works
+                let (_, response) = try await URLSession.shared.data(for: request)
+                
+                if let httpResponse = response as? HTTPURLResponse, 
+                   httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                    print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id) via direct API")
+                    return
+                } else {
+                    print("DELETE DOCTOR: Direct API deletion failed")
+                }
             } catch {
-                print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
-                // Continue trying other statuses
+                print("DELETE DOCTOR ERROR on direct API deletion: \(error.localizedDescription)")
             }
+            
+            // As a last resort, try to update status (but we prefer actual deletion)
+            struct DoctorStatusUpdate: Encodable {
+                let doctor_status: String
+                let updated_at: String
+            }
+            
+            // Try various possible status values that might be allowed by the check constraint
+            let possibleStatuses = ["inactive", "suspended", "terminated"]
+            
+            for status in possibleStatuses {
+                do {
+                    print("DELETE DOCTOR: Deletion failed, trying status update to '\(status)'")
+                    let doctorData = DoctorStatusUpdate(
+                        doctor_status: status,
+                        updated_at: ISO8601DateFormatter().string(from: Date())
+                    )
+                    
+                    try await supabase.update(
+                        table: "doctors",
+                        data: doctorData,
+                        where: "id",
+                        equals: id
+                    )
+                    
+                    print("DELETE DOCTOR: Successfully updated doctor status to '\(status)' with ID: \(id)")
+                    return // Exit the function if this status update works
+                } catch {
+                    print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
+                    // Continue trying other statuses
+                }
+            }
+            
+            // If we reach here, none of our approaches worked
+            throw AdminError.doctorDeleteFailed
         }
-        
-        // If we reach here, none of our approaches worked
-        throw AdminError.doctorDeleteFailed
     }
     
     // MARK: - Lab Admin Management
