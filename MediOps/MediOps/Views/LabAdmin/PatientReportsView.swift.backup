@@ -1,0 +1,1898 @@
+import SwiftUI
+import PDFKit
+import UIKit
+
+// MARK: - Lab Admin Patients ViewModel
+class LabAdminPatientsViewModel: ObservableObject {
+    @Published var patients: [Models.Patient] = []
+    @Published var isLoading = false
+    @Published var errorMessage = ""
+    
+    private let supabase = SupabaseController.shared
+    
+    func fetchPatients() async {
+        await MainActor.run {
+            isLoading = true
+            errorMessage = ""
+        }
+        
+        do {
+            // Get the lab admin ID from UserDefaults
+            guard let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") else {
+                throw NSError(domain: "LabAdminViewModel", code: 1, 
+                             userInfo: [NSLocalizedDescriptionKey: "Lab admin ID not found. Please log in again."])
+            }
+            
+            print("FETCH PATIENTS: Fetching for lab admin ID: \(labAdminId)")
+            
+            // Get the hospital ID associated with this lab admin
+            let labAdmins = try await supabase.select(
+                from: "lab_admins",
+                where: "id",
+                equals: labAdminId
+            )
+            
+            guard let labAdminData = labAdmins.first,
+                  let hospitalId = labAdminData["hospital_id"] as? String else {
+                throw NSError(domain: "LabAdminViewModel", code: 2, 
+                             userInfo: [NSLocalizedDescriptionKey: "Hospital ID not found for lab admin"])
+            }
+            
+            print("FETCH PATIENTS: Found hospital ID: \(hospitalId) for lab admin: \(labAdminId)")
+            
+            // Fetch all patients associated with this hospital
+            // Note: The exact query will depend on your schema - assuming patients have a hospital_id field
+            // If they don't, we might need to join through another table or use a different approach
+            let patientsData = try await supabase.select(
+                from: "patients",
+                where: "hospital_id",
+                equals: hospitalId
+            )
+            
+            print("FETCH PATIENTS: Retrieved \(patientsData.count) patients for hospital: \(hospitalId)")
+            
+            // If there's no direct hospital_id on patients, try different approach - check user_ids
+            var patientsList: [Models.Patient] = []
+            
+            if patientsData.isEmpty {
+                print("FETCH PATIENTS: No patients found with direct hospital_id match, trying alternative approach")
+                
+                // Get all patients as a fallback (in a real app, you'd want to limit this or use a different approach)
+                let allPatientsData = try await supabase.select(from: "patients")
+                print("FETCH PATIENTS: Retrieved \(allPatientsData.count) patients in total")
+                
+                // Parse patients
+                for patientData in allPatientsData {
+                    do {
+                        if let patient = try parsePatientData(patientData) {
+                            patientsList.append(patient)
+                        }
+                    } catch {
+                        print("FETCH PATIENTS ERROR: Failed to parse patient: \(error.localizedDescription)")
+                    }
+                }
+            } else {
+                // Parse patients from direct hospital association
+                for patientData in patientsData {
+                    do {
+                        if let patient = try parsePatientData(patientData) {
+                            patientsList.append(patient)
+                        }
+                    } catch {
+                        print("FETCH PATIENTS ERROR: Failed to parse patient: \(error.localizedDescription)")
+                    }
+                }
+            }
+            
+            await MainActor.run {
+                self.patients = patientsList
+                self.isLoading = false
+                print("FETCH PATIENTS: Updated UI with \(patientsList.count) patients")
+            }
+        } catch {
+            print("FETCH PATIENTS ERROR: \(error.localizedDescription)")
+            
+            await MainActor.run {
+                self.errorMessage = "Failed to fetch patients: \(error.localizedDescription)"
+                self.isLoading = false
+            }
+        }
+    }
+    
+    // Our own implementation to parse patient data
+    private func parsePatientData(_ data: [String: Any]) throws -> Models.Patient? {
+        // Extract required fields with validation
+        guard let id = data["id"] as? String,
+              let name = data["name"] as? String,
+              let gender = data["gender"] as? String,
+              let ageValue = data["age"] as? Int else {
+            print("Missing required patient fields")
+            return nil
+        }
+        
+        // Get createdAt and updatedAt or use current date
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        
+        var createdDate: Date = Date()
+        if let createdAtStr = data["created_at"] as? String,
+            let date = dateFormatter.date(from: createdAtStr) {
+            createdDate = date
+        }
+        
+        var updatedDate: Date = Date()
+        if let updatedAtStr = data["updated_at"] as? String,
+            let date = dateFormatter.date(from: updatedAtStr) {
+            updatedDate = date
+        }
+        
+        // Create a patient with all fields, providing defaults for non-optional fields
+        let patient = Models.Patient(
+            id: id,
+            userId: data["user_id"] as? String ?? "",
+            name: name,
+            age: ageValue,
+            gender: gender,
+            createdAt: createdDate,
+            updatedAt: updatedDate,
+            email: data["email"] as? String,
+            emailVerified: data["email_verified"] as? Bool,
+            bloodGroup: data["blood_group"] as? String ?? "",
+            address: data["address"] as? String,
+            phoneNumber: data["phone_number"] as? String ?? "",
+            emergencyContactName: data["emergency_contact_name"] as? String,
+            emergencyContactNumber: data["emergency_contact_number"] as? String ?? "",
+            emergencyRelationship: data["emergency_relationship"] as? String ?? ""
+        )
+        
+        return patient
+    }
+}
+
+// MARK: - Patient Report Model
+struct PatientReport: Identifiable {
+    let id: UUID
+    let patientName: String
+    let patientId: String
+    let summary: String?
+    let fileUrl: String
+    let uploadedAt: Date
+    let labId: String?
+    
+    init(from data: [String: Any]) {
+        // Extract id as UUID
+        if let idString = data["id"] as? String, let uuid = UUID(uuidString: idString) {
+            self.id = uuid
+        } else {
+            self.id = UUID()
+            print("Warning: Invalid or missing UUID for report")
+        }
+        
+        // Extract required fields with fallbacks
+        self.patientName = data["patient_name"] as? String ?? "Unknown"
+        self.patientId = data["patient_id"] as? String ?? "Unknown"
+        
+        // Extract optional summary
+        self.summary = data["summary"] as? String
+        
+        // Extract required file URL
+        self.fileUrl = data["file_url"] as? String ?? ""
+        
+        // Get the lab_id (optional)
+        self.labId = data["lab_id"] as? String
+        
+        // Parse uploaded_at timestamp
+        if let dateString = data["uploaded_at"] as? String {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            
+            if let date = formatter.date(from: dateString) {
+                self.uploadedAt = date
+            } else {
+                // Try without fractional seconds if first attempt fails
+                formatter.formatOptions = [.withInternetDateTime]
+                self.uploadedAt = formatter.date(from: dateString) ?? Date()
+            }
+        } else {
+            self.uploadedAt = Date()
+            print("Warning: No uploaded_at date for report")
+        }
+    }
+}
+
+// MARK: - Report Card View
+struct PatientReportCard: View {
+    let report: PatientReport
+    var onTap: () -> Void
+    var onEdit: () -> Void
+    var onDelete: () -> Void
+    
+    @State private var showOptions = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(report.patientName)
+                        .font(.headline)
+                    Text("Patient ID: \(report.patientId)")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                Spacer()
+                
+                Text(formatDate(report.uploadedAt))
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            
+            if let summary = report.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .padding(.top, 4)
+            }
+            
+            HStack {
+                Button(action: onTap) {
+                    HStack {
+                        Image(systemName: "doc.text")
+                            .foregroundColor(.blue)
+                        Text("View Report")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Spacer()
+                
+                // Three dots menu button
+                Menu {
+                    Button(action: onEdit) {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 18))
+                        .foregroundColor(.gray)
+                }
+                .padding(.horizontal, 8)
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            .padding(.top, 8)
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - PDF Generator
+class PDFGenerator {
+    static func generateLabReportPDF(report: PatientReport) -> Data? {
+        // Create a PDF renderer with A4 page size
+        let pageWidth: CGFloat = 595.2
+        let pageHeight: CGFloat = 841.8
+        let pageRect = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
+        
+        // Create PDF context
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        
+        // Generate PDF data
+        let pdfData = renderer.pdfData { context in
+            context.beginPage()
+            
+            // Define drawing attributes
+            let textAttributes = [
+                NSAttributedString.Key.font: UIFont.systemFont(ofSize: 12)
+            ]
+            let headerAttributes = [
+                NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 18)
+            ]
+            let subheaderAttributes = [
+                NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 14)
+            ]
+            
+            // Draw title
+            let title = "Lab Report"
+            let titleSize = title.size(withAttributes: headerAttributes)
+            let titleRect = CGRect(x: (pageWidth - titleSize.width) / 2, y: 50, width: titleSize.width, height: titleSize.height)
+            title.draw(in: titleRect, withAttributes: headerAttributes)
+            
+            // Draw line below title
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: 50, y: 80))
+            path.addLine(to: CGPoint(x: pageWidth - 50, y: 80))
+            UIColor.black.setStroke()
+            path.stroke()
+            
+            // Draw Patient Details section
+            let patientTitle = "Patient Details"
+            patientTitle.draw(
+                at: CGPoint(x: 50, y: 100),
+                withAttributes: subheaderAttributes
+            )
+            
+            let nameText = "Name: \(report.patientName)"
+            nameText.draw(
+                at: CGPoint(x: 50, y: 130),
+                withAttributes: textAttributes
+            )
+            
+            let idText = "Patient ID: \(report.patientId)"
+            idText.draw(
+                at: CGPoint(x: 50, y: 150),
+                withAttributes: textAttributes
+            )
+            
+            // Format date and add report date
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .long
+            let dateText = "Report Date: \(dateFormatter.string(from: report.uploadedAt))"
+            dateText.draw(
+                at: CGPoint(x: 50, y: 170),
+                withAttributes: textAttributes
+            )
+            
+            // Add email (example data - could be stored in the report in the future)
+            let emailText = "Email: \(report.patientId.lowercased())@example.com"
+            emailText.draw(
+                at: CGPoint(x: 50, y: 190),
+                withAttributes: textAttributes
+            )
+            
+            // Draw Summary section
+            let summaryTitle = "Summary"
+            summaryTitle.draw(
+                at: CGPoint(x: 50, y: 220),
+                withAttributes: subheaderAttributes
+            )
+            
+            let summaryText = report.summary ?? "No summary available"
+            
+            // Draw multi-line summary
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.alignment = .natural
+            paragraphStyle.lineBreakMode = .byWordWrapping
+            
+            let summaryAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 12),
+                .paragraphStyle: paragraphStyle
+            ]
+            
+            let summaryRect = CGRect(x: 50, y: 250, width: pageWidth - 100, height: 200)
+            summaryText.draw(in: summaryRect, withAttributes: summaryAttributes)
+            
+            // Add hospital logo or watermark
+            if let logoImage = UIImage(named: "hospital_logo") {
+                let logoRect = CGRect(x: pageWidth - 100, y: pageHeight - 100, width: 50, height: 50)
+                logoImage.draw(in: logoRect)
+            }
+            
+            // Add footer with date generated
+            let footerText = "Generated on \(dateFormatter.string(from: Date()))"
+            let footerAttributes = [
+                NSAttributedString.Key.font: UIFont.systemFont(ofSize: 10),
+                NSAttributedString.Key.foregroundColor: UIColor.gray
+            ]
+            let footerSize = footerText.size(withAttributes: footerAttributes)
+            let footerRect = CGRect(
+                x: (pageWidth - footerSize.width) / 2,
+                y: pageHeight - 50,
+                width: footerSize.width,
+                height: footerSize.height
+            )
+            footerText.draw(in: footerRect, withAttributes: footerAttributes)
+        }
+        
+        return pdfData
+    }
+}
+
+// MARK: - PDF Preview View
+struct PDFPreview: UIViewRepresentable {
+    let data: Data
+    
+    func makeUIView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.displayMode = .singlePage
+        pdfView.autoScales = true
+        pdfView.displayDirection = .vertical
+        return pdfView
+    }
+    
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if let document = PDFDocument(data: data) {
+            uiView.document = document
+        }
+    }
+}
+
+// MARK: - Report Detail View
+struct PatientReportDetailView: View {
+    let report: PatientReport
+    @Environment(\.dismiss) private var dismiss
+    @State private var isLoadingPdf = true
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var pdfData: Data?
+    
+    var body: some View {
+        NavigationStack {
+            VStack {
+                if isLoadingPdf {
+                    ProgressView("Generating report...")
+                } else if let pdfData = pdfData {
+                    PDFPreview(data: pdfData)
+                        .edgesIgnoringSafeArea(.bottom)
+                } else {
+                    VStack(spacing: 20) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 40))
+                            .foregroundColor(.orange)
+                        Text("Failed to generate report")
+                            .font(.headline)
+                        Text("Please try again later")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle("Lab Report")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Back") {
+                        dismiss()
+                    }
+                }
+                
+                if pdfData != nil {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: sharePDF) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    }
+                }
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage)
+            }
+            .onAppear {
+                loadReport()
+            }
+        }
+    }
+    
+    private func loadReport() {
+        // If the report's fileUrl starts with "generated_pdf", we'll generate a PDF
+        // Otherwise, we'll try to load the PDF from the URL
+        if report.fileUrl.starts(with: "generated_pdf") {
+            generatePDF()
+        } else {
+            // For real URLs, attempt to load the PDF
+            loadPDFFromURL()
+        }
+    }
+    
+    private func generatePDF() {
+        // Generate a PDF from the report data
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if let generatedPDF = PDFGenerator.generateLabReportPDF(report: report) {
+                pdfData = generatedPDF
+                isLoadingPdf = false
+            } else {
+                isLoadingPdf = false
+                errorMessage = "Failed to generate PDF report"
+                showError = true
+            }
+        }
+    }
+    
+    private func loadPDFFromURL() {
+        guard let url = URL(string: report.fileUrl) else {
+            isLoadingPdf = false
+            errorMessage = "Invalid report URL"
+            showError = true
+            return
+        }
+        
+        // Use URLSession to download the PDF
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            DispatchQueue.main.async {
+                isLoadingPdf = false
+                
+                if let error = error {
+                    errorMessage = "Failed to load PDF: \(error.localizedDescription)"
+                    showError = true
+                    return
+                }
+                
+                guard let data = data, let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    errorMessage = "Failed to load PDF from server"
+                    showError = true
+                    return
+                }
+                
+                // Check if the data is a valid PDF
+                if PDFDocument(data: data) != nil {
+                    pdfData = data
+                } else {
+                    // If not a valid PDF, generate one instead
+                    pdfData = PDFGenerator.generateLabReportPDF(report: report)
+                    if pdfData == nil {
+                        errorMessage = "Invalid PDF format"
+                        showError = true
+                    }
+                }
+            }
+        }.resume()
+    }
+    
+    private func sharePDF() {
+        guard let pdfData = pdfData else { return }
+        
+        // Create a formatted filename with patient ID and date
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd"
+        let dateString = dateFormatter.string(from: report.uploadedAt)
+        let fileName = "Lab_Report_\(report.patientId)_\(dateString).pdf"
+        
+        // Create a temporary URL to store the PDF
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        
+        do {
+            // Write PDF data to temporary file
+            try pdfData.write(to: url)
+            
+            // Create activity view controller to share the PDF
+            let activityViewController = UIActivityViewController(
+                activityItems: [url],
+                applicationActivities: nil
+            )
+            
+            // Present the activity view controller
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootViewController = windowScene.windows.first?.rootViewController {
+                
+                if let popover = activityViewController.popoverPresentationController {
+                    popover.sourceView = rootViewController.view
+                    popover.sourceRect = CGRect(x: UIScreen.main.bounds.width / 2, y: UIScreen.main.bounds.height / 2, width: 0, height: 0)
+                    popover.permittedArrowDirections = []
+                }
+                
+                rootViewController.present(activityViewController, animated: true)
+            }
+        } catch {
+            errorMessage = "Failed to share PDF: \(error.localizedDescription)"
+            showError = true
+        }
+    }
+}
+
+// MARK: - Add Report View
+struct AddReportView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var patientName = ""
+    @State private var patientId = ""
+    @State private var summary = ""
+    
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var isValidatingPatient = false
+    @State private var patientValidated = false
+    
+    private let supabase = SupabaseController.shared
+    
+    var onReportAdded: () -> Void
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text("Patient Information")) {
+                    TextField("Patient Name", text: $patientName)
+                    
+                    HStack {
+                        TextField("Patient ID", text: Binding(
+                            get: { patientId },
+                            set: { patientId = $0.uppercased() }
+                        ))
+                        .autocapitalization(.allCharacters)
+                        
+                        if isValidatingPatient {
+                            ProgressView()
+                                .padding(.leading, 4)
+                        } else if !patientId.isEmpty {
+                            Button("Verify") {
+                                verifyPatient()
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.blue)
+                            .disabled(patientId.isEmpty || isValidatingPatient)
+                        }
+                    }
+                    
+                    if patientValidated {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Patient verified")
+                                .foregroundColor(.green)
+                        }
+                    }
+                }
+                
+                Section(header: Text("Report Details")) {
+                    TextField("Report Summary", text: $summary, axis: .vertical)
+                        .lineLimit(5...10)
+                }
+                
+                Section {
+                    Button(action: addReport) {
+                        HStack {
+                            Text("Add Report")
+                            if isLoading {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty || !patientValidated)
+                }
+            }
+            .navigationTitle("Add New Report")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage)
+            }
+            .onChange(of: patientId) { _, _ in
+                // Reset validation when patient ID changes
+                patientValidated = false
+            }
+            .onChange(of: patientName) { _, _ in
+                // Reset validation when patient name changes
+                patientValidated = false
+            }
+        }
+    }
+    
+    private func verifyPatient() {
+        if patientId.isEmpty {
+            errorMessage = "Please enter a patient ID to verify"
+            showError = true
+            return
+        }
+        
+        isValidatingPatient = true
+        
+        Task {
+            do {
+                // Query the patients table to verify the patient exists
+                let patients = try await supabase.select(
+                    from: "patients",
+                    where: "patient_id",
+                    equals: patientId
+                )
+                
+                await MainActor.run {
+                    isValidatingPatient = false
+                    
+                    if patients.isEmpty {
+                        errorMessage = "No patient found with ID: \(patientId)"
+                        showError = true
+                    } else if let patient = patients.first, let patientNameFromDB = patient["name"] as? String {
+                        if patientName.isEmpty {
+                            // If patient name field is empty, auto-fill it
+                            patientName = patientNameFromDB
+                            patientValidated = true
+                        } else if patientName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != patientNameFromDB.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                            // If patient name doesn't match the one in database
+                            errorMessage = "Patient name doesn't match the name in our records for patient ID: \(patientId). The correct name is '\(patientNameFromDB)'."
+                            showError = true
+                        } else {
+                            // Patient verified successfully
+                            patientValidated = true
+                        }
+                    }
+                }
+            } catch {
+                print("ERROR verifying patient: \(error.localizedDescription)")
+                
+                await MainActor.run {
+                    isValidatingPatient = false
+                    errorMessage = "Failed to verify patient: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
+    }
+    
+    private func addReport() {
+        isLoading = true
+        
+        // Verify patient one more time before creating report
+        if !patientValidated {
+            errorMessage = "Please verify the patient information first"
+            showError = true
+            isLoading = false
+            return
+        }
+        
+        // Generate a placeholder for the file_url, which will be used to identify this is a generated PDF
+        let placeholderUrl = "generated_pdf_\(UUID().uuidString)"
+        
+        // Get the lab admin ID from UserDefaults
+        guard let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") else {
+            errorMessage = "Lab admin ID not found. Please log in again."
+            showError = true
+            isLoading = false
+            return
+        }
+        
+        // Create a new report with the required fields following the table definition
+        let newReport: [String: Any] = [
+            "patient_name": patientName,
+            "patient_id": patientId,
+            "summary": summary,
+            "file_url": placeholderUrl, // Required field in the database schema
+            "lab_id": labAdminId // Associate with the lab admin
+        ]
+        
+        Task {
+            do {
+                // First ensure the table exists
+                try await supabase.ensurePatReportsTableExists()
+                
+                // Insert the new report
+                try await supabase.insert(into: "pat_reports", values: newReport)
+                
+                print("Report successfully added to pat_reports table for lab admin: \(labAdminId)")
+                
+                await MainActor.run {
+                    isLoading = false
+                    onReportAdded()
+                    dismiss()
+                }
+            } catch {
+                print("ERROR adding report: \(error.localizedDescription)")
+                
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Failed to add report: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Edit Report View
+struct EditReportView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var patientName: String
+    @State private var patientId: String
+    @State private var summary: String
+    
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var isValidatingPatient = false
+    @State private var patientValidated = true // Initially true because we're editing an existing report
+    
+    private let supabase = SupabaseController.shared
+    private let report: PatientReport
+    
+    var onReportUpdated: () -> Void
+    
+    init(report: PatientReport, onReportUpdated: @escaping () -> Void) {
+        self.report = report
+        self._patientName = State(initialValue: report.patientName)
+        self._patientId = State(initialValue: report.patientId)
+        self._summary = State(initialValue: report.summary ?? "")
+        self.onReportUpdated = onReportUpdated
+    }
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text("Patient Information")) {
+                    TextField("Patient Name", text: $patientName)
+                    
+                    HStack {
+                        TextField("Patient ID", text: Binding(
+                            get: { patientId },
+                            set: { patientId = $0.uppercased() }
+                        ))
+                        .autocapitalization(.allCharacters)
+                        
+                        if isValidatingPatient {
+                            ProgressView()
+                                .padding(.leading, 4)
+                        } else if !patientId.isEmpty {
+                            Button("Verify") {
+                                verifyPatient()
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.blue)
+                            .disabled(patientId.isEmpty || isValidatingPatient)
+                        }
+                    }
+                    
+                    if patientValidated {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Patient verified")
+                                .foregroundColor(.green)
+                        }
+                    }
+                }
+                
+                Section(header: Text("Report Details")) {
+                    TextField("Report Summary", text: $summary, axis: .vertical)
+                        .lineLimit(5...10)
+                }
+                
+                Section {
+                    Button(action: updateReport) {
+                        HStack {
+                            Text("Update Report")
+                            if isLoading {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty || !patientValidated)
+                }
+            }
+            .navigationTitle("Edit Report")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage)
+            }
+            .onChange(of: patientId) { _, _ in
+                // Reset validation when patient ID changes
+                patientValidated = false
+            }
+            .onChange(of: patientName) { _, _ in
+                // Reset validation when patient name changes
+                patientValidated = false
+            }
+        }
+    }
+    
+    private func verifyPatient() {
+        if patientId.isEmpty {
+            errorMessage = "Please enter a patient ID to verify"
+            showError = true
+            return
+        }
+        
+        isValidatingPatient = true
+        
+        Task {
+            do {
+                // Query the patients table to verify the patient exists
+                let patients = try await supabase.select(
+                    from: "patients",
+                    where: "patient_id",
+                    equals: patientId
+                )
+                
+                await MainActor.run {
+                    isValidatingPatient = false
+                    
+                    if patients.isEmpty {
+                        errorMessage = "No patient found with ID: \(patientId)"
+                        showError = true
+                    } else if let patient = patients.first, let patientNameFromDB = patient["name"] as? String {
+                        if patientName.isEmpty {
+                            // If patient name field is empty, auto-fill it
+                            patientName = patientNameFromDB
+                            patientValidated = true
+                        } else if patientName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != patientNameFromDB.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                            // If patient name doesn't match the one in database
+                            errorMessage = "Patient name doesn't match the name in our records for patient ID: \(patientId). The correct name is '\(patientNameFromDB)'."
+                            showError = true
+                        } else {
+                            // Patient verified successfully
+                            patientValidated = true
+                        }
+                    }
+                }
+            } catch {
+                print("ERROR verifying patient: \(error.localizedDescription)")
+                
+                await MainActor.run {
+                    isValidatingPatient = false
+                    errorMessage = "Failed to verify patient: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
+    }
+    
+    private func updateReport() {
+        isLoading = true
+        
+        // Verify patient one more time before updating report
+        if !patientValidated {
+            errorMessage = "Please verify the patient information first"
+            showError = true
+            isLoading = false
+            return
+        }
+        
+        // Create an updated report object with only the fields we want to update
+        var updatedReport: [String: Any] = [
+            "patient_name": patientName,
+            "patient_id": patientId,
+            "summary": summary
+        ]
+        
+        // Get the lab admin ID from UserDefaults
+        // We'll include it in the update to ensure it's preserved or updated if missing
+        if let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") {
+            updatedReport["lab_id"] = labAdminId
+        }
+        
+        Task {
+            do {
+                // Update the report in Supabase
+                try await supabase.update(table: "pat_reports", id: report.id.uuidString, data: updatedReport)
+                
+                print("Report successfully updated in pat_reports table")
+                
+                await MainActor.run {
+                    isLoading = false
+                    onReportUpdated()
+                    dismiss()
+                }
+            } catch {
+                print("ERROR updating report: \(error.localizedDescription)")
+                
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Failed to update report: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Patient Card View
+struct PatientCard: View {
+    let patient: Models.Patient
+    var onTap: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(patient.name)
+                        .font(.headline)
+                    Text("ID: \(patient.id)")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                Spacer()
+                
+                // Display age and gender
+                HStack(spacing: 3) {
+                    Text(patient.gender)
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
+                        .cornerRadius(4)
+                    
+                    Text("\(patient.age) yrs")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.1))
+                        .foregroundColor(.green)
+                        .cornerRadius(4)
+                }
+            }
+            
+            // Contact Info
+            HStack {
+                Label {
+                    Text(patient.phoneNumber ?? "No Phone")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } icon: {
+                    Image(systemName: "phone.fill")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+                
+                Spacer()
+                
+                if !patient.bloodGroup.isEmpty {
+                    Text("Blood: \(patient.bloodGroup)")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.red.opacity(0.1))
+                        .foregroundColor(.red)
+                        .cornerRadius(4)
+                }
+            }
+            
+            // View Button and Chevron
+            HStack {
+                Button(action: onTap) {
+                    HStack {
+                        Image(systemName: "person.text.rectangle")
+                            .foregroundColor(.blue)
+                        Text("View Details")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            .padding(.top, 8)
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
+    }
+}
+
+// MARK: - Patient Reports View
+struct PatientReportsView: View {
+    // Reports-related state
+    @State private var reports = [PatientReport]()
+    @State private var searchQuery = ""
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var selectedReport: PatientReport?
+    @State private var showReportDetail = false
+    @State private var showAddReport = false
+    @State private var showEditReport = false
+    @State private var reportToEdit: PatientReport?
+    @State private var showDeleteConfirmation = false
+    @State private var reportToDelete: PatientReport?
+    @State private var selectedFilter: String = "All Patients"
+    
+    private let supabase = SupabaseController.shared
+    
+    // Available filters
+    private let filters = ["All Patients", "Recent", "Pending"]
+    
+    var filteredReports: [PatientReport] {
+        var filtered = reports
+        
+        // Filter by search query
+        if !searchQuery.isEmpty {
+            filtered = filtered.filter { report in
+                report.patientName.lowercased().contains(searchQuery.lowercased()) ||
+                report.patientId.lowercased().contains(searchQuery.lowercased()) ||
+                (report.summary?.lowercased().contains(searchQuery.lowercased()) ?? false)
+            }
+        }
+        
+        // Apply category filter
+        switch selectedFilter {
+        case "Recent":
+            // Filter reports from the last 7 days
+            let oneWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+            filtered = filtered.filter { $0.uploadedAt > oneWeekAgo }
+        case "Pending":
+            // Example filter - in a real app this would filter by a status field
+            // For now, we'll just show the most recent 3 as "pending"
+            if filtered.count > 3 {
+                filtered = Array(filtered.prefix(3))
+            }
+        default:
+            // "All Patients" - no additional filtering
+            break
+        }
+        
+        return filtered
+    }
+    
+    var body: some View {
+        ZStack {
+            // Background with a light color
+            Color(.systemGray6)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // Search bar (moved to top, replacing header)
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.gray)
+                    
+                    TextField("Search reports...", text: $searchQuery)
+                        .padding(.vertical, 10)
+                    
+                    if !searchQuery.isEmpty {
+                        Button(action: {
+                            searchQuery = ""
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .background(Color.white)
+                .cornerRadius(10)
+                .padding(.horizontal)
+                .padding(.top, 20)
+                .padding(.bottom, 15)
+                
+                // Reports count (directly after search bar, filter buttons removed)
+                HStack {
+                    Text("\(filteredReports.count) Reports Found")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 10)
+                
+                // Reports List
+                reportsListView
+                    .refreshable {
+                        await fetchPatientReports()
+                    }
+            }
+            
+            // Floating Add Button
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button(action: {
+                        showAddReport = true
+                    }) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 56, height: 56)
+                            .background(Circle().fill(Color.blue))
+                            .shadow(color: Color.blue.opacity(0.4), radius: 4, x: 0, y: 2)
+                    }
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 20)
+                }
+            }
+        }
+        .onAppear {
+            Task {
+                await fetchPatientReports()
+            }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+        .sheet(isPresented: $showReportDetail) {
+            if let report = selectedReport {
+                PatientReportDetailView(report: report)
+            }
+        }
+        .sheet(isPresented: $showAddReport) {
+            AddReportView {
+                // This closure is called when a report is added
+                Task {
+                    await fetchPatientReports()
+                }
+            }
+        }
+        .sheet(isPresented: $showEditReport) {
+            if let report = reportToEdit {
+                EditReportView(report: report) {
+                    // This closure is called when a report is updated
+                    Task {
+                        await fetchPatientReports()
+                    }
+                }
+            }
+        }
+        .alert("Delete Report", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                if let report = reportToDelete {
+                    deleteReport(report)
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this report? This action cannot be undone.")
+        }
+    }
+    
+    // MARK: - Reports List View
+    var reportsListView: some View {
+        ScrollView {
+            VStack(spacing: 15) {
+                if isLoading {
+                    // Loading view
+                    ProgressView("Loading reports...")
+                        .padding(.top, 50)
+                } else if filteredReports.isEmpty {
+                    // Empty state
+                    VStack(spacing: 20) {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 60))
+                            .foregroundColor(.gray.opacity(0.7))
+                        
+                        if !searchQuery.isEmpty {
+                            Text("No matching reports found")
+                                .font(.title3)
+                                .fontWeight(.medium)
+                            
+                            Button(action: {
+                                searchQuery = ""
+                            }) {
+                                Text("Clear Search")
+                                    .foregroundColor(.blue)
+                            }
+                        } else {
+                            Text("No reports found")
+                                .font(.title3)
+                                .fontWeight(.medium)
+                            
+                            Button(action: {
+                                showAddReport = true
+                            }) {
+                                Text("Add First Report")
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(Color.blue)
+                                    .cornerRadius(8)
+                            }
+                        }
+                    }
+                    .padding(.top, 60)
+                } else {
+                    // Hospital-card style reports
+                    ForEach(filteredReports) { report in
+                        hospitalStyleReportCard(report: report)
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .padding(.bottom, 80) // Extra padding for the FAB
+        }
+    }
+    
+    // MARK: - Hospital Style Report Card
+    private func hospitalStyleReportCard(report: PatientReport) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Report header with hospital-like layout
+            HStack(alignment: .top, spacing: 15) {
+                // Hospital icon placeholder
+                Image(systemName: "doc.text.viewfinder")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 35, height: 35)
+                    .foregroundColor(.gray)
+                    .padding(10)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+                
+                // Main report details - matches hospital card format
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(report.patientName)
+                        .font(.headline)
+                        .fontWeight(.bold)
+                    
+                    HStack {
+                        Text("Patient ID")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        
+                        Text(report.patientId)
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                    }
+                }
+                
+                Spacer()
+                
+                // Three dots menu
+                Menu {
+                    Button(action: {
+                        reportToEdit = report
+                        showEditReport = true
+                    }) {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    
+                    Button(role: .destructive, action: {
+                        reportToDelete = report
+                        showDeleteConfirmation = true
+                    }) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .padding(10)
+                        .foregroundColor(.gray)
+                }
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 15)
+            
+            // Divider
+            Divider()
+                .padding(.horizontal)
+            
+            // Report details section - only date and time
+            VStack(alignment: .leading, spacing: 12) {
+                // Date and time row
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Date")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text(formatDate(report.uploadedAt, dateOnly: true))
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                    }
+                    
+                    Spacer()
+                    
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Time")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text(formatDate(report.uploadedAt, timeOnly: true))
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
+            .padding(.horizontal, 15)
+            .padding(.vertical, 12)
+            
+            // View Report button
+            Button(action: {
+                selectedReport = report
+                showReportDetail = true
+            }) {
+                HStack {
+                    Image(systemName: "doc.text")
+                        .foregroundColor(.blue)
+                    Text("View Report")
+                        .foregroundColor(.blue)
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 15)
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+    }
+    
+    // Date formatting functions
+    private func formatDate(_ date: Date, dateOnly: Bool = false, timeOnly: Bool = false) -> String {
+        let formatter = DateFormatter()
+        if dateOnly {
+            formatter.dateFormat = "MMM d, yyyy"
+            return formatter.string(from: date)
+        } else if timeOnly {
+            formatter.dateFormat = "h:mm a"
+            return formatter.string(from: date)
+        } else {
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            return formatter.string(from: date)
+        }
+    }
+    
+    private func fetchPatientReports() async {
+        isLoading = true
+        
+        do {
+            // Get the lab admin ID from UserDefaults (set during login)
+            guard let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") else {
+                throw NSError(domain: "LabReportError", code: 1, 
+                              userInfo: [NSLocalizedDescriptionKey: "Lab admin ID not found. Please log in again."])
+            }
+            
+            print("FETCH REPORTS: Fetching for lab admin ID: \(labAdminId)")
+            
+            // Ensure the pat_reports table exists with the correct schema
+            try await supabase.ensurePatReportsTableExists()
+            
+            // Fetch only reports associated with this lab admin
+            let patientReportsData = try await supabase.select(
+                from: "pat_reports",
+                where: "lab_id",
+                equals: labAdminId
+            )
+            
+            print("FETCH REPORTS: Retrieved \(patientReportsData.count) reports for lab admin: \(labAdminId)")
+            
+            // If no reports exist, simply update the UI with empty data instead of creating a sample report
+            if patientReportsData.isEmpty {
+                print("No reports found for lab admin ID: \(labAdminId)")
+                await MainActor.run {
+                    reports = []
+                    isLoading = false
+                }
+            } else {
+                await updateReportsUI(with: patientReportsData)
+            }
+        } catch {
+            print("FETCH REPORTS ERROR: \(error.localizedDescription)")
+            
+            await MainActor.run {
+                errorMessage = "Failed to fetch reports: \(error.localizedDescription)"
+                showError = true
+                isLoading = false
+            }
+        }
+    }
+    
+    private func deleteReport(_ report: PatientReport) {
+        Task {
+            do {
+                // Delete the report from Supabase
+                try await supabase.delete(from: "pat_reports", where: "id", equals: report.id.uuidString)
+                print("Report successfully deleted from pat_reports table")
+                
+                // Refresh the reports list
+                await fetchPatientReports()
+            } catch {
+                print("ERROR deleting report: \(error.localizedDescription)")
+                
+                await MainActor.run {
+                    errorMessage = "Failed to delete report: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
+    }
+    
+    private func updateReportsUI(with data: [[String: Any]]) async {
+        // Convert to PatientReport models
+        let fetchedReports = data.map { PatientReport(from: $0) }
+        
+        // Update the UI on the main thread
+        await MainActor.run {
+            reports = fetchedReports.sorted(by: { $0.uploadedAt > $1.uploadedAt }) // Sort by most recent first
+            isLoading = false
+        }
+    }
+}
+
+// MARK: - Appointment Booking View
+struct AppointmentBookingView: View {
+    // Environment
+    @Environment(\.dismiss) private var dismiss
+    
+    // State variables
+    @State private var doctorName: String
+    @State private var specialty: String
+    @State private var appointmentDate: Date
+    @State private var startTime: Date
+    @State private var endTime: Date
+    @State private var patientName: String
+    @State private var healthConcerns: String
+    @State private var isPremium: Bool
+    @State private var showPremiumConfirmation: Bool
+    @State private var isBookingAppointment: Bool
+    @State private var showError: Bool
+    @State private var errorMessage: String
+    
+    // Constants
+    private let consultationFee: Double
+    private let bookingFee: Double
+    private let premiumFee: Double
+    private let supabase = SupabaseController.shared
+    
+    // Computed properties
+    private var totalAmount: Double {
+        consultationFee + bookingFee + (isPremium ? premiumFee : 0)
+    }
+    
+    // Callback
+    var onAppointmentBooked: () -> Void
+    
+    // MARK: - Initializer
+    init(
+        doctorName: String,
+        specialty: String,
+        appointmentDate: Date,
+        startTime: Date,
+        endTime: Date,
+        patientName: String,
+        consultationFee: Double,
+        bookingFee: Double,
+        premiumFee: Double,
+        onAppointmentBooked: @escaping () -> Void
+    ) {
+        self._doctorName = State<String>(initialValue: doctorName)
+        self._specialty = State<String>(initialValue: specialty)
+        self._appointmentDate = State<Date>(initialValue: appointmentDate)
+        self._startTime = State<Date>(initialValue: startTime)
+        self._endTime = State<Date>(initialValue: endTime)
+        self._patientName = State<String>(initialValue: patientName)
+        self._healthConcerns = State<String>(initialValue: "")
+        self._isPremium = State<Bool>(initialValue: false)
+        self._showPremiumConfirmation = State<Bool>(initialValue: false)
+        self._isBookingAppointment = State<Bool>(initialValue: false)
+        self._showError = State<Bool>(initialValue: false)
+        self._errorMessage = State<String>(initialValue: "")
+        
+        self.consultationFee = consultationFee
+        self.bookingFee = bookingFee
+        self.premiumFee = premiumFee
+        self.onAppointmentBooked = onAppointmentBooked
+    }
+    
+    // Convenience initializer with defaults
+    init() {
+        self.init(
+            doctorName: "Dr. Ramesh Singh",
+            specialty: "General medicine",
+            appointmentDate: Date().addingTimeInterval(86400),
+            startTime: Calendar.current.date(bySettingHour: 11, minute: 0, second: 0, of: Date()) ?? Date(),
+            endTime: Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date(),
+            patientName: "Myself",
+            consultationFee: 500.0,
+            bookingFee: 10.0,
+            premiumFee: 200.0,
+            onAppointmentBooked: {}
+        )
+    }
+    
+    // MARK: - Body
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // Doctor information
+                HStack(spacing: 15) {
+                    // Profile image
+                    Circle()
+                        .fill(Color.teal)
+                        .frame(width: 70, height: 70)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 30, height: 30)
+                                .foregroundColor(.white)
+                        )
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(doctorName)
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        
+                        Text(specialty)
+                            .font(.body)
+                            .foregroundColor(.gray)
+                    }
+                }
+                .padding(.top, 10)
+                
+                // Appointment section
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Appointment")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    // Date row
+                    HStack {
+                        Image(systemName: "calendar")
+                            .frame(width: 24)
+                        
+                        let dateFormatter = DateFormatter()
+                        dateFormatter.dateStyle = .long
+                        Text(dateFormatter.string(from: appointmentDate))
+                            .font(.body)
+                    }
+                    
+                    // Time row
+                    HStack {
+                        Image(systemName: "clock")
+                            .frame(width: 24)
+                        
+                        let timeFormatter = DateFormatter()
+                        timeFormatter.timeStyle = .short
+                        Text("\(timeFormatter.string(from: startTime)) to \(timeFormatter.string(from: endTime))")
+                            .font(.body)
+                    }
+                }
+                
+                // Patient info section
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Patient info")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    HStack {
+                        Circle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 40, height: 40)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .foregroundColor(.gray)
+                            )
+                        
+                        Text(patientName)
+                            .font(.body)
+                            .foregroundColor(.blue)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.down")
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Text("Note: You can describe your health concerns or any relevant details in the text field below.")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    
+                    TextField("Enter your health concerns...", text: $healthConcerns)
+                        .padding()
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                
+                // Premium option
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $isPremium) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Premium Appointment")
+                                .font(.headline)
+                            
+                            Text("Get priority service with faster attention")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .onChange(of: isPremium) { _, newValue in
+                        if newValue {
+                            showPremiumConfirmation = true
+                        }
+                    }
+                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+                    .padding(.vertical, 5)
+                }
+                .padding(.vertical, 10)
+                
+                // Payment Details
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Payment Details")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    HStack {
+                        Text("Consultation fees:")
+                        Spacer()
+                        Text("Rs.\(Int(consultationFee))")
+                    }
+                    .font(.body)
+                    
+                    HStack {
+                        Text("Booking fee")
+                        Spacer()
+                        Text("Rs.\(Int(bookingFee))")
+                    }
+                    .font(.body)
+                    
+                    if isPremium {
+                        HStack {
+                            Text("Premium service")
+                            Spacer()
+                            Text("Rs.\(Int(premiumFee))")
+                        }
+                        .font(.body)
+                    }
+                }
+                
+                // Pay button
+                Button(action: bookAppointment) {
+                    HStack {
+                        Spacer()
+                        Text("Pay")
+                            .fontWeight(.semibold)
+                        
+                        Text("Rs.\(Int(totalAmount))")
+                            .fontWeight(.semibold)
+                        Spacer()
+                    }
+                    .padding(.vertical, 16)
+                    .background(Color.teal)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+                .padding(.top, 20)
+                .disabled(isBookingAppointment)
+                
+                if isBookingAppointment {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .padding()
+                        Spacer()
+                    }
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Review & Pay")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: {
+                    dismiss()
+                }) {
+                    HStack {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                    .foregroundColor(.blue)
+                }
+            }
+        }
+        .alert("Premium Service", isPresented: $showPremiumConfirmation) {
+            Button("Cancel", role: .cancel) {
+                isPremium = false
+            }
+            Button("Enable") { }
+        } message: {
+            Text("By enabling it you will get the priority in appointment and lab reports. This will add Rs.200 to your total.")
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
+        }
+    }
+    
+    // MARK: - Methods
+    private func bookAppointment() {
+        isBookingAppointment = true
+        
+        Task {
+            do {
+                // Generate a unique appointment ID that matches the pattern APPT[0-9]{3}[A-Z]
+                let randomNum = Int.random(in: 100...999)
+                let randomChar = String(Character(UnicodeScalar(65 + Int.random(in: 0...25))!))
+                let appointmentId = "APPT\(randomNum)\(randomChar)"
+                
+                // Format the date and times for the appointment
+                let dateFormatter = ISO8601DateFormatter()
+                dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                
+                // Get the user ID and hospital ID from UserDefaults
+                guard let patientId = UserDefaults.standard.string(forKey: "user_id"),
+                      let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") else {
+                    throw NSError(domain: "AppointmentError", code: 1, 
+                                 userInfo: [NSLocalizedDescriptionKey: "User ID or Hospital ID not found"])
+                }
+                
+                // For this example, we'll use a mock doctor ID
+                let doctorId = "DOC12345" // In a real app, this would be the actual doctor's ID
+                
+                // Get just the date part of the appointment date
+                let calendar = Calendar.current
+                let appointmentDateComponents = calendar.dateComponents([.year, .month, .day], from: appointmentDate)
+                let appointmentDateOnly = calendar.date(from: appointmentDateComponents) ?? appointmentDate
+                
+                // Format the time components
+                let startTimeFormatter = DateFormatter()
+                startTimeFormatter.dateFormat = "HH:mm:ss"
+                let startTimeString = startTimeFormatter.string(from: startTime)
+                
+                let endTimeFormatter = DateFormatter()
+                endTimeFormatter.dateFormat = "HH:mm:ss"
+                let endTimeString = endTimeFormatter.string(from: endTime)
+                
+                // Create appointment data
+                let appointmentData: [String: Any] = [
+                    "id": appointmentId,
+                    "patient_id": patientId,
+                    "doctor_id": doctorId,
+                    "hospital_id": hospitalId,
+                    "appointment_date": dateFormatter.string(from: appointmentDateOnly),
+                    "status": "upcoming",
+                    "reason": healthConcerns,
+                    "isdone": false,
+                    "is_premium": isPremium,
+                    "slot_start_time": startTimeString,
+                    "slot_end_time": endTimeString,
+                    "slot": [
+                        "start": startTimeString,
+                        "end": endTimeString
+                    ]
+                ]
+                
+                // Insert appointment into Supabase
+                try await supabase.insert(into: "appointments", values: appointmentData)
+                
+                print("Appointment booked successfully with ID: \(appointmentId)")
+                
+                await MainActor.run {
+                    isBookingAppointment = false
+                    onAppointmentBooked()
+                    dismiss()
+                }
+            } catch {
+                print("ERROR booking appointment: \(error)")
+                
+                await MainActor.run {
+                    isBookingAppointment = false
+                    errorMessage = "Failed to book appointment: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
+    }
+}
+
+// Update previews
+#Preview("Patient Reports") {
+    PatientReportsView()
+}
+
+#Preview("Appointment Booking") {
+    NavigationStack {
+        AppointmentBookingView()
+    }
+} 
