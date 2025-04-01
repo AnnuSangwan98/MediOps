@@ -26,6 +26,7 @@ struct AddDoctorView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    //@State private var doctorid: String = ""
     @State private var password = "" // Added password for account creation
     @State private var selectedWeekdaySlots: Set<String> = []
     @State private var selectedWeekendSlots: Set<String> = []
@@ -105,52 +106,16 @@ struct AddDoctorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                // Only show Doctor ID when available
-                if !doctorId.isEmpty && showSuccessInfo {
-                    Section(header: Text("Doctor Information")) {
-                        HStack {
-                            Text("Doctor ID:")
-                                .foregroundColor(.gray)
-                            Spacer()
-                            Text(doctorId)
-                                .font(.headline)
-                                .foregroundColor(.green)
-                        }
-                        
-                        Text("Doctor ID has been generated successfully. Use this ID for future reference.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Button(action: {
-                            Task {
-                                await testAvailabilityInsertion()
-                            }
-                        }) {
-                            Text("Test Availability Insertion")
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(Color.blue)
-                                .foregroundColor(.white)
-                                .cornerRadius(8)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .padding(.top, 8)
-                        
-                        Button(action: {
-                            resetFormForNewDoctor()
-                        }) {
-                            Text("Create New Doctor")
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(Color.green)
-                                .foregroundColor(.white)
-                                .cornerRadius(8)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .padding(.top, 8)
+                Section(header: Text("Doctor Information")) {
+                    HStack {
+                        Text("Doctor ID:")
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Text(doctorId)
+                            .font(.headline)
+                            .foregroundColor(.blue)
                     }
                 }
-                
                 Section(header: Text("Personal Information")) {
                     TextField("Full Name", text: $fullName)
                         .onChange(of: fullName) { _, newValue in

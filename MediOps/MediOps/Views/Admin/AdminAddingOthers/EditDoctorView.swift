@@ -517,168 +517,28 @@ struct EditDoctorView: View {
                     hospitalId: hospitalId
                 )
                 
-                print("⚡️ DB returned weekday slots: \(weekdaySlots.count) slots")
-                print("⚡️ DB returned weekend slots: \(weekendSlots.count) slots")
+                print("⚡️ DB returned weekday slots: \(weekdaySlots)")
+                print("⚡️ DB returned weekend slots: \(weekendSlots)")
                 
-                // Step 1: Convert slots to exact UI formats we expect (hard-coded approach for reliable results)
-                
-                // Known mappings to UI time formats
-                let formatMap: [String: String] = [
-                    // 24-hour format mapping
-                    "09:00:00-10:00:00": "9:00-10:00 AM",
-                    "10:00:00-11:00:00": "10:00-11:00 AM",
-                    "11:00:00-12:00:00": "11:00-12:00 PM",
-                    "13:00:00-14:00:00": "1:00-2:00 PM",
-                    "14:00:00-15:00:00": "2:00-3:00 PM",
-                    "15:00:00-16:00:00": "3:00-4:00 PM",
-                    "16:00:00-17:00:00": "4:00-5:00 PM",
-                    "17:00:00-18:00:00": "5:00-6:00 PM",
-                    "18:00:00-19:00:00": "6:00-7:00 PM",
-                    
-                    // 12-hour without space format mapping
-                    "9:00AM-10:00AM": "9:00-10:00 AM",
-                    "10:00AM-11:00AM": "10:00-11:00 AM",
-                    "11:00AM-12:00PM": "11:00-12:00 PM",
-                    "1:00PM-2:00PM": "1:00-2:00 PM",
-                    "2:00PM-3:00PM": "2:00-3:00 PM",
-                    "3:00PM-4:00PM": "3:00-4:00 PM",
-                    "4:00PM-5:00PM": "4:00-5:00 PM",
-                    "5:00PM-6:00PM": "5:00-6:00 PM",
-                    "6:00PM-7:00PM": "6:00-7:00 PM",
-                    
-                    // Other common variations
-                    "9-10 AM": "9:00-10:00 AM",
-                    "10-11 AM": "10:00-11:00 AM",
-                    "11-12 PM": "11:00-12:00 PM",
-                    "1-2 PM": "1:00-2:00 PM",
-                    "2-3 PM": "2:00-3:00 PM",
-                    "3-4 PM": "3:00-4:00 PM",
-                    "4-5 PM": "4:00-5:00 PM",
-                    "5-6 PM": "5:00-6:00 PM",
-                    "6-7 PM": "6:00-7:00 PM"
-                ]
-                
-                // Standard time slots we display in the UI - moved outside of mapToUISlot function
-                let uiTimeSlots = [
-                    "9:00-10:00 AM", "10:00-11:00 AM", "11:00-12:00 PM",
-                    "1:00-2:00 PM", "2:00-3:00 PM", "3:00-4:00 PM",
-                    "4:00-5:00 PM", "5:00-6:00 PM", "6:00-7:00 PM"
-                ]
-                
-                // Function to match hours and determine which standard UI slot to use
-                func matchHourPattern(_ slot: String) -> String? {
-                    // Common hour patterns
-                    let patterns: [(NSRegularExpression, [Int: String])] = [
-                        // Match 24-hour formats like 09:00:00-10:00:00
-                        (try! NSRegularExpression(pattern: #"(\d+):00:00-(\d+):00:00"#), [
-                            9: "9:00-10:00 AM", 10: "10:00-11:00 AM", 11: "11:00-12:00 PM",
-                            13: "1:00-2:00 PM", 14: "2:00-3:00 PM", 15: "3:00-4:00 PM",
-                            16: "4:00-5:00 PM", 17: "5:00-6:00 PM", 18: "6:00-7:00 PM"
-                        ]),
-                        
-                        // Match simpler formats like 9-10
-                        (try! NSRegularExpression(pattern: #"^(\d+)-(\d+)$"#), [
-                            9: "9:00-10:00 AM", 10: "10:00-11:00 AM", 11: "11:00-12:00 PM",
-                            1: "1:00-2:00 PM", 2: "2:00-3:00 PM", 3: "3:00-4:00 PM",
-                            4: "4:00-5:00 PM", 5: "5:00-6:00 PM", 6: "6:00-7:00 PM"
-                        ])
-                    ]
-                    
-                    // Try each pattern
-                    for (regex, hourMap) in patterns {
-                        let range = NSRange(slot.startIndex..<slot.endIndex, in: slot)
-                        if let match = regex.firstMatch(in: slot, range: range) {
-                            if match.numberOfRanges >= 2 {
-                                let startHourRange = Range(match.range(at: 1), in: slot)!
-                                let startHour = Int(slot[startHourRange]) ?? 0
-                                
-                                if let mappedSlot = hourMap[startHour] {
-                                    return mappedSlot
-                                }
-                            }
-                        }
-                    }
-                    
-                    return nil
-                }
-                
-                // Final mapping function that tries multiple approaches
-                func mapToUISlot(_ slot: String) -> String {
-                    // Try direct mapping first
-                    if let directMapped = formatMap[slot] {
-                        print("✅ Direct format match: \(slot) -> \(directMapped)")
-                        return directMapped
-                    }
-                    
-                    // Try hour pattern matching
-                    if let hourMapped = matchHourPattern(slot) {
-                        print("✅ Hour pattern match: \(slot) -> \(hourMapped)")
-                        return hourMapped
-                    }
-                    
-                    // For 12-hour format, check if we need to add a space before AM/PM
-                    if slot.contains("AM") || slot.contains("PM") {
-                        let hasSpace = slot.contains(" AM") || slot.contains(" PM")
-                        if !hasSpace {
-                            // Try to fix common no-space format: "9:00-10:00AM" -> "9:00-10:00 AM"
-                            let replaced = slot.replacingOccurrences(of: "AM", with: " AM")
-                                            .replacingOccurrences(of: "PM", with: " PM")
-                            if let mappedReplaced = formatMap[replaced] {
-                                print("✅ Added space match: \(slot) -> \(mappedReplaced)")
-                                return mappedReplaced
-                            }
-                        }
-                    }
-                    
-                    // Simple check if the slot contains the hour numbers
-                    for uiSlot in uiTimeSlots {
-                        let slotLower = slot.lowercased()
-                        let uiSlotLower = uiSlot.lowercased()
-                        
-                        // Extract just the hour numbers from both
-                        let hourPattern = #"(\d+)"#
-                        let regex = try! NSRegularExpression(pattern: hourPattern)
-                        
-                        let slotHours = regex.matches(in: slotLower, range: NSRange(slotLower.startIndex..<slotLower.endIndex, in: slotLower))
-                            .compactMap { Range($0.range, in: slotLower) }
-                            .map { String(slotLower[$0]) }
-                        
-                        let uiSlotHours = regex.matches(in: uiSlotLower, range: NSRange(uiSlotLower.startIndex..<uiSlotLower.endIndex, in: uiSlotLower))
-                            .compactMap { Range($0.range, in: uiSlotLower) }
-                            .map { String(uiSlotLower[$0]) }
-                        
-                        // Check if the hours match
-                        if slotHours.count >= 2 && uiSlotHours.count >= 2 &&
-                           slotHours[0] == uiSlotHours[0] && slotHours[1] == uiSlotHours[1] {
-                            print("✅ Hour number match: \(slot) -> \(uiSlot)")
-                            return uiSlot
-                        }
-                    }
-                    
-                    print("⚠️ No mapping found for: \(slot), using as is")
-                    return slot
-                }
-                
-                // Process all slots and map to UI format
+                // Initialize sets to store the processed slots
                 var processedWeekdaySlots = Set<String>()
                 var processedWeekendSlots = Set<String>()
                 
-                print("🔄 Mapping weekday slots...")
+                // Process weekday slots from DB
                 for slot in weekdaySlots {
-                    let mappedSlot = mapToUISlot(slot)
-                    processedWeekdaySlots.insert(mappedSlot)
-                    print("  🔹 \(slot) -> \(mappedSlot)")
+                    // Convert database format to UI format (e.g., "09:00-10:00" format)
+                    let processedSlot = convertToUITimeFormat(slot)
+                    processedWeekdaySlots.insert(processedSlot)
+                    print("✅ Processed weekday slot: \(slot) -> \(processedSlot)")
                 }
                 
-                print("🔄 Mapping weekend slots...")
+                // Process weekend slots from DB
                 for slot in weekendSlots {
-                    let mappedSlot = mapToUISlot(slot)
-                    processedWeekendSlots.insert(mappedSlot)
-                    print("  🔹 \(slot) -> \(mappedSlot)")
+                    // Convert database format to UI format
+                    let processedSlot = convertToUITimeFormat(slot)
+                    processedWeekendSlots.insert(processedSlot)
+                    print("✅ Processed weekend slot: \(slot) -> \(processedSlot)")
                 }
-                
-                print("⚙️ Final weekday slots: \(processedWeekdaySlots)")
-                print("⚙️ Final weekend slots: \(processedWeekendSlots)")
                 
                 // Update main thread with the processed slots
                 await MainActor.run {
@@ -687,17 +547,8 @@ struct EditDoctorView: View {
                     isLoadingSlots = false
                     
                     // Debug: Print which slots should be highlighted
-                    print("🔍 WEEKDAY SLOT HIGHLIGHT CHECK:")
-                    for slot in uiTimeSlots {
-                        let isSelected = isTimeSlotSelected(slotToCheck: slot, selectedSlots: self.selectedWeekdaySlots)
-                        print("  \(slot): \(isSelected ? "✅ SELECTED" : "❌ NOT SELECTED")")
-                    }
-                    
-                    print("🔍 WEEKEND SLOT HIGHLIGHT CHECK:")
-                    for slot in uiTimeSlots {
-                        let isSelected = isTimeSlotSelected(slotToCheck: slot, selectedSlots: self.selectedWeekendSlots)
-                        print("  \(slot): \(isSelected ? "✅ SELECTED" : "❌ NOT SELECTED")")
-                    }
+                    print("🔍 WEEKDAY SLOTS TO HIGHLIGHT: \(selectedWeekdaySlots)")
+                    print("🔍 WEEKEND SLOTS TO HIGHLIGHT: \(selectedWeekendSlots)")
                 }
             } catch {
                 await MainActor.run {
@@ -706,6 +557,29 @@ struct EditDoctorView: View {
                 }
             }
         }
+    }
+    
+    // Helper function to convert database time format to UI format
+    private func convertToUITimeFormat(_ dbSlot: String) -> String {
+        // Simplify by using the exact format needed for UI time slots
+        // Expecting dbSlot to come in formats like "09:00:00-10:00:00" or "9:00AM-10:00AM"
+        
+        // Remove any seconds and convert to the standard format used in our UI
+        let slot = dbSlot.replacingOccurrences(of: ":00-", with: "-")
+                         .replacingOccurrences(of: ":00:", with: ":")
+        
+        // Handle different formats that might come from the database
+        if slot.contains(":") {
+            // Already has colons, just ensure it's in the right format (HH:MM-HH:MM)
+            return slot.replacingOccurrences(of: ":00", with: "")
+        } else if slot.contains("-") {
+            // Format like "9-10" or "9-10 AM"
+            // Just return as is since we're using the same format in our UI buttons
+            return slot
+        }
+        
+        // If no special formatting needed, return as is
+        return dbSlot
     }
     
     private func toggleSlot(_ time: String, in slots: inout Set<String>) {

@@ -285,7 +285,8 @@ class AdminController {
         pincode: String,
         contactNumber: String,
         emergencyContactNumber: String? = nil,
-        doctorStatus: String = "active"
+        doctorStatus: String = "active",
+        customDoctorId: String? = nil
     ) async throws -> (Doctor, String) {
         // 1. Register the base user
         let authResponse = try await userController.register(
@@ -295,8 +296,8 @@ class AdminController {
             role: .doctor
         )
         
-        // 2. Generate a doctor ID with DOC prefix
-        let doctorId = "DOC" + String(format: "%03d", Int.random(in: 1...999))
+        // 2. Generate a doctor ID with DOC prefix or use the provided one
+        let doctorId = customDoctorId ?? "DOC" + String(format: "%03d", Int.random(in: 1...999))
         
         // 3. Prepare creation timestamp
         let now = Date()
@@ -546,55 +547,77 @@ class AdminController {
     func deleteDoctor(id: String) async throws {
         print("DELETE DOCTOR: Attempting to delete doctor with ID: \(id)")
         
-        // First try direct deletion (most reliable)
+        // First, delete any related records that might cause constraint issues
         do {
-            print("DELETE DOCTOR: Attempting full deletion first")
+            print("DELETE DOCTOR: Cleaning up related records first")
+            
+            // Delete doctor availability records
+            try? await supabase.delete(
+            from: "doctor_availability_efficient",
+            where: "doctor_id",
+                equals: id
+            )
+            
+            // Delete any appointments
+            try? await supabase.delete(
+                from: "appointments",
+                where: "doctor_id",
+                equals: id
+            )
+            
+            // Delete any other related records
+            // For example, if you have other tables with doctor_id foreign keys
+            // try? await supabase.delete(from: "other_table", where: "doctor_id", equals: id)
+        } catch {
+            print("DELETE DOCTOR WARNING: Error cleaning up related records: \(error.localizedDescription)")
+            // Continue with deletion attempt even if cleanup fails
+        }
+        
+        // Now attempt direct deletion with force flag
+        do {
+            print("DELETE DOCTOR: Attempting full deletion")
+            
+            // Create a URL for the DELETE operation with cascade parameter
+            let urlString = "\(supabase.supabaseURL)/rest/v1/doctors?id=eq.\(id)"
+            guard let url = URL(string: urlString) else {
+                throw AdminError.doctorDeleteFailed
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "DELETE"
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            // Add the Prefer header with cascade option
+            request.addValue("return=minimal", forHTTPHeaderField: "Prefer")
+            
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse, 
+               httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id)")
+                return
+            } else {
+                print("DELETE DOCTOR: DELETE request failed with response: \(response)")
+                // Continue to try the normal delete method
+            }
+        } catch {
+            print("DELETE DOCTOR ERROR with direct URL: \(error.localizedDescription)")
+            // Continue to try the normal delete method
+        }
+        
+        // If the direct URL approach didn't work, try the standard delete method
+        do {
             try await supabase.delete(
                 from: "doctors",
                 where: "id",
                 equals: id
             )
             print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id)")
-            return // Exit if deletion was successful
+            return
         } catch {
-            print("DELETE DOCTOR ERROR on full deletion: \(error.localizedDescription)")
-            // If direct deletion fails, try status updates
+            print("DELETE DOCTOR ERROR on standard deletion: \(error.localizedDescription)")
+            throw AdminError.doctorDeleteFailed
         }
-        
-        // Create an Encodable struct for the status update
-        struct DoctorStatusUpdate: Encodable {
-            let doctor_status: String
-            let updated_at: String
-        }
-        
-        // Try various possible status values that might be allowed by the check constraint
-        let possibleStatuses = ["inactive", "deleted", "disabled", "removed", "deactivated", "closed"]
-        
-        for status in possibleStatuses {
-            do {
-                print("DELETE DOCTOR: Trying status update to '\(status)'")
-                let doctorData = DoctorStatusUpdate(
-                    doctor_status: status,
-                    updated_at: ISO8601DateFormatter().string(from: Date())
-                )
-                
-                try await supabase.update(
-                    table: "doctors",
-                    data: doctorData,
-                    where: "id",
-                    equals: id
-                )
-                
-                print("DELETE DOCTOR: Successfully updated doctor status to '\(status)' with ID: \(id)")
-                return // Exit the function if this status update works
-            } catch {
-                print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
-                // Continue trying other statuses
-            }
-        }
-        
-        // If we reach here, none of our approaches worked
-        throw AdminError.doctorDeleteFailed
     }
     
     // MARK: - Lab Admin Management
