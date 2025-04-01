@@ -611,27 +611,34 @@ struct AddReportView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(header: Text("Patient Information")) {
-                    TextField("Patient Name", text: $patientName)
-                    
+                Section {
                     HStack {
                         TextField("Patient ID", text: Binding(
                             get: { patientId },
                             set: { patientId = $0.uppercased() }
                         ))
+                        .textCase(.uppercase)
                         .autocapitalization(.allCharacters)
+                        .autocorrectionDisabled(true)
                         
                         if isValidatingPatient {
                             ProgressView()
                                 .padding(.leading, 4)
                         } else if !patientId.isEmpty {
                             Button("Verify") {
-                                verifyPatient()
+                                Task {
+                                    await fetchPatientDetails()
+                                }
                             }
                             .buttonStyle(.bordered)
                             .tint(.blue)
                             .disabled(patientId.isEmpty || isValidatingPatient)
                         }
+                    }
+                    
+                    if !patientName.isEmpty {
+                        Text(patientName)
+                            .foregroundColor(.gray)
                     }
                     
                     if patientValidated {
@@ -642,11 +649,15 @@ struct AddReportView: View {
                                 .foregroundColor(.green)
                         }
                     }
+                } header: {
+                    Text("Patient Information")
                 }
                 
-                Section(header: Text("Report Details")) {
+                Section {
                     TextField("Report Summary", text: $summary, axis: .vertical)
                         .lineLimit(5...10)
+                } header: {
+                    Text("Report Details")
                 }
                 
                 Section {
@@ -675,64 +686,43 @@ struct AddReportView: View {
             } message: {
                 Text(errorMessage)
             }
-            .onChange(of: patientId) { _, _ in
-                // Reset validation when patient ID changes
-                patientValidated = false
-            }
-            .onChange(of: patientName) { _, _ in
-                // Reset validation when patient name changes
-                patientValidated = false
-            }
         }
     }
     
-    private func verifyPatient() {
-        if patientId.isEmpty {
-            errorMessage = "Please enter a patient ID to verify"
-            showError = true
-            return
-        }
-        
+    private func fetchPatientDetails() async {
         isValidatingPatient = true
+        patientValidated = false
         
-        Task {
-            do {
-                // Query the patients table to verify the patient exists
-                let patients = try await supabase.select(
-                    from: "patients",
-                    where: "patient_id",
-                    equals: patientId
-                )
-                
+        do {
+            let results = try await supabase.select(
+                from: "patients",
+                where: "patient_id",
+                equals: patientId
+            )
+            
+            if let patientData = results.first,
+               let name = patientData["name"] as? String {
                 await MainActor.run {
+                    patientName = name
+                    patientValidated = true
                     isValidatingPatient = false
-                    
-                    if patients.isEmpty {
-                        errorMessage = "No patient found with ID: \(patientId)"
-                        showError = true
-                    } else if let patient = patients.first, let patientNameFromDB = patient["name"] as? String {
-                        if patientName.isEmpty {
-                            // If patient name field is empty, auto-fill it
-                            patientName = patientNameFromDB
-                            patientValidated = true
-                        } else if patientName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != patientNameFromDB.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-                            // If patient name doesn't match the one in database
-                            errorMessage = "Patient name doesn't match the name in our records for patient ID: \(patientId). The correct name is '\(patientNameFromDB)'."
-                            showError = true
-                        } else {
-                            // Patient verified successfully
-                            patientValidated = true
-                        }
-                    }
                 }
-            } catch {
-                print("ERROR verifying patient: \(error.localizedDescription)")
-                
+            } else {
                 await MainActor.run {
+                    patientName = ""
+                    patientValidated = false
                     isValidatingPatient = false
-                    errorMessage = "Failed to verify patient: \(error.localizedDescription)"
+                    errorMessage = "Patient not found"
                     showError = true
                 }
+            }
+        } catch {
+            await MainActor.run {
+                patientName = ""
+                patientValidated = false
+                isValidatingPatient = false
+                errorMessage = "Error fetching patient details: \(error.localizedDescription)"
+                showError = true
             }
         }
     }
@@ -807,7 +797,7 @@ struct EditReportView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var isValidatingPatient = false
-    @State private var patientValidated = true // Initially true because we're editing an existing report
+    @State private var patientValidated = true
     
     private let supabase = SupabaseController.shared
     private let report: PatientReport
@@ -825,7 +815,7 @@ struct EditReportView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(header: Text("Patient Information")) {
+                Section {
                     TextField("Patient Name", text: $patientName)
                     
                     HStack {
@@ -833,7 +823,9 @@ struct EditReportView: View {
                             get: { patientId },
                             set: { patientId = $0.uppercased() }
                         ))
+                        .textCase(.uppercase)
                         .autocapitalization(.allCharacters)
+                        .autocorrectionDisabled(true)
                         
                         if isValidatingPatient {
                             ProgressView()
@@ -856,11 +848,15 @@ struct EditReportView: View {
                                 .foregroundColor(.green)
                         }
                     }
+                } header: {
+                    Text("Patient Information")
                 }
                 
-                Section(header: Text("Report Details")) {
+                Section {
                     TextField("Report Summary", text: $summary, axis: .vertical)
                         .lineLimit(5...10)
+                } header: {
+                    Text("Report Details")
                 }
                 
                 Section {
@@ -890,11 +886,9 @@ struct EditReportView: View {
                 Text(errorMessage)
             }
             .onChange(of: patientId) { _, _ in
-                // Reset validation when patient ID changes
                 patientValidated = false
             }
             .onChange(of: patientName) { _, _ in
-                // Reset validation when patient name changes
                 patientValidated = false
             }
         }
@@ -1340,7 +1334,7 @@ struct PatientReportsView: View {
                             .font(.caption)
                             .foregroundColor(.gray)
                         
-                        Text(report.patientId)
+                        Text(report.patientId.uppercased())
                             .font(.subheadline)
                             .foregroundColor(.blue)
                     }
