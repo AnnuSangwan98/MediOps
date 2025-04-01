@@ -583,11 +583,11 @@ struct DoctorAppointmentDetailsView: View {
                     // Parse patient data
                     let name = patientData["name"] as? String ?? "Unknown"
                     let email = patientData["email"] as? String ?? "Not provided"
-                    let phone = patientData["phone"] as? String ?? "Not provided"
+                    let phone = patientData["phoneNumber"] as? String ?? "Not provided"
                     let gender = patientData["gender"] as? String ?? "Not specified"
                     let age = patientData["age"] as? Int ?? 0
                     let medicalHistory = patientData["medical_history"] as? String ?? ""
-                    let bloodGroup = patientData["blood_group"] as? String ?? "Not specified"
+                    let bloodGroup = patientData["bloodGroup"] as? String ?? "Not specified"
                     
                     // Create patient details model
                     let patient = PatientDetailModel(
