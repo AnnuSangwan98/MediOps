@@ -7,174 +7,127 @@ class AdminController {
     private let userController = UserController.shared
     private let hospitalController = HospitalController.shared
     
+    // Add accessor properties for supabase settings
+    var supabaseURL: URL { 
+        return supabase.supabaseURL 
+    }
+    
+    var supabaseAnonKey: String { 
+        return supabase.supabaseAnonKey 
+    }
+    
+    // Create Encodable struct exactly matching the database schema
+    private struct DoctorAvailabilityRecord: Encodable {
+        let doctor_id: String
+        let hospital_id: String
+        let date: String
+        let slot_time: String
+        let slot_end_time: String
+        let max_normal_patients: Int
+        let max_premium_patients: Int
+        let total_bookings: Int
+    }
+    
+    // Create Encodable struct for the new efficient doctor availability table
+    private struct DoctorAvailabilityEfficientRecord: Encodable {
+        let doctor_id: String
+        let hospital_id: String
+        let weekly_schedule: [String: [TimeSlotJSON]]
+        let effective_from: String
+        let effective_until: String?
+        let max_normal_patients: Int
+        let max_premium_patients: Int
+        
+        // Custom encoding to handle the weekly_schedule JSON structure
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            
+            try container.encode(doctor_id, forKey: .doctor_id)
+            try container.encode(hospital_id, forKey: .hospital_id)
+            try container.encode(effective_from, forKey: .effective_from)
+            try container.encode(effective_until, forKey: .effective_until)
+            try container.encode(max_normal_patients, forKey: .max_normal_patients)
+            try container.encode(max_premium_patients, forKey: .max_premium_patients)
+            
+            // Create a nested container for the weekly schedule
+            var scheduleContainer = container.nestedContainer(keyedBy: DynamicCodingKey.self, forKey: .weekly_schedule)
+            
+            // For each day in the schedule, encode the slots array
+            for (day, slots) in weekly_schedule {
+                let dayKey = DynamicCodingKey(stringValue: day)
+                try scheduleContainer.encode(slots, forKey: dayKey)
+            }
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case doctor_id
+            case hospital_id
+            case weekly_schedule
+            case effective_from
+            case effective_until
+            case max_normal_patients
+            case max_premium_patients
+        }
+        
+        // Dynamic coding key to handle string-based keys
+        private struct DynamicCodingKey: CodingKey {
+            var stringValue: String
+            var intValue: Int?
+            
+            init(stringValue: String) {
+                self.stringValue = stringValue
+                self.intValue = nil
+            }
+            
+            init?(intValue: Int) {
+                self.stringValue = "\(intValue)"
+                self.intValue = intValue
+            }
+        }
+    }
+    
+    // JSON-encodable struct for time slot
+    private struct TimeSlotJSON: Encodable {
+        let start: String
+        let end: String
+        let available: Bool
+        
+        // Add custom encoding to ensure proper JSON serialization
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(start, forKey: .start)
+            try container.encode(end, forKey: .end)
+            try container.encode(available, forKey: .available)
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case start
+            case end
+            case available
+        }
+    }
+    
+    // Structure for time slot
+    private struct TimeSlot: Encodable {
+        let start: String
+        let end: String
+        let available: Bool
+        
+        init(start: String, end: String, available: Bool = true) {
+            self.start = start
+            self.end = end
+            self.available = available
+        }
+        
+        // Convert to JSON-friendly format
+        func toJSON() -> TimeSlotJSON {
+            return TimeSlotJSON(start: start, end: end, available: available)
+        }
+    }
+    
     private init() {}
     
-    // MARK: - Diagnostic Methods
-    
-    /// Gets diagnostic information about the database connection
-    func getDatabaseDiagnosticInfo() async throws -> [String: Any] {
-        var diagnosticInfo: [String: Any] = [:]
-        
-        // Add Supabase URL to diagnostics
-        diagnosticInfo["supabaseURL"] = supabase.supabaseURL.absoluteString
-        
-        // Get count of lab admins
-        let labAdminCount = try await supabase.select(from: "lab_admins", columns: "count(*)")
-        if let firstResult = labAdminCount.first, let count = firstResult["count"] as? Int {
-            diagnosticInfo["totalLabAdmins"] = count
-        }
-        
-        return diagnosticInfo
-    }
-    
-    /// Check if lab admins exist for a specific hospital ID
-    func checkLabAdminsForHospital(hospitalId: String) async throws -> [String: Any] {
-        var result: [String: Any] = [:]
-        
-        // Try direct query for matching lab admins
-        let directQuery = try await supabase.select(
-            from: "lab_admins",
-            where: "hospital_id",
-            equals: hospitalId
-        )
-        
-        result["hospitalId"] = hospitalId
-        result["count"] = directQuery.count
-        result["recordsExist"] = directQuery.count > 0
-        
-        return result
-    }
-    
     // MARK: - Hospital Admin Management
-    
-    /// Force reset a hospital admin's password without requiring the current password (admin override)
-    /// Use this only for emergency cases when a user has forgotten their password
-    func forceResetHospitalAdminPassword(adminId: String, newPassword: String) async throws {
-        print("ADMIN: Force resetting password for admin ID: \(adminId)")
-        
-        // 1. Find the admin record and get hospital ID
-        let admins = try await supabase.select(
-            from: "hospital_admins",
-            where: "id",
-            equals: adminId
-        )
-        
-        guard let adminData = admins.first,
-              let hospitalId = adminData["hospital_id"] as? String else {
-            print("ADMIN ERROR: Could not retrieve admin data or hospital ID")
-            throw AdminError.adminNotFound
-        }
-        
-        // 2. Validate the new password
-        if newPassword.count < 8 {
-            throw AdminError.invalidPassword(message: "Password must be at least 8 characters long")
-        }
-        
-        let passwordRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$"
-        let passwordPredicate = NSPredicate(format: "SELF MATCHES %@", passwordRegex)
-        
-        if !passwordPredicate.evaluate(with: newPassword) {
-            throw AdminError.invalidPassword(message: "Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
-        }
-        
-        // 3. Update the password in the hospital_admins table
-        let updateData: [String: Any] = [
-            "password": newPassword,
-            "updated_at": ISO8601DateFormatter().string(from: Date())
-        ]
-        
-        print("ADMIN: Updating password in hospital_admins table")
-        try await supabase.update(
-            table: "hospital_admins",
-            id: adminId,
-            data: updateData
-        )
-        
-        // 4. Update the password in the hospitals table
-        print("ADMIN: Updating password in hospitals table for hospital ID: \(hospitalId)")
-        try await supabase.updateHospitalPassword(hospitalId: hospitalId, newPassword: newPassword)
-        
-        print("ADMIN: Force password reset successful for admin ID: \(adminId)")
-    }
-    
-    /// Reset a hospital admin's password, updating both hospital_admins and hospitals tables
-    func resetHospitalAdminPassword(adminId: String, currentPassword: String, newPassword: String) async throws {
-        print("ADMIN: Resetting password for admin ID: \(adminId)")
-        print("ADMIN DEBUG: Current password length: \(currentPassword.count)")
-        
-        // 1. First verify the current password is correct
-        let admins = try await supabase.select(
-            from: "hospital_admins",
-            where: "id",
-            equals: adminId
-        )
-        
-        guard let adminData = admins.first,
-              let storedPassword = adminData["password"] as? String,
-              let hospitalId = adminData["hospital_id"] as? String else {
-            print("ADMIN ERROR: Could not retrieve admin password or hospital ID")
-            throw AdminError.adminNotFound
-        }
-        
-        print("ADMIN DEBUG: Retrieved admin details - Name: \(adminData["admin_name"] as? String ?? "unknown")")
-        print("ADMIN DEBUG: Stored password length: \(storedPassword.count)")
-        print("ADMIN DEBUG: Stored password first 3 chars: \(String(storedPassword.prefix(3)))")
-        print("ADMIN DEBUG: Input password first 3 chars: \(String(currentPassword.prefix(3)))")
-        
-        // Add more detailed debug info about the password fields
-        if storedPassword.isEmpty {
-            print("ADMIN DEBUG: WARNING - Stored password is empty!")
-        }
-        
-        if currentPassword.isEmpty {
-            print("ADMIN DEBUG: WARNING - Input current password is empty!")
-        }
-        
-        // Check for whitespace or other invisible characters
-        let storedPasswordHasWhitespace = storedPassword.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
-        let currentPasswordHasWhitespace = currentPassword.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
-        
-        print("ADMIN DEBUG: Stored password has whitespace: \(storedPasswordHasWhitespace)")
-        print("ADMIN DEBUG: Current password has whitespace: \(currentPasswordHasWhitespace)")
-        
-        // Verify current password matches
-        if storedPassword != currentPassword {
-            print("ADMIN ERROR: Current password is incorrect")
-            print("ADMIN DEBUG: Password comparison failed - input: '\(currentPassword)' vs stored: '\(storedPassword)'")
-            throw AdminError.invalidPassword(message: "Current password is incorrect")
-        }
-        
-        // Validate the new password
-        if newPassword.count < 8 {
-            throw AdminError.invalidPassword(message: "Password must be at least 8 characters long")
-        }
-        
-        let passwordRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$"
-        let passwordPredicate = NSPredicate(format: "SELF MATCHES %@", passwordRegex)
-        
-        if !passwordPredicate.evaluate(with: newPassword) {
-            throw AdminError.invalidPassword(message: "Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
-        }
-        
-        // 2. Update the password in the hospital_admins table
-        let updateData: [String: Any] = [
-            "password": newPassword,
-            "updated_at": ISO8601DateFormatter().string(from: Date())
-        ]
-        
-        print("ADMIN: Updating password in hospital_admins table")
-        try await supabase.update(
-            table: "hospital_admins",
-            id: adminId,
-            data: updateData
-        )
-        
-        // 3. Update the password in the hospitals table
-        print("ADMIN: Updating password in hospitals table for hospital ID: \(hospitalId)")
-        try await supabase.updateHospitalPassword(hospitalId: hospitalId, newPassword: newPassword)
-        
-        print("ADMIN: Password reset successful for admin ID: \(adminId)")
-    }
     
     /// Register a new hospital admin
     func registerHospitalAdmin(email: String, password: String, name: String, hospitalName: String) async throws -> (HospitalAdmin, String) {
@@ -332,7 +285,8 @@ class AdminController {
         pincode: String,
         contactNumber: String,
         emergencyContactNumber: String? = nil,
-        doctorStatus: String = "active"
+        doctorStatus: String = "active",
+        customDoctorId: String? = nil
     ) async throws -> (Doctor, String) {
         // 1. Register the base user
         let authResponse = try await userController.register(
@@ -342,8 +296,8 @@ class AdminController {
             role: .doctor
         )
         
-        // 2. Generate a doctor ID with DOC prefix
-        let doctorId = "DOC" + String(format: "%03d", Int.random(in: 1...999))
+        // 2. Generate a doctor ID with DOC prefix or use the provided one
+        let doctorId = customDoctorId ?? "DOC" + String(format: "%03d", Int.random(in: 1...999))
         
         // 3. Prepare creation timestamp
         let now = Date()
@@ -409,7 +363,62 @@ class AdminController {
         
         try await supabase.insert(into: "doctors", data: doctorData)
         
-        // 5. Return doctor object and token
+        // 5. Create initial empty availability schedule for the doctor
+        do {
+            // Initialize empty schedule for all days
+            let emptySchedule: [String: [TimeSlot]] = [
+                "monday": [],
+                "tuesday": [],
+                "wednesday": [],
+                "thursday": [],
+                "friday": [],
+                "saturday": [],
+                "sunday": []
+            ]
+            
+            // Convert empty schedule to JSON format
+            let jsonSchedule = convertToJsonSchedule(emptySchedule)
+            
+            // Create dates
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let effectiveFrom = dateFormatter.string(from: now)
+            
+            // Create the availability record
+            let record = DoctorAvailabilityEfficientRecord(
+                doctor_id: doctorId,
+                hospital_id: hospitalId,
+                weekly_schedule: jsonSchedule,
+                effective_from: effectiveFrom,
+                effective_until: nil,
+                max_normal_patients: 6,
+                max_premium_patients: 2
+            )
+            
+            print("🔄 Creating initial empty availability schedule for new doctor \(doctorId)")
+            
+            // Save to database using Supabase
+            do {
+                // Try direct insertion which provides better error handling
+                print("🔄 Attempting direct insertion for better error handling")
+                await insertDoctorScheduleDirectly(record: record)
+            } catch let error as SupabaseError {
+                print("❌ Supabase error: \(error.localizedDescription)")
+                print("🔄 Trying alternative insertion methods")
+                await insertScheduleWithFunction(record: record)
+            } catch {
+                print("❌ Failed to insert schedule: \(error.localizedDescription)")
+                print("❌ Error type: \(type(of: error))")
+                print("🔄 Trying alternative insertion methods")
+                await insertScheduleWithFunction(record: record)
+            }
+        } catch {
+            print("⚠️ Could not create initial availability schedule: \(error.localizedDescription)")
+            print("⚠️ Will continue with doctor creation, availability can be added later")
+            // Don't throw here - we want the doctor creation to succeed even if availability fails
+        }
+        
+        // 6. Return doctor object and token
         let doctor = Doctor(
             id: doctorId,
             userId: nil, // User ID is not stored in the doctors table
@@ -538,55 +547,77 @@ class AdminController {
     func deleteDoctor(id: String) async throws {
         print("DELETE DOCTOR: Attempting to delete doctor with ID: \(id)")
         
-        // First try direct deletion (most reliable)
+        // First, delete any related records that might cause constraint issues
         do {
-            print("DELETE DOCTOR: Attempting full deletion first")
+            print("DELETE DOCTOR: Cleaning up related records first")
+            
+            // Delete doctor availability records
+            try? await supabase.delete(
+            from: "doctor_availability_efficient",
+            where: "doctor_id",
+                equals: id
+            )
+            
+            // Delete any appointments
+            try? await supabase.delete(
+                from: "appointments",
+                where: "doctor_id",
+                equals: id
+            )
+            
+            // Delete any other related records
+            // For example, if you have other tables with doctor_id foreign keys
+            // try? await supabase.delete(from: "other_table", where: "doctor_id", equals: id)
+        } catch {
+            print("DELETE DOCTOR WARNING: Error cleaning up related records: \(error.localizedDescription)")
+            // Continue with deletion attempt even if cleanup fails
+        }
+        
+        // Now attempt direct deletion with force flag
+        do {
+            print("DELETE DOCTOR: Attempting full deletion")
+            
+            // Create a URL for the DELETE operation with cascade parameter
+            let urlString = "\(supabase.supabaseURL)/rest/v1/doctors?id=eq.\(id)"
+            guard let url = URL(string: urlString) else {
+                throw AdminError.doctorDeleteFailed
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "DELETE"
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            // Add the Prefer header with cascade option
+            request.addValue("return=minimal", forHTTPHeaderField: "Prefer")
+            
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse, 
+               httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id)")
+                return
+            } else {
+                print("DELETE DOCTOR: DELETE request failed with response: \(response)")
+                // Continue to try the normal delete method
+            }
+        } catch {
+            print("DELETE DOCTOR ERROR with direct URL: \(error.localizedDescription)")
+            // Continue to try the normal delete method
+        }
+        
+        // If the direct URL approach didn't work, try the standard delete method
+        do {
             try await supabase.delete(
                 from: "doctors",
                 where: "id",
                 equals: id
             )
             print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id)")
-            return // Exit if deletion was successful
+            return
         } catch {
-            print("DELETE DOCTOR ERROR on full deletion: \(error.localizedDescription)")
-            // If direct deletion fails, try status updates
+            print("DELETE DOCTOR ERROR on standard deletion: \(error.localizedDescription)")
+            throw AdminError.doctorDeleteFailed
         }
-        
-        // Create an Encodable struct for the status update
-        struct DoctorStatusUpdate: Encodable {
-            let doctor_status: String
-            let updated_at: String
-        }
-        
-        // Try various possible status values that might be allowed by the check constraint
-        let possibleStatuses = ["inactive", "deleted", "disabled", "removed", "deactivated", "closed"]
-        
-        for status in possibleStatuses {
-            do {
-                print("DELETE DOCTOR: Trying status update to '\(status)'")
-                let doctorData = DoctorStatusUpdate(
-                    doctor_status: status,
-                    updated_at: ISO8601DateFormatter().string(from: Date())
-                )
-                
-                try await supabase.update(
-                    table: "doctors",
-                    data: doctorData,
-                    where: "id",
-                    equals: id
-                )
-                
-                print("DELETE DOCTOR: Successfully updated doctor status to '\(status)' with ID: \(id)")
-                return // Exit the function if this status update works
-            } catch {
-                print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
-                // Continue trying other statuses
-            }
-        }
-        
-        // If we reach here, none of our approaches worked
-        throw AdminError.doctorDeleteFailed
     }
     
     // MARK: - Lab Admin Management
@@ -598,79 +629,22 @@ class AdminController {
         // Verify that the hospital admin exists and get their correct ID
         var verifiedHospitalId = hospitalAdminId
         
-        // Basic validation for empty hospital ID
-        if verifiedHospitalId.isEmpty {
-            print("CREATE LAB ADMIN ERROR: Empty hospital ID provided")
-            throw AdminError.invalidData("Hospital ID cannot be empty")
-        }
-        
         // Try to verify hospital admin exists
         do {
-            // Get hospital details to verify it exists
             let hospitalAdmin = try await getHospitalAdmin(id: hospitalAdminId)
             // Use the verified hospital_id from the admin record
             verifiedHospitalId = hospitalAdmin.id
             print("CREATE LAB ADMIN: Verified hospital admin ID: \(verifiedHospitalId)")
         } catch {
             print("CREATE LAB ADMIN WARNING: Could not verify hospital admin ID: \(error.localizedDescription)")
-            
-            // Since we couldn't verify the hospital admin, let's try to check if the hospital exists directly
-            do {
-                _ = try await getHospital(id: hospitalAdminId)
-                print("CREATE LAB ADMIN: Hospital exists with ID: \(hospitalAdminId), using this ID directly")
-                verifiedHospitalId = hospitalAdminId // Use the original ID if hospital exists
-            } catch {
-                print("CREATE LAB ADMIN ERROR: Could not verify hospital either: \(error.localizedDescription)")
-                // Now we throw an error since we couldn't verify the hospital ID through any method
-                throw AdminError.invalidData("Invalid hospital ID. Please ensure you're using a valid hospital identifier.")
-            }
+            // Continue with the provided ID, but log the warning
         }
         
         // Generate a LAB-prefixed ID
-        // Ensure it's exactly 6 characters (LAB followed by 3 digits)
-        let randomNumber = Int.random(in: 1...999)
-        let labAdminId = "LAB" + String(format: "%03d", randomNumber) // Ensures 3 digits with leading zeros
-        
-        // Double-check that the generated ID matches the required format
-        let idFormatRegex = "^LAB[0-9]{3}$"
-        let isValidId = labAdminId.range(of: idFormatRegex, options: .regularExpression) != nil
-        if !isValidId {
-            print("CREATE LAB ADMIN ERROR: Generated ID '\(labAdminId)' does not match required format")
-            throw AdminError.invalidFormat("Invalid lab admin ID format. Generated ID does not match required pattern.")
-        } else {
-            print("CREATE LAB ADMIN: Generated valid ID: \(labAdminId)")
-        }
-        
+        let labAdminId = "LAB" + String(format: "%03d", Int.random(in: 1...999))
         let now = Date()
         let dateFormatter = ISO8601DateFormatter()
         let createdAt = dateFormatter.string(from: now)
-        
-        // Validate data against table constraints
-        
-        // 1. Ensure contact number follows the format constraint (10 digits)
-        let contactNumberToUse = contactNumber.isEmpty ? "" : contactNumber
-        if !contactNumberToUse.isEmpty {
-            let isValid = contactNumberToUse.range(of: "^[0-9]{10}$", options: .regularExpression) != nil
-            if !isValid {
-                throw AdminError.invalidContactNumber("Contact number must be 10 digits")
-            }
-        }
-        
-        // 2. Validate the ID format
-        let idFormatValid = labAdminId.range(of: "^LAB[0-9]{3}$", options: .regularExpression) != nil
-        if !idFormatValid {
-            throw AdminError.invalidFormat("Invalid lab admin ID format")
-        }
-        
-        // 3. Ensure password meets requirements
-        // At least 8 characters with at least one uppercase, one lowercase, one digit, and one special character
-        if password.count < 8 || 
-           password.range(of: ".*[A-Z].*", options: .regularExpression) == nil ||
-           password.range(of: ".*[a-z].*", options: .regularExpression) == nil ||
-           password.range(of: ".*[0-9].*", options: .regularExpression) == nil ||
-           password.range(of: ".*[@$!%*?&].*", options: .regularExpression) == nil {
-            throw AdminError.invalidPassword(message: "Password does not meet security requirements")
-        }
         
         // Create lab admin record directly (no user record)
         let labAdminData: [String: String] = [
@@ -679,63 +653,14 @@ class AdminController {
             "password": password,
             "name": name,
             "email": email,
-            "contact_number": contactNumberToUse,
-            "department": "Pathology & Laboratory", // Always use the fixed value to match constraint
+            "contact_number": contactNumber,
+            "department": department,
             "Address": "", // Default empty address
             "created_at": createdAt,
             "updated_at": createdAt
         ]
         
-        // Validate data against table constraints one more time before submission
-        print("CREATE LAB ADMIN: Validating lab admin data before submission")
-        print("- ID: \(labAdminId) (format: \(labAdminId.range(of: "^LAB[0-9]{3}$", options: .regularExpression) != nil ? "✓" : "✗"))")
-        print("- Hospital ID: \(verifiedHospitalId)")
-        print("- Name: \(name)")
-        print("- Email: \(email)")
-        print("- Contact number: \(contactNumberToUse.isEmpty ? "[empty]" : contactNumberToUse) (format: \(contactNumberToUse.isEmpty || contactNumberToUse.range(of: "^[0-9]{10}$", options: .regularExpression) != nil ? "✓" : "✗"))")
-        print("- Password: [hidden] (length: \(password.count), meets requirements: \(password.count >= 8 && password.range(of: ".*[A-Z].*", options: .regularExpression) != nil && password.range(of: ".*[a-z].*", options: .regularExpression) != nil && password.range(of: ".*[0-9].*", options: .regularExpression) != nil && password.range(of: ".*[@$!%*?&].*", options: .regularExpression) != nil ? "✓" : "✗"))")
-        print("- Department: \(labAdminData["department"] ?? "") (required: 'Pathology & Laboratory')")
-        
-        do {
         try await supabase.insert(into: "lab_admins", data: labAdminData)
-            print("CREATE LAB ADMIN: Successfully inserted data into lab_admins table")
-        } catch {
-            print("CREATE LAB ADMIN ERROR: Failed to insert lab admin: \(error.localizedDescription)")
-            
-            // If there's a specific insert error, provide a more helpful message
-            let errorDesc = error.localizedDescription.lowercased()
-            if errorDesc.contains("duplicate") && errorDesc.contains("email") {
-                throw AdminError.emailAlreadyExists("Email address already in use")
-            } else if errorDesc.contains("violates") && errorDesc.contains("constraint") {
-                if errorDesc.contains("lab_admins_hospital_id_fkey") {
-                    // Add more diagnostic information for hospital ID issues
-                    print("CREATE LAB ADMIN DIAGNOSTIC: Hospital ID verification failed. Used ID: \(verifiedHospitalId)")
-                    print("CREATE LAB ADMIN DIAGNOSTIC: Original hospital ID from request: \(hospitalAdminId)")
-                    
-                    // Try to get additional details about the hospital
-                    do {
-                        _ = try await getHospital(id: verifiedHospitalId)
-                        print("CREATE LAB ADMIN DIAGNOSTIC: Strange - hospital lookup succeeded but constraint failed")
-                    } catch {
-                        print("CREATE LAB ADMIN DIAGNOSTIC: Hospital lookup also failed: \(error.localizedDescription)")
-                    }
-                    
-                    throw AdminError.invalidData("Invalid hospital ID: \(verifiedHospitalId). The referenced hospital does not exist in the database.")
-                } else if errorDesc.contains("lab_admins_id_format") {
-                    throw AdminError.invalidFormat("Invalid lab admin ID format: \(labAdminId)")
-                } else if errorDesc.contains("lab_admins_contact_number_format") {
-                    throw AdminError.invalidContactNumber("Invalid contact number format: \(contactNumberToUse)")
-                } else if errorDesc.contains("lab_admins_password_format") {
-                    throw AdminError.invalidPassword(message: "Password does not meet security requirements")
-                } else if errorDesc.contains("lab_admins_department_check") {
-                    throw AdminError.invalidFormat("Department must be 'Pathology & Laboratory'")
-                } else {
-                    throw AdminError.invalidFormat("Database constraint violation: \(error.localizedDescription)")
-                }
-            } else {
-                throw error
-            }
-        }
         
         // Return lab admin object with a dummy token
         let labAdmin = LabAdmin(
@@ -743,8 +668,8 @@ class AdminController {
             hospitalId: verifiedHospitalId,
             name: name,
             email: email,
-            contactNumber: contactNumberToUse,
-            department: "Pathology & Laboratory", // Fixed to match the constraint
+            contactNumber: contactNumber,
+            department: department,
             address: "",
             createdAt: now,
             updatedAt: now
@@ -773,12 +698,6 @@ class AdminController {
     func getLabAdmins(hospitalAdminId: String) async throws -> [LabAdmin] {
         print("GET LAB ADMINS: Retrieving lab admins for hospital ID: \(hospitalAdminId)")
         
-        // Basic validation for hospital ID
-        if hospitalAdminId.isEmpty {
-            print("GET LAB ADMINS ERROR: Empty hospital ID provided")
-            throw AdminError.invalidData("Hospital ID cannot be empty")
-        }
-        
         // Verify that the hospital admin exists
         var verifiedHospitalId = hospitalAdminId
         
@@ -790,22 +709,10 @@ class AdminController {
             print("GET LAB ADMINS: Verified hospital admin ID: \(verifiedHospitalId)")
         } catch {
             print("GET LAB ADMINS WARNING: Could not verify hospital admin ID: \(error.localizedDescription)")
-            
-            // Since we couldn't verify the hospital admin, let's try to check if the hospital exists directly
-            do {
-                _ = try await getHospital(id: hospitalAdminId)
-                print("GET LAB ADMINS: Hospital exists with ID: \(hospitalAdminId), using this ID directly")
-                verifiedHospitalId = hospitalAdminId // Use the original ID if hospital exists
-            } catch {
-                print("GET LAB ADMINS WARNING: Could not verify hospital either: \(error.localizedDescription)")
             // Continue with the provided ID, but log the warning
-            }
         }
         
-        print("GET LAB ADMINS: Final hospital ID for query: \(verifiedHospitalId)")
-        
         // Fetch lab admins with the verified ID
-        do {
         let labAdmins = try await supabase.select(
             from: "lab_admins",
             where: "hospital_id",
@@ -817,35 +724,22 @@ class AdminController {
         // If no lab admins are found, it's not necessarily an error, could just be an empty list
         if labAdmins.isEmpty {
             print("GET LAB ADMINS: No lab admins found for hospital ID: \(verifiedHospitalId)")
-                
-                // Check if the lab_admins table exists and has any records at all
-                let allLabAdmins = try await supabase.select(from: "lab_admins", columns: "count(*)")
-                if let firstResult = allLabAdmins.first, let count = firstResult["count"] as? Int {
-                    print("GET LAB ADMINS INFO: Total lab admins in database: \(count)")
-                }
-                
             return []
         }
         
         // Parse each lab admin record
         var parsedLabAdmins: [LabAdmin] = []
-            for (index, labAdminData) in labAdmins.enumerated() {
+        for labAdminData in labAdmins {
             do {
-                    print("GET LAB ADMINS: Processing lab admin \(index + 1) of \(labAdmins.count)")
                 let labAdmin = try parseLabAdminData(labAdminData)
-                    print("GET LAB ADMINS: Successfully parsed lab admin: ID=\(labAdmin.id), Name=\(labAdmin.name)")
                 parsedLabAdmins.append(labAdmin)
             } catch {
-                    print("GET LAB ADMINS WARNING: Failed to parse lab admin \(index + 1): \(error.localizedDescription)")
+                print("GET LAB ADMINS WARNING: Failed to parse lab admin: \(error.localizedDescription)")
                 // Continue with other records
             }
         }
         
         return parsedLabAdmins
-        } catch {
-            print("GET LAB ADMINS ERROR: Failed to fetch lab admins: \(error.localizedDescription)")
-            throw error
-        }
     }
     
     /// Update lab admin
@@ -885,47 +779,8 @@ class AdminController {
     func deleteLabAdmin(id: String) async throws {
         print("DELETE LAB ADMIN: Attempting to delete lab admin with ID: \(id)")
         
-        // First verify if the lab admin exists
+        // First try direct deletion
         do {
-            let verifyResult = try await verifyLabAdminExists(id: id)
-            if !(verifyResult["exists"] as? Bool ?? false) {
-                print("DELETE LAB ADMIN ERROR: Lab admin with ID \(id) does not exist")
-                throw AdminError.labAdminNotFound
-            }
-            
-            if let name = verifyResult["name"] as? String {
-                print("DELETE LAB ADMIN: Confirmed lab admin exists - Name: \(name)")
-            }
-        } catch {
-            if let adminError = error as? AdminError {
-                throw adminError
-            } else {
-                print("DELETE LAB ADMIN WARNING: Verification check failed: \(error.localizedDescription)")
-                print("DELETE LAB ADMIN: Continuing with deletion attempt anyway")
-            }
-        }
-        
-        // Check for constraints that might prevent deletion
-        do {
-            let constraintCheck = try await checkLabAdminDeletionConstraints(id: id)
-            if !(constraintCheck["canDelete"] as? Bool ?? false) {
-                if let message = constraintCheck["message"] as? String {
-                    print("DELETE LAB ADMIN ERROR: Constraint check failed - \(message)")
-                    throw AdminError.customError(message)
-                } else {
-                    throw AdminError.customError("Cannot delete lab admin due to database constraints")
-                }
-            }
-        } catch let adminError as AdminError {
-            throw adminError
-        } catch {
-            print("DELETE LAB ADMIN WARNING: Constraint check failed: \(error.localizedDescription)")
-            print("DELETE LAB ADMIN: Continuing with deletion attempt anyway")
-        }
-        
-        // Try direct deletion
-        do {
-            print("DELETE LAB ADMIN: Attempting direct deletion with ID: \(id)")
             try await supabase.delete(
                 from: "lab_admins",
                 where: "id",
@@ -936,94 +791,12 @@ class AdminController {
         } catch {
             print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
             
-            // Check if this is a constraint violation (possibly foreign key constraint)
-            let errorMessage = error.localizedDescription.lowercased()
-            if errorMessage.contains("violates") && errorMessage.contains("constraint") {
-                print("DELETE LAB ADMIN WARNING: Constraint violation detected. Attempting soft delete if possible.")
-                
-                // Try to implement a soft delete by updating a status field if it exists
-                do {
-                    // Create a struct for the status update
-                    struct LabAdminStatusUpdate: Encodable {
-                        let status: String
-                        let updated_at: String
-                    }
-                    
-                    // Try to update the status to "inactive" or "deleted" or similar
-                    let possibleStatuses = ["inactive", "deleted", "disabled", "removed"]
-                    
-                    for status in possibleStatuses {
-                        do {
-                            print("DELETE LAB ADMIN: Trying soft delete with status: \(status)")
-                            let updateData = LabAdminStatusUpdate(
-                                status: status,
-                                updated_at: ISO8601DateFormatter().string(from: Date())
-                            )
-                            
-                            try await supabase.update(
-                                table: "lab_admins",
-                                data: updateData,
-                                where: "id",
-                                equals: id
-                            )
-                            
-                            print("DELETE LAB ADMIN: Successfully performed soft delete with status: \(status)")
-                            return
-                        } catch {
-                            print("DELETE LAB ADMIN: Soft delete failed with status \(status): \(error.localizedDescription)")
-                            // Continue trying other statuses
-                        }
-                    }
-                    
-                    // If soft delete with status field fails, try another approach
-                    // Try adding "_deleted" to the email to allow re-registration with same email
-                    do {
-                        print("DELETE LAB ADMIN: Attempting email modification as soft delete")
-                        
-                        // Get the current lab admin data
-                        let labAdmins = try await supabase.select(
-                            from: "lab_admins",
-                            where: "id",
-                            equals: id
-                        )
-                        
-                        if let labAdmin = labAdmins.first, let email = labAdmin["email"] as? String {
-                            // Create a struct for the email update
-                            struct EmailUpdate: Encodable {
-                                let email: String
-                                let updated_at: String
-                            }
-                            
-                            let timestamp = Int(Date().timeIntervalSince1970)
-                            let newEmail = "\(email)_deleted_\(timestamp)"
-                            
-                            let updateData = EmailUpdate(
-                                email: newEmail,
-                                updated_at: ISO8601DateFormatter().string(from: Date())
-                            )
-                            
-                            try await supabase.update(
-                                table: "lab_admins",
-                                data: updateData,
-                                where: "id",
-                                equals: id
-                            )
-                            
-                            print("DELETE LAB ADMIN: Successfully performed soft delete by email modification")
-                            return
-                        }
-                    } catch {
-                        print("DELETE LAB ADMIN: Email modification failed: \(error.localizedDescription)")
-                    }
-                } catch {
-                    print("DELETE LAB ADMIN ERROR: All soft delete attempts failed: \(error.localizedDescription)")
-                }
-            }
+            // If there are foreign key constraints preventing deletion,
+            // we could implement a soft delete by updating a status field
+            // (if such a field exists in the lab_admins table)
             
-            // If we got here, neither hard delete nor soft delete worked
-            let details = "Failed to delete lab admin with ID: \(id). Error: \(error.localizedDescription)"
-            print("DELETE LAB ADMIN ERROR: \(details)")
-            throw AdminError.customError(details)
+            // For now, just rethrow the error
+            throw error
         }
     }
     
@@ -1235,17 +1008,17 @@ class AdminController {
         guard let id = data["id"] as? String,
               let hospitalId = data["hospital_id"] as? String else {
             print("CRITICAL ERROR: Missing id or hospital_id fields")
-            throw AdminError.invalidData("Missing id or hospital_id fields")
+            throw AdminError.invalidData
         }
         
         guard let adminName = data["admin_name"] as? String else {
             print("CRITICAL ERROR: Missing admin_name field")
-            throw AdminError.invalidData("Missing admin_name field")
+            throw AdminError.invalidData
         }
         
         guard let email = data["email"] as? String else {
             print("CRITICAL ERROR: Missing email field")
-            throw AdminError.invalidData("Missing email field")
+            throw AdminError.invalidData
         }
         
         // Handle date fields with maximum resilience
@@ -1357,7 +1130,7 @@ class AdminController {
         // Required fields with fallbacks for more resilience
         guard let id = data["id"] as? String else {
             print("PARSE DOCTOR ERROR: Missing id field")
-            throw AdminError.invalidData("Missing id field")
+            throw AdminError.invalidData
         }
         
         // Optional user_id
@@ -1365,17 +1138,17 @@ class AdminController {
                 
         guard let name = data["name"] as? String else {
             print("PARSE DOCTOR ERROR: Missing name field")
-            throw AdminError.invalidData("Missing name field")
+            throw AdminError.invalidData
         }
         
         guard let specialization = data["specialization"] as? String else {
             print("PARSE DOCTOR ERROR: Missing specialization field")
-            throw AdminError.invalidData("Missing specialization field")
+            throw AdminError.invalidData
         }
         
         guard let hospitalId = data["hospital_id"] as? String else {
             print("PARSE DOCTOR ERROR: Missing hospital_id field")
-            throw AdminError.invalidData("Missing hospital_id field")
+            throw AdminError.invalidData
         }
         
         // Handle qualifications with fallback
@@ -1462,113 +1235,21 @@ class AdminController {
     }
     
     private func parseLabAdminData(_ data: [String: Any]) throws -> LabAdmin {
-        print("PARSE LAB ADMIN: Raw data keys: \(data.keys.joined(separator: ", "))")
-        
-        // Check for required fields first and log any missing ones
-        var missingFields: [String] = []
-        
-        if data["id"] == nil { missingFields.append("id") }
-        if data["hospital_id"] == nil { missingFields.append("hospital_id") }
-        if data["name"] == nil { missingFields.append("name") }
-        if data["email"] == nil { missingFields.append("email") }
-        if data["contact_number"] == nil { missingFields.append("contact_number") }
-        if data["department"] == nil { missingFields.append("department") }
-        if data["created_at"] == nil { missingFields.append("created_at") }
-        if data["updated_at"] == nil { missingFields.append("updated_at") }
-        
-        if !missingFields.isEmpty {
-            let errorMessage = "Missing required fields in lab admin data: \(missingFields.joined(separator: ", "))"
-            print("PARSE LAB ADMIN ERROR: \(errorMessage)")
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage])
+        guard let id = data["id"] as? String,
+              let hospitalId = data["hospital_id"] as? String,
+              let name = data["name"] as? String,
+              let email = data["email"] as? String,
+              let contactNumber = data["contact_number"] as? String,
+              let department = data["department"] as? String,
+              let createdAtString = data["created_at"] as? String,
+              let updatedAtString = data["updated_at"] as? String else {
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing required fields in lab admin data"])
         }
         
-        // Extract the fields with better error handling
-        guard let id = data["id"] as? String else {
-            print("PARSE LAB ADMIN ERROR: 'id' field is not a string")
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'id' field format"])
-        }
-        
-        guard let hospitalId = data["hospital_id"] as? String else {
-            print("PARSE LAB ADMIN ERROR: 'hospital_id' field is not a string")
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'hospital_id' field format"])
-        }
-        
-        guard let name = data["name"] as? String else {
-            print("PARSE LAB ADMIN ERROR: 'name' field is not a string")
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'name' field format"])
-        }
-        
-        guard let email = data["email"] as? String else {
-            print("PARSE LAB ADMIN ERROR: 'email' field is not a string")
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'email' field format"])
-        }
-        
-        guard let contactNumber = data["contact_number"] as? String else {
-            print("PARSE LAB ADMIN ERROR: 'contact_number' field is not a string")
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'contact_number' field format"])
-        }
-        
-        guard let department = data["department"] as? String else {
-            print("PARSE LAB ADMIN ERROR: 'department' field is not a string")
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'department' field format"])
-        }
-        
-        guard let createdAtString = data["created_at"] as? String else {
-            print("PARSE LAB ADMIN ERROR: 'created_at' field is not a string")
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'created_at' field format"])
-        }
-        
-        guard let updatedAtString = data["updated_at"] as? String else {
-            print("PARSE LAB ADMIN ERROR: 'updated_at' field is not a string")
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'updated_at' field format"])
-        }
-        
-        // Parse dates with multiple format support
         let dateFormatter = ISO8601DateFormatter()
-        var createdAt: Date?
-        var updatedAt: Date?
-        
-        // Try ISO 8601 format first
-        createdAt = dateFormatter.date(from: createdAtString)
-        updatedAt = dateFormatter.date(from: updatedAtString)
-        
-        // If ISO 8601 fails, try PostgreSQL timestamp format
-        if createdAt == nil || updatedAt == nil {
-            let pgFormatter = DateFormatter()
-            pgFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-            
-            if createdAt == nil {
-                createdAt = pgFormatter.date(from: createdAtString)
-            }
-            
-            if updatedAt == nil {
-                updatedAt = pgFormatter.date(from: updatedAtString)
-            }
-            
-            // Try another common PostgreSQL format
-            if createdAt == nil || updatedAt == nil {
-                pgFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-                
-                if createdAt == nil {
-                    createdAt = pgFormatter.date(from: createdAtString)
-                }
-                
-                if updatedAt == nil {
-                    updatedAt = pgFormatter.date(from: updatedAtString)
-                }
-            }
-        }
-        
-        // If dates still can't be parsed, use current date as fallback
-        let now = Date()
-        if createdAt == nil {
-            print("PARSE LAB ADMIN WARNING: Could not parse created_at date: '\(createdAtString)', using current date")
-            createdAt = now
-        }
-        
-        if updatedAt == nil {
-            print("PARSE LAB ADMIN WARNING: Could not parse updated_at date: '\(updatedAtString)', using current date")
-            updatedAt = now
+        guard let createdAt = dateFormatter.date(from: createdAtString),
+              let updatedAt = dateFormatter.date(from: updatedAtString) else {
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid date format"])
         }
         
         // Handle address field which might have inconsistent capitalization
@@ -1579,10 +1260,9 @@ class AdminController {
             address = addr
         } else {
             address = ""
-            print("PARSE LAB ADMIN WARNING: No address field found (neither 'Address' nor 'address'), using empty string")
         }
         
-        let labAdmin = LabAdmin(
+        return LabAdmin(
             id: id,
             hospitalId: hospitalId,
             name: name,
@@ -1590,12 +1270,9 @@ class AdminController {
             contactNumber: contactNumber,
             department: department,
             address: address,
-            createdAt: createdAt!,
-            updatedAt: updatedAt!
+            createdAt: createdAt,
+            updatedAt: updatedAt
         )
-        
-        print("PARSE LAB ADMIN: Successfully parsed lab admin with ID: \(id), Name: \(name)")
-        return labAdmin
     }
     
     private func parseActivityData(_ data: [String: Any]) throws -> Activity {
@@ -1640,7 +1317,7 @@ class AdminController {
             let email = data["email"] as? String,
             let statusString = data["status"] as? String
         else {
-            throw AdminError.invalidData("Missing required fields in hospital data")
+            throw AdminError.invalidData
         }
         
         // Parse dates
@@ -1656,7 +1333,7 @@ class AdminController {
         
         // Convert status string to enum
         guard let status = HospitalStatus(rawValue: statusString) else {
-            throw AdminError.invalidData("Invalid status format")
+            throw AdminError.invalidData
         }
         
         return Hospital(
@@ -1679,99 +1356,842 @@ class AdminController {
         )
     }
     
-    // MARK: - Debug Methods
-    
-    /// Verify if a lab admin ID exists in the database (for debugging delete issues)
-    func verifyLabAdminExists(id: String) async throws -> [String: Any] {
-        print("VERIFY LAB ADMIN: Checking if lab admin with ID \(id) exists")
+    // Add doctor availability using the efficient JSON approach
+    func addDoctorSchedule(doctorId: String, hospitalId: String, weekdaySlots: Set<String>, weekendSlots: Set<String>) async throws {
+        print("🔍 Creating availability schedule for Doctor ID: \(doctorId) - Hospital ID: \(hospitalId)")
         
-        var result: [String: Any] = [:]
-        result["id"] = id
-        result["exists"] = false
+        // First, check if the doctor already has an availability record
+        let existingRecords = try await supabase.select(
+            from: "doctor_availability_efficient",
+            where: "doctor_id",
+            equals: doctorId
+        )
         
-        // First try a direct query for the ID
-        do {
-            let labAdmins = try await supabase.select(
-                from: "lab_admins",
-                where: "id",
-                equals: id
-            )
+        if !existingRecords.isEmpty {
+            print("⚠️ Doctor already has an availability record. Using updateDoctorSchedule instead.")
+            try await updateDoctorSchedule(doctorId: doctorId, hospitalId: hospitalId, weekdaySlots: weekdaySlots, weekendSlots: weekendSlots)
+            return
+        }
+        
+        // Initialize empty schedule for all days
+        var weeklySchedule: [String: [TimeSlot]] = [
+            "monday": [],
+            "tuesday": [],
+            "wednesday": [],
+            "thursday": [],
+            "friday": [],
+            "saturday": [],
+            "sunday": []
+        ]
+        
+        // Parse and add weekday slots
+        if !weekdaySlots.isEmpty {
+            let weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday"]
             
-            if labAdmins.isEmpty {
-                print("VERIFY LAB ADMIN: No lab admin found with ID \(id)")
-                result["exists"] = false
-                result["message"] = "Lab admin not found"
-            } else {
-                print("VERIFY LAB ADMIN: Found lab admin with ID \(id)")
-                // Include basic info about the lab admin
-                if let data = labAdmins.first {
-                    result["exists"] = true
-                    result["name"] = data["name"] as? String ?? "Unknown"
-                    result["email"] = data["email"] as? String ?? "Unknown"
-                    result["message"] = "Lab admin exists in database"
+            // Add the same slots to all weekdays
+            for slot in weekdaySlots {
+                if let (startTime, endTime) = parseTimeSlot(slot) {
+                    let timeSlot = TimeSlot(start: startTime, end: endTime)
+                    
+                    // Add to each weekday
+                    for day in weekdays {
+                        weeklySchedule[day]?.append(timeSlot)
+                    }
+                } else {
+                    print("⚠️ Invalid time slot format: \(slot)")
                 }
             }
+        }
+        
+        // Parse and add weekend slots
+        if !weekendSlots.isEmpty {
+            let weekends = ["saturday", "sunday"]
+            
+            // Add the same slots to weekend days
+            for slot in weekendSlots {
+                if let (startTime, endTime) = parseTimeSlot(slot) {
+                    let timeSlot = TimeSlot(start: startTime, end: endTime)
+                    
+                    // Add to each weekend day
+                    for day in weekends {
+                        weeklySchedule[day]?.append(timeSlot)
+                    }
+                } else {
+                    print("⚠️ Invalid time slot format: \(slot)")
+                }
+            }
+        }
+        
+        // Convert weekly schedule to JSON format
+        let jsonSchedule = convertToJsonSchedule(weeklySchedule)
+        
+        // Create dates
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let today = Date()
+        let effectiveFrom = dateFormatter.string(from: today)
+        
+        // Create the availability record
+        let record = DoctorAvailabilityEfficientRecord(
+            doctor_id: doctorId,
+            hospital_id: hospitalId,
+            weekly_schedule: jsonSchedule,
+            effective_from: effectiveFrom,
+            effective_until: nil,
+            max_normal_patients: 6,
+            max_premium_patients: 2
+        )
+        
+        print("📅 Creating availability schedule starting from \(effectiveFrom)")
+        print("📊 Doctor ID: \(record.doctor_id)")
+        print("📊 Hospital ID: \(record.hospital_id)")
+        
+        // Log the schedule for debugging
+        for (day, slots) in jsonSchedule {
+            print("📊 \(day): \(slots.count) slots")
+        }
+        
+        // Save to database using Supabase
+        do {
+            // Try direct insertion which provides better error handling
+            print("🔄 Attempting direct insertion for better error handling")
+            await insertDoctorScheduleDirectly(record: record)
+        } catch let error as SupabaseError {
+            print("❌ Supabase error: \(error.localizedDescription)")
+            print("🔄 Trying alternative insertion methods")
+            await insertScheduleWithFunction(record: record)
         } catch {
-            print("VERIFY LAB ADMIN ERROR: Failed to query database: \(error.localizedDescription)")
-            result["error"] = error.localizedDescription
-            result["message"] = "Failed to verify lab admin: \(error.localizedDescription)"
-            throw error
+            print("❌ Failed to insert schedule: \(error.localizedDescription)")
+            print("❌ Error type: \(type(of: error))")
+            print("🔄 Trying alternative insertion methods")
+            await insertScheduleWithFunction(record: record)
+        }
+    }
+    
+    // Helper function to parse time slot in format "HH:MM-HH:MM" or "HH:MM-HH:MM AM/PM"
+    private func parseTimeSlot(_ slot: String) -> (String, String)? {
+        // Remove AM/PM indicators for database storage
+        let slotWithoutAMPM = slot.replacingOccurrences(of: " AM", with: "")
+                                 .replacingOccurrences(of: " PM", with: "")
+        
+        let components = slotWithoutAMPM.split(separator: "-")
+        guard components.count == 2 else { return nil }
+        
+        let startTimeString = String(components[0]).trimmingCharacters(in: .whitespaces)
+        let endTimeString = String(components[1]).trimmingCharacters(in: .whitespaces)
+        
+        // Add seconds if not present
+        let start = startTimeString.contains(":") && !startTimeString.contains(":00")
+            ? startTimeString + ":00"
+            : startTimeString
+            
+        let end = endTimeString.contains(":") && !endTimeString.contains(":00")
+            ? endTimeString + ":00"
+            : endTimeString
+            
+        return (start, end)
+    }
+    
+    // Convert Swift dictionary to JSON format
+    private func convertToJsonSchedule(_ schedule: [String: [TimeSlot]]) -> [String: [TimeSlotJSON]] {
+        var jsonSchedule: [String: [TimeSlotJSON]] = [:]
+        
+        for (day, slots) in schedule {
+            jsonSchedule[day] = slots.map { $0.toJSON() }
+        }
+        
+        return jsonSchedule
+    }
+    
+    // Method to convert schedule to a JSON-compatible dictionary
+    private func scheduleToJsonDictionary(_ schedule: [String: [TimeSlotJSON]]) -> [String: [[String: Any]]] {
+        var result: [String: [[String: Any]]] = [:]
+        
+        for (day, slots) in schedule {
+            result[day] = slots.map { slot in
+                return [
+                    "start": slot.start,
+                    "end": slot.end,
+                    "available": slot.available
+                ]
+            }
         }
         
         return result
     }
     
-    /// Check for constraints that might prevent deletion
-    func checkLabAdminDeletionConstraints(id: String) async throws -> [String: Any] {
-        print("CHECK CONSTRAINTS: Checking constraints for lab admin with ID \(id)")
-        
-        var result: [String: Any] = [:]
-        result["id"] = id
-        result["canDelete"] = false
-        
-        // First check if it exists
+    // Direct insertion method for the new format
+    private func insertDoctorScheduleDirectly(record: DoctorAvailabilityEfficientRecord) async {
+        print("🔄 Trying direct insertion of schedule to database")
         do {
-            let verifyResult = try await verifyLabAdminExists(id: id)
-            if !(verifyResult["exists"] as? Bool ?? false) {
-                result["canDelete"] = false
-                result["message"] = "Lab admin does not exist"
-                return result
+            // Create direct URL request to Supabase using UPSERT (POST with Prefer: resolution=merge-duplicates)
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/doctor_availability_efficient")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            request.addValue("resolution=merge-duplicates", forHTTPHeaderField: "Prefer") // This enables UPSERT behavior
+            
+            // Encode and send data
+            let jsonData: Data
+            do {
+                // First convert the record to a dictionary with simple JSON types
+                let recordDict: [String: Any] = [
+                    "doctor_id": record.doctor_id,
+                    "hospital_id": record.hospital_id,
+                    "weekly_schedule": scheduleToJsonDictionary(record.weekly_schedule),
+                    "effective_from": record.effective_from,
+                    "effective_until": record.effective_until as Any,
+                    "max_normal_patients": record.max_normal_patients,
+                    "max_premium_patients": record.max_premium_patients
+                ]
+                
+                // Now serialize the dictionary to JSON
+                jsonData = try JSONSerialization.data(withJSONObject: recordDict)
+            } catch {
+                print("❌ JSON serialization error: \(error.localizedDescription)")
+                print("❌ Error type: \(type(of: error))")
+                await insertScheduleWithFunction(record: record)
+                return
+            }
+            
+            request.httpBody = jsonData
+            
+            // Log request for debugging
+            print("📊 Request URL: \(url.absoluteString)")
+            print("📊 Request payload: \(String(data: jsonData, encoding: .utf8) ?? "Unable to print payload")")
+            
+            // Send request
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            // Check response
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid response type")
+                return
+            }
+            
+            print("📊 Response status code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("✅ Direct insertion of schedule successful")
+            } else {
+                let responseString = String(data: data, encoding: .utf8) ?? "No response body"
+                print("❌ Direct insertion failed with status code: \(httpResponse.statusCode)")
+                print("❌ Response body: \(responseString)")
+                
+                // Try to interpret common error cases
+                if responseString.contains("violates unique constraint") {
+                    if responseString.contains("doctor_availability_efficient_doctor_id_key") {
+                        print("🔍 Error details: Doctor ID already exists in the availability table")
+                        // Try updating instead of inserting
+                        await updateExistingSchedule(doctorId: record.doctor_id, newRecord: record)
+                    } // Hospital ID unique constraint has been removed
+                    // Keeping this code commented for reference
+                    // else if responseString.contains("doctor_availability_efficient_hospital_id_key") {
+                        // print("🔍 Error details: Hospital ID already exists in the availability table")
+                    else if responseString.contains("unique_doctor_schedule") {
+                        print("🔍 Error details: Combination of doctor_id, hospital_id, and effective_from already exists")
+                    }
+                } else if responseString.contains("violates foreign key constraint") {
+                    if responseString.contains("doctor_availability_efficient_doctor_id_fkey") {
+                        print("🔍 Error details: The doctor_id does not exist in the doctors table")
+                    } else if responseString.contains("doctor_availability_efficient_hospital_id_fkey") {
+                        print("🔍 Error details: The hospital_id does not exist in the hospitals table")
+                    }
+                }
+                
+                // Try database function as a fallback
+                await insertScheduleWithFunction(record: record)
             }
         } catch {
-            result["error"] = error.localizedDescription
-            result["message"] = "Failed to verify lab admin: \(error.localizedDescription)"
-            return result
+            print("❌ Direct insertion error: \(error.localizedDescription)")
+            print("❌ Error type: \(type(of: error))")
+            await insertScheduleWithFunction(record: record)
         }
+    }
+    
+    // Insert using the database function
+    private func insertScheduleWithFunction(record: DoctorAvailabilityEfficientRecord) async {
+        print("🔄 Attempting to insert schedule using database function")
         
-        // Check for foreign key constraints in other tables
-        // This would depend on your database schema - add checks for each table that might reference lab_admins
-        // For example:
-        
-        /*
-        // Example: Check if lab admin has reports
+        // First check if a record already exists
         do {
-            let reports = try await supabase.select(
-                from: "reports",
-                where: "lab_admin_id",
-                equals: id
+            let existingRecords = try await supabase.select(
+                from: "doctor_availability_efficient",
+                where: "doctor_id",
+                equals: record.doctor_id
             )
             
-            if !reports.isEmpty {
-                result["canDelete"] = false
-                result["message"] = "Cannot delete lab admin: Has \(reports.count) reports"
-                return result
+            if !existingRecords.isEmpty {
+                print("🔍 Found existing availability record. Updating instead of inserting.")
+                
+                guard let existingRecord = existingRecords.first,
+                      let recordId = existingRecord["id"] as? Int else {
+                    print("❌ Failed to get existing record ID")
+                    return
+                }
+                
+                // Try to update existing record
+                let url = URL(string: "\(supabase.supabaseURL)/rest/v1/doctor_availability_efficient?id=eq.\(recordId)")!
+                var request = URLRequest(url: url)
+                request.httpMethod = "PATCH"
+                request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+                request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+                
+                // Create just the fields we want to update
+                let updateDict: [String: Any] = [
+                    "weekly_schedule": record.weekly_schedule,
+                    "max_normal_patients": record.max_normal_patients,
+                    "max_premium_patients": record.max_premium_patients,
+                    "updated_at": ISO8601DateFormatter().string(from: Date())
+                ]
+                
+                // Serialize to JSON
+                let jsonData = try JSONSerialization.data(withJSONObject: updateDict)
+                request.httpBody = jsonData
+                
+                print("📊 Update URL: \(url.absoluteString)")
+                print("📊 Update data: \(String(data: jsonData, encoding: .utf8) ?? "Unable to print payload")")
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print("❌ Invalid response type")
+                    return
+                }
+                
+                print("📊 Response status code: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                    print("✅ Successfully updated availability record")
+                    return
+                } else {
+                    let responseString = String(data: data, encoding: .utf8) ?? "No response body"
+                    print("❌ Failed to update: \(responseString)")
+                    // Continue to function call as last resort
+                }
+            }
+            
+            // If no record exists or update failed, use the function call
+            await callDatabaseFunction(record: record)
+        } catch {
+            print("❌ Error checking for existing records: \(error.localizedDescription)")
+            // Try function call as fallback
+            await callDatabaseFunction(record: record)
+        }
+    }
+    
+    // Call the database function as last resort
+    private func callDatabaseFunction(record: DoctorAvailabilityEfficientRecord) async {
+        print("🔄 Calling database function to insert/update schedule")
+        
+        do {
+            // Create SQL function URL
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/rpc/set_doctor_weekly_schedule")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            // Create an encodable struct for function parameters
+            struct FunctionParams: Encodable {
+                let p_doctor_id: String
+                let p_hospital_id: String
+                let p_weekly_schedule: [String: [TimeSlotJSON]]
+                let p_effective_from: String
+                let p_effective_until: String?
+                let p_max_normal: Int
+                let p_max_premium: Int
+            }
+            
+            // Create parameters as a dictionary for safer JSON serialization
+            let paramsDict: [String: Any] = [
+                "p_doctor_id": record.doctor_id,
+                "p_hospital_id": record.hospital_id,
+                "p_weekly_schedule": scheduleToJsonDictionary(record.weekly_schedule),
+                "p_effective_from": record.effective_from,
+                "p_effective_until": record.effective_until as Any,
+                "p_max_normal": record.max_normal_patients,
+                "p_max_premium": record.max_premium_patients
+            ]
+            
+            // Encode parameters using JSONSerialization
+            let jsonData = try JSONSerialization.data(withJSONObject: paramsDict)
+            request.httpBody = jsonData
+            
+            // Log request details for debugging
+            print("📊 Function URL: \(url.absoluteString)")
+            print("📊 Function parameters: \(String(data: jsonData, encoding: .utf8) ?? "Unable to print parameters")")
+            
+            // Execute request
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid function response")
+                return
+            }
+            
+            print("📊 Function response status: \(httpResponse.statusCode)")
+            
+            let responseString = String(data: data, encoding: .utf8) ?? "No response body"
+            
+            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("✅ Function call successful")
+                print("📊 Response: \(responseString)")
+            } else {
+                print("❌ Function call failed with status: \(httpResponse.statusCode)")
+                print("❌ Response: \(responseString)")
+                
+                // Attempt to identify specific errors
+                if responseString.contains("duplicate key value") {
+                    print("🔍 Error details: Record with this combination of keys already exists")
+                } else if responseString.contains("violates foreign key constraint") {
+                    print("🔍 Error details: Referenced doctor_id or hospital_id does not exist")
+                } else if responseString.contains("null value in column") {
+                    print("🔍 Error details: Required field is missing")
+                }
+                
+                // Try one last workaround - direct manual SQL upsert
+                await attemptLastResortUpsert(record: record)
             }
         } catch {
-            // Log but don't fail the entire check
-            print("CHECK CONSTRAINTS WARNING: Failed to check reports: \(error.localizedDescription)")
+            print("❌ Function call error: \(error.localizedDescription)")
+            print("❌ Error type: \(type(of: error))")
+            print("⚠️ Suggestion: Verify the 'set_doctor_weekly_schedule' function exists in the database")
+            
+            // Try one last workaround
+            await attemptLastResortUpsert(record: record)
         }
-        */
+    }
+    
+    // Last resort method to try to work around constraints
+    private func attemptLastResortUpsert(record: DoctorAvailabilityEfficientRecord) async {
+        print("🔄 Attempting last resort upsert using SQL")
         
-        // If we get here, assume it can be deleted
-        result["canDelete"] = true
-        result["message"] = "Lab admin can be safely deleted"
+        // Try to delete any existing record first
+        do {
+            let deleteUrl = URL(string: "\(supabase.supabaseURL)/rest/v1/doctor_availability_efficient?doctor_id=eq.\(record.doctor_id)")!
+            var deleteRequest = URLRequest(url: deleteUrl)
+            deleteRequest.httpMethod = "DELETE"
+            deleteRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            deleteRequest.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            deleteRequest.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            let (_, deleteResponse) = try await URLSession.shared.data(for: deleteRequest)
+            
+            if let httpResponse = deleteResponse as? HTTPURLResponse {
+                print("📊 Delete response status: \(httpResponse.statusCode)")
+                // Even if it fails, try the insert anyway
+            }
+            
+            // Now try to insert the record
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/doctor_availability_efficient")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            // Encode and send data
+            let recordDict: [String: Any] = [
+                "doctor_id": record.doctor_id,
+                "hospital_id": record.hospital_id,
+                "weekly_schedule": scheduleToJsonDictionary(record.weekly_schedule),
+                "effective_from": record.effective_from,
+                "effective_until": record.effective_until as Any,
+                "max_normal_patients": record.max_normal_patients,
+                "max_premium_patients": record.max_premium_patients,
+                "created_at": ISO8601DateFormatter().string(from: Date()),
+                "updated_at": ISO8601DateFormatter().string(from: Date())
+            ]
+            
+            let jsonData = try JSONSerialization.data(withJSONObject: recordDict)
+            request.httpBody = jsonData
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid response type")
+                return
+            }
+            
+            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("✅ Last resort insertion successful")
+            } else {
+                let responseString = String(data: data, encoding: .utf8) ?? "No response body"
+                print("❌ Last resort insertion failed: \(responseString)")
+                print("⚠️ Manual database intervention may be required to resolve constraint issues")
+            }
+        } catch {
+            print("❌ Last resort error: \(error.localizedDescription)")
+            print("⚠️ All automatic attempts to add doctor availability have failed.")
+            print("⚠️ Suggestion: Check database constraints and relationships manually.")
+        }
+    }
+    
+    // Fetch doctor availability schedule
+    func getDoctorSchedule(doctorId: String, hospitalId: String) async throws -> (weekdaySlots: Set<String>, weekendSlots: Set<String>) {
+        print("🔍 Fetching schedule for doctor \(doctorId) at hospital \(hospitalId)")
         
-        return result
+        do {
+            // Query the database for this doctor's schedule using the proper API
+            let results = try await supabase.select(
+                from: "doctor_availability_efficient",
+                where: "doctor_id",
+                equals: doctorId
+            )
+            
+            // Print the raw results for debugging
+            if let rawResultData = try? JSONSerialization.data(withJSONObject: results, options: .prettyPrinted),
+               let rawString = String(data: rawResultData, encoding: .utf8) {
+                print("📋 RAW JSON RESULT: \(rawString)")
+            }
+            
+            // Also check the hospital_id matches since the select method only supports one condition
+            let filteredResults = results.filter { record in
+                if let recordHospitalId = record["hospital_id"] as? String {
+                    return recordHospitalId == hospitalId
+                }
+                return false
+            }
+            
+            print("📊 Query result: \(filteredResults.isEmpty ? "No data" : "Data found")")
+            
+            // Process the result
+            if let record = filteredResults.first {
+                print("✅ Found record in efficient table: \(record)")
+                
+                // Try parsing the weekly_schedule in multiple ways
+                
+                // 1. First attempt - try parsing as a dictionary
+                if let weeklySchedule = record["weekly_schedule"] as? [String: Any] {
+                    print("✅ Found weekly_schedule as Dictionary: \(weeklySchedule)")
+                    
+                    var weekdaySlots = Set<String>()
+                    var weekendSlots = Set<String>()
+                    
+                    if let weekdayData = weeklySchedule["weekday"] as? [String] {
+                        weekdaySlots = Set(weekdayData)
+                        print("📋 Weekday slots (from dictionary): \(weekdaySlots)")
+                    } else {
+                        print("⚠️ Weekday key exists but is not a string array: \(String(describing: weeklySchedule["weekday"]))")
+                    }
+                    
+                    if let weekendData = weeklySchedule["weekend"] as? [String] {
+                        weekendSlots = Set(weekendData)
+                        print("📋 Weekend slots (from dictionary): \(weekendSlots)")
+                    } else {
+                        print("⚠️ Weekend key exists but is not a string array: \(String(describing: weeklySchedule["weekend"]))")
+                    }
+                    
+                    // If we found valid data, return it
+                    if !weekdaySlots.isEmpty || !weekendSlots.isEmpty {
+                        return (weekdaySlots, weekendSlots)
+                    }
+                }
+                
+                // 2. Second attempt - try parsing from JSON string
+                if let weeklyScheduleStr = record["weekly_schedule"] as? String {
+                    print("🔄 Found weekly_schedule as String: \(weeklyScheduleStr)")
+                    
+                    if let scheduleData = weeklyScheduleStr.data(using: .utf8),
+                       let schedule = try? JSONSerialization.jsonObject(with: scheduleData) as? [String: Any] {
+                        
+                        var weekdaySlots = Set<String>()
+                        var weekendSlots = Set<String>()
+                        
+                        if let weekdayData = schedule["weekday"] as? [String] {
+                            weekdaySlots = Set(weekdayData)
+                            print("📋 Weekday slots (from JSON string): \(weekdaySlots)")
+                        }
+                        
+                        if let weekendData = schedule["weekend"] as? [String] {
+                            weekendSlots = Set(weekendData)
+                            print("📋 Weekend slots (from JSON string): \(weekendSlots)")
+                        }
+                        
+                        return (weekdaySlots, weekendSlots)
+                    }
+                }
+                
+                // 3. Try individual slots in record
+                let weekdayKeyPattern = "slot_weekday_"
+                let weekendKeyPattern = "slot_weekend_"
+                
+                var weekdaySlots = Set<String>()
+                var weekendSlots = Set<String>()
+                
+                for (key, value) in record {
+                    if key.hasPrefix(weekdayKeyPattern), let timeSlot = value as? String {
+                        weekdaySlots.insert(timeSlot)
+                        print("📋 Found weekday slot in record: \(timeSlot)")
+                    } else if key.hasPrefix(weekendKeyPattern), let timeSlot = value as? String {
+                        weekendSlots.insert(timeSlot)
+                        print("📋 Found weekend slot in record: \(timeSlot)")
+                    }
+                }
+                
+                if !weekdaySlots.isEmpty || !weekendSlots.isEmpty {
+                    return (weekdaySlots, weekendSlots)
+                }
+                
+                // 4. Last attempt - check for any time patterns in the record
+                print("⚠️ No standard format found, trying fallback pattern matching")
+                
+                for (key, value) in record {
+                    // Dump each field to help debug the structure
+                    print("   📌 \(key): \(value) (type: \(type(of: value)))")
+                    
+                    if let valueStr = value as? String {
+                        // Check for common time formats: XX:XX-XX:XX or XX:XX:XX-XX:XX:XX
+                        if valueStr.range(of: #"\d{1,2}:\d{2}(:\d{2})?-\d{1,2}:\d{2}(:\d{2})?"#, options: .regularExpression) != nil {
+                            print("⚡️ Found time pattern in field '\(key)': \(valueStr)")
+                            
+                            // Decide where to add this slot based on field name or context
+                            if key.lowercased().contains("weekday") || key.lowercased().contains("week_day") {
+                                weekdaySlots.insert(valueStr)
+                            } else if key.lowercased().contains("weekend") || key.lowercased().contains("week_end") {
+                                weekendSlots.insert(valueStr)
+                            } else {
+                                // Can't determine, add to weekdays by default
+                                weekdaySlots.insert(valueStr)
+                            }
+                        }
+                    }
+                }
+                
+                // Return any slots we found
+                if !weekdaySlots.isEmpty || !weekendSlots.isEmpty {
+                    return (weekdaySlots, weekendSlots)
+                }
+            } else {
+                print("⚠️ No matching record found after hospital ID filtering")
+            }
+            
+            // If no slots found, return empty sets
+            print("⚠️ No schedule found in database, returning empty sets")
+            return (Set<String>(), Set<String>())
+        } catch {
+            print("❌ Error fetching doctor schedule: \(error.localizedDescription)")
+            
+            // Return empty sets on error
+            print("❌ ERROR: Returning empty sets")
+            return (Set<String>(), Set<String>())
+        }
+    }
+    
+    // Update doctor's availability schedule
+    func updateDoctorSchedule(doctorId: String, hospitalId: String, weekdaySlots: Set<String>, weekendSlots: Set<String>) async throws {
+        print("🔄 Updating availability schedule for Doctor ID: \(doctorId) - Hospital ID: \(hospitalId)")
+        print("🔍 Weekday slots: \(weekdaySlots)")
+        print("🔍 Weekend slots: \(weekendSlots)")
+        
+        // First try to find if the doctor already has a schedule
+        let results = try await supabase.select(
+            from: "doctor_availability_efficient",
+            where: "doctor_id",
+            equals: doctorId
+        )
+        
+        if results.isEmpty {
+            // If no existing schedule, create a new one
+            print("ℹ️ No existing schedule found, creating new schedule")
+            try await addDoctorSchedule(
+                doctorId: doctorId,
+                hospitalId: hospitalId,
+                weekdaySlots: weekdaySlots,
+                weekendSlots: weekendSlots
+            )
+            return
+        }
+        
+        // If schedule exists, update it using the same structure as addDoctorSchedule
+        // Initialize empty schedule for all days
+        var weeklySchedule: [String: [TimeSlot]] = [
+            "monday": [],
+            "tuesday": [],
+            "wednesday": [],
+            "thursday": [],
+            "friday": [],
+            "saturday": [],
+            "sunday": []
+        ]
+        
+        // Parse and add weekday slots
+        if !weekdaySlots.isEmpty {
+            let weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday"]
+            
+            // Add the same slots to all weekdays
+            for slot in weekdaySlots {
+                print("🔄 Processing weekday slot: \(slot)")
+                if let (startTime, endTime) = parseTimeSlot(slot) {
+                    let timeSlot = TimeSlot(start: startTime, end: endTime)
+                    
+                    // Add to each weekday
+                    for day in weekdays {
+                        weeklySchedule[day]?.append(timeSlot)
+                    }
+                } else {
+                    print("⚠️ Could not parse weekday slot: \(slot)")
+                }
+            }
+        }
+        
+        // Parse and add weekend slots
+        if !weekendSlots.isEmpty {
+            let weekends = ["saturday", "sunday"]
+            
+            // Add the same slots to weekend days
+            for slot in weekendSlots {
+                print("🔄 Processing weekend slot: \(slot)")
+                if let (startTime, endTime) = parseTimeSlot(slot) {
+                    let timeSlot = TimeSlot(start: startTime, end: endTime)
+                    
+                    // Add to each weekend day
+                    for day in weekends {
+                        weeklySchedule[day]?.append(timeSlot)
+                    }
+                } else {
+                    print("⚠️ Could not parse weekend slot: \(slot)")
+                }
+            }
+        }
+        
+        // Convert weekly schedule to JSON format
+        let jsonSchedule = convertToJsonSchedule(weeklySchedule)
+        
+        // Get the ID of the existing record to update
+        guard let existingRecord = results.first,
+              let recordId = existingRecord["id"] as? Int else {
+            print("❌ Failed to get existing schedule ID")
+            throw NSError(domain: "AdminController", code: 400, userInfo: [NSLocalizedDescriptionKey: "Failed to get existing schedule ID"])
+        }
+        
+        print("ℹ️ Found existing record with ID: \(recordId)")
+        
+        // Use direct URL request to update the record
+        do {
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/doctor_availability_efficient?id=eq.\(recordId)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            // Create the update data
+            let updateDict: [String: Any] = [
+                "weekly_schedule": scheduleToJsonDictionary(jsonSchedule),
+                "updated_at": ISO8601DateFormatter().string(from: Date())
+            ]
+            
+            // Serialize to JSON
+            let jsonData: Data
+            do {
+                jsonData = try JSONSerialization.data(withJSONObject: updateDict)
+                print("✅ Successfully serialized update data to JSON")
+            } catch {
+                print("❌ Failed to serialize JSON: \(error.localizedDescription)")
+                throw error
+            }
+            request.httpBody = jsonData
+            
+            print("🔄 Sending update request to Supabase")
+            print("📊 Update URL: \(url.absoluteString)")
+            print("📊 Update data: \(String(data: jsonData, encoding: .utf8) ?? "Unable to print payload")")
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid response type")
+                throw NSError(domain: "AdminController", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid response type"])
+            }
+            
+            print("📊 Response status code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("✅ Successfully updated weekly schedule for doctor \(doctorId)")
+            } else {
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("❌ Failed to update schedule: \(responseString)")
+                }
+                throw NSError(domain: "AdminController", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to update schedule with status code \(httpResponse.statusCode)"])
+            }
+        } catch {
+            print("❌ Failed to update schedule: \(error.localizedDescription)")
+            throw error
+        }
+    }
+    
+    // Update existing schedule
+    private func updateExistingSchedule(doctorId: String, newRecord: DoctorAvailabilityEfficientRecord) async {
+        print("🔄 Updating existing schedule for Doctor ID: \(doctorId)")
+        
+        do {
+            // First, fetch the existing schedule
+            let existingRecords = try await supabase.select(
+                from: "doctor_availability_efficient",
+                where: "doctor_id",
+                equals: doctorId
+            )
+            
+            guard let existingRecord = existingRecords.first,
+                  let recordId = existingRecord["id"] as? Int else {
+                print("❌ Failed to find existing schedule for doctor \(doctorId)")
+                return
+            }
+            
+            // Update the existing record
+            let url = URL(string: "\(supabase.supabaseURL)/rest/v1/doctor_availability_efficient?id=eq.\(recordId)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            
+            // Create the update data
+            let updateDict: [String: Any] = [
+                "weekly_schedule": scheduleToJsonDictionary(newRecord.weekly_schedule),
+                "max_normal_patients": newRecord.max_normal_patients,
+                "max_premium_patients": newRecord.max_premium_patients,
+                "updated_at": ISO8601DateFormatter().string(from: Date())
+            ]
+            
+            // Serialize to JSON
+            let jsonData: Data
+            do {
+                jsonData = try JSONSerialization.data(withJSONObject: updateDict)
+                print("✅ Successfully serialized update data to JSON")
+            } catch {
+                print("❌ Failed to serialize JSON: \(error.localizedDescription)")
+                return
+            }
+            request.httpBody = jsonData
+            
+            print("🔄 Sending update request to Supabase")
+            print("📊 Update URL: \(url.absoluteString)")
+            print("📊 Update data: \(String(data: jsonData, encoding: .utf8) ?? "Unable to print payload")")
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid response type")
+                return
+            }
+            
+            print("📊 Response status code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                print("✅ Successfully updated existing schedule for doctor \(doctorId)")
+            } else {
+                let responseString = String(data: data, encoding: .utf8) ?? "No response body"
+                print("❌ Failed to update schedule: \(responseString)")
+            }
+        } catch {
+            print("❌ Error updating existing schedule: \(error.localizedDescription)")
+        }
     }
 }
 
@@ -1786,13 +2206,8 @@ enum AdminError: Error, LocalizedError {
     case invalidLabAdminData
     case invalidActivityData
     case hospitalNotFound
-    case invalidData(String)
+    case invalidData
     case doctorDeleteFailed
-    case invalidContactNumber(String)
-    case invalidFormat(String)
-    case invalidPassword(message: String)
-    case emailAlreadyExists(String)
-    case customError(String)
     
     var errorDescription: String? {
         switch self {
@@ -1814,20 +2229,10 @@ enum AdminError: Error, LocalizedError {
             return "Invalid activity data"
         case .hospitalNotFound:
             return "Hospital not found"
-        case .invalidData(let message):
-            return "Invalid data: \(message)"
+        case .invalidData:
+            return "Invalid data"
         case .doctorDeleteFailed:
             return "Failed to delete doctor"
-        case .invalidContactNumber(let message):
-            return "Invalid contact number: \(message)"
-        case .invalidFormat(let message):
-            return "Invalid format: \(message)"
-        case .invalidPassword(let message):
-            return "Invalid password: \(message)"
-        case .emailAlreadyExists(let message):
-            return "Email already exists: \(message)"
-        case .customError(let message):
-            return message
         }
     }
 } 
