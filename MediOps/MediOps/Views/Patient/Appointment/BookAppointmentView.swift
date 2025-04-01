@@ -250,18 +250,24 @@ struct BookAppointmentView: View {
                     equals: userId
                 )
                 
-                if let existingPatient = userPatientRecords.first, let existingId = existingPatient["id"] as? String {
-                    print("✅ Found existing patient with user_id \(userId), using id: \(existingId)")
+                if let existingPatient = userPatientRecords.first, 
+                   let existingRecordId = existingPatient["id"] as? String,
+                   let existingPatientId = existingPatient["patient_id"] as? String {
+                    print("✅ Found existing patient with user_id \(userId), using id: \(existingRecordId) and patient_id: \(existingPatientId)")
                     // Use the existing patient ID instead
-                    patientId = existingId
+                    patientId = existingPatientId
                 } else {
                     // Create a completely new patient record
                     print("🔄 Creating new patient record with id=\(patientId) and user_id=\(userId)")
                     
+                    // Generate a patient_id in the format PAT[0-9]{3}
+                    let randomNum = String(format: "%03d", Int.random(in: 0...999))
+                    let patientIdValue = "PAT\(randomNum)"
+                    
                     // Create the patient record with proper fields
                     let patientData: [String: Any] = [
                         "id": patientId,
-                        "patient_id": patientId, // Make sure patient_id matches id
+                        "patient_id": patientIdValue, // Set the patient_id field
                         "user_id": userId,
                         "name": "Patient",
                         "gender": "Not specified",
@@ -273,7 +279,10 @@ struct BookAppointmentView: View {
                     ]
                     
                     try await SupabaseController.shared.insert(into: "patients", values: patientData)
-                    print("✅ Created patient record with ID: \(patientId)")
+                    print("✅ Created patient record with ID: \(patientId) and patient_id: \(patientIdValue)")
+                    
+                    // Update the patientId to use the newly created patient_id value
+                    patientId = patientIdValue
                     
                     // Verify the patient was created successfully
                     let verifyPatient = try await SupabaseController.shared.select(
@@ -316,15 +325,23 @@ struct BookAppointmentView: View {
                     print("🔍 Foreign key constraint error detected - attempting to diagnose and fix")
                     
                     // Debug: Check if the patient exists in the table directly
-                    let checkPatientSql = "SELECT id, patient_id, user_id FROM patients WHERE id = '\(patientId)'"
+                    let checkPatientSql = "SELECT id, patient_id, user_id FROM patients WHERE id = '\(patientId)' OR patient_id = '\(patientId)'"
                     
                     do {
                         let result = try await SupabaseController.shared.executeSQL(sql: checkPatientSql)
                         print("🔍 Patient lookup result: \(result)")
                         
+                        if !result.isEmpty, let record = result.first {
+                            // Determine which ID to use
+                            if let patientIdField = record["patient_id"] as? String {
+                                print("✅ Found patient_id field: \(patientIdField), using this for appointment")
+                                patientId = patientIdField
+                            }
+                        }
+                        
                         // If we got here but still have issues, try updating the record to ensure patient_id is set
                         let updateSql = """
-                        UPDATE patients SET patient_id = '\(patientId)' WHERE id = '\(patientId)'
+                        UPDATE patients SET patient_id = '\(patientId)' WHERE id = '\(patientId)' AND (patient_id IS NULL OR patient_id = '')
                         """
                         let updateResult = try await SupabaseController.shared.executeSQL(sql: updateSql)
                         print("🔄 Patient record update result: \(updateResult)")
@@ -338,7 +355,7 @@ struct BookAppointmentView: View {
                 // Try direct insert into appointments table
                 let appointmentData: [String: Any] = [
                     "id": appointmentId,
-                    "patient_id": patientId,
+                    "patient_id": patientId,  // This is now the patient_id field from the patients table
                     "doctor_id": doctor.id,
                     "hospital_id": hospital.id,
                     "availability_slot_id": slot.id,
@@ -348,6 +365,11 @@ struct BookAppointmentView: View {
                     "isdone": false,
                     "is_premium": false
                 ]
+                
+                print("📊 Direct insert appointment data:")
+                print("- ID: \(appointmentId)")
+                print("- Patient ID: \(patientId) (using patient_id from patients table)")
+                print("- Doctor ID: \(doctor.id)")
                 
                 try await SupabaseController.shared.insert(into: "appointments", values: appointmentData)
                 print("✅ Successfully saved appointment using direct insert")
@@ -364,7 +386,9 @@ struct BookAppointmentView: View {
                 doctor: doctor.toModelDoctor(),
                 date: selectedDate,
                 time: appointmentTime,
-                status: .upcoming
+                status: .upcoming,
+                startTime: slot.startTime,
+                endTime: slot.endTime
             )
             
             // Add to local state

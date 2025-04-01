@@ -7,236 +7,274 @@
 
 import SwiftUI
 
+// Define the missing ActiveSheet enum
+enum ActiveSheet: Identifiable {
+    case doctorList(hospital: HospitalModel)
+    case patientProfile
+    case addVitals
+    
+    var id: Int {
+        switch self {
+        case .doctorList: return 0
+        case .patientProfile: return 1
+        case .addVitals: return 2
+        }
+    }
+}
+
 struct HomeTabView: View {
-    @ObservedObject private var hospitalVM = HospitalViewModel.shared
-    @StateObject private var appointmentManager = AppointmentManager.shared
+    @ObservedObject var hospitalVM = HospitalViewModel.shared
+    @StateObject var appointmentManager = AppointmentManager.shared
     @State private var showProfile = false
+    @State private var showAddVitals = false
+    @State private var selectedHospital: HospitalModel?
+    @State private var activeSheet: ActiveSheet?
+    @State private var coordinateSpace = UUID()
+    @State private var profileController = PatientProfileController()
     @State private var selectedTab = 0
     @AppStorage("current_user_id") private var currentUserId: String?
     @AppStorage("userId") private var userId: String?
-    @StateObject private var profileController = PatientProfileController()
-    @State private var showBloodDonationRegistration = false
-    @State private var isRegisteredDonor = false
-    @State private var showBloodRequest = false
-    @State private var hasActiveBloodRequest = false
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            homeTab
-                .tabItem {
-                    Image(systemName: selectedTab == 0 ? "house.fill" : "house")
-                    Text("Home")
-                }
-                .tag(0)
-                .onAppear {
-                    // Refresh appointments each time home tab appears
-                    if selectedTab == 0 {
-                        print("📱 Home tab appeared - refreshing appointments")
-                        appointmentManager.refreshAppointments()
+        ZStack(alignment: .bottom) {
+            TabView(selection: $selectedTab) {
+                homeTab
+                    .tabItem {
+                        Image(systemName: selectedTab == 0 ? "house.fill" : "house")
+                        Text("Home")
                     }
-                }
-            
-            historyTab
-                .tabItem {
-                    Image(systemName: selectedTab == 1 ? "clock.fill" : "clock")
-                    Text("History")
-                }
-                .tag(1)
-            
-            bloodDonateTab
-                .tabItem {
-                    Image(systemName: selectedTab == 2 ? "drop.fill" : "drop")
-                    Text("Blood Donate")
-                }
-                .tag(2)
+                    .tag(0)
+                    .onAppear {
+                        // Refresh appointments each time home tab appears
+                        if selectedTab == 0 {
+                            print("📱 Home tab appeared - refreshing appointments")
+                            appointmentManager.refreshAppointments()
+                        }
+                    }
                 
-//            ProfileView()
-//                .tabItem {
-//                    Image(systemName: selectedTab == 3 ? "person.fill" : "person")
-//                    Text("Profile")
-//                }
-//                .tag(3)
-        }
-        .accentColor(.blue)
-        .onAppear {
-            print("📱 HomeTabView appeared with currentUserId: \(currentUserId ?? "nil") and userId: \(userId ?? "nil")")
-            
-            // Ensure user IDs are synchronized
-            if let currentId = currentUserId, userId == nil {
-                print("📱 Synchronizing userId with currentUserId: \(currentId)")
-                userId = currentId
-            } else if let id = userId, currentUserId == nil {
-                print("📱 Synchronizing currentUserId with userId: \(id)")
-                currentUserId = id
+                historyTab
+                    .tabItem {
+                        Image(systemName: selectedTab == 1 ? "clock.fill" : "clock")
+                        Text("History")
+                    }
+                    .tag(1)
+                
+                bloodDonateTab
+                    .tabItem {
+                        Image(systemName: selectedTab == 2 ? "drop.fill" : "drop")
+                        Text("Blood Donate")
+                    }
+                    .tag(2)
             }
-            
-            // If no userId is available, use a test ID
-            if userId == nil && currentUserId == nil {
-                let testUserId = "USER_\(Int(Date().timeIntervalSince1970))"
-                print("⚠️ No user ID found. Setting test ID: \(testUserId)")
-                userId = testUserId
-                currentUserId = testUserId
-                UserDefaults.standard.synchronize()
-            }
-            
-            // Load profile data for debugging
-            Task {
-                if let id = userId ?? currentUserId {
-                    print("📱 HomeTabView: Loading profile with user ID: \(id)")
-                    await profileController.loadProfile(userId: id)
-                    if let patient = profileController.patient {
-                        print("📱 Successfully loaded profile for: \(patient.name)")
-                    } else if let error = profileController.error {
-                        print("📱 Error loading profile: \(error.localizedDescription)")
-                        
-                        // Try creating a test patient if loading failed
-                        print("📱 Attempting to create test patient...")
-                        let success = await profileController.createAndInsertTestPatientInSupabase()
-                        if success {
-                            print("✅ Test patient created and loaded successfully")
+            .accentColor(.blue)
+            .onAppear {
+                // Customize the TabView appearance
+                UITabBar.appearance().backgroundColor = UIColor.systemBackground
+                UITabBar.appearance().backgroundImage = UIImage()
+                
+                print("📱 HomeTabView appeared with currentUserId: \(currentUserId ?? "nil") and userId: \(userId ?? "nil")")
+                
+                // Ensure user IDs are synchronized
+                if let currentId = currentUserId, userId == nil {
+                    print("📱 Synchronizing userId with currentUserId: \(currentId)")
+                    userId = currentId
+                } else if let id = userId, currentUserId == nil {
+                    print("📱 Synchronizing currentUserId with userId: \(id)")
+                    currentUserId = id
+                }
+                
+                // If no userId is available, use a test ID
+                if userId == nil && currentUserId == nil {
+                    let testUserId = "USER_\(Int(Date().timeIntervalSince1970))"
+                    print("⚠️ No user ID found. Setting test ID: \(testUserId)")
+                    userId = testUserId
+                    currentUserId = testUserId
+                    UserDefaults.standard.synchronize()
+                }
+                
+                // Load profile data for debugging
+                Task {
+                    if let id = userId ?? currentUserId {
+                        print("📱 HomeTabView: Loading profile with user ID: \(id)")
+                        await profileController.loadProfile(userId: id)
+                        if let patient = profileController.patient {
+                            print("📱 Successfully loaded profile for: \(patient.name)")
+                            
+                            // Fix appointment times when profile is loaded
+                            print("🔧 Running appointment time fix")
+                            try? await fixAppointmentTimes(for: patient.id)
+                        } else if let error = profileController.error {
+                            print("📱 Error loading profile: \(error.localizedDescription)")
+                            
+                            // Try creating a test patient if loading failed
+                            print("📱 Attempting to create test patient...")
+                            let success = await profileController.createAndInsertTestPatientInSupabase()
+                            if success {
+                                print("✅ Test patient created and loaded successfully")
+                            } else {
+                                print("❌ Failed to create test patient")
+                            }
                         } else {
-                            print("❌ Failed to create test patient")
+                            print("📱 No profile data loaded")
                         }
                     } else {
-                        print("📱 No profile data loaded")
+                        print("❌ HomeTabView: No user ID available for profile loading")
                     }
-                } else {
-                    print("❌ HomeTabView: No user ID available for profile loading")
                 }
+                
+                // Initial refresh of appointments
+                appointmentManager.refreshAppointments()
             }
-            
-            // Initial refresh of appointments
-            appointmentManager.refreshAppointments()
         }
+        .ignoresSafeArea(.container, edges: .bottom) // Only ignore bottom safe area, respect top
     }
     
     private var homeTab: some View {
         NavigationStack {
             ZStack(alignment: .top) {
+                // Background color
                 Color(.systemGray6)
                     .ignoresSafeArea()
-
-                ScrollView {
-                    RefreshControl(coordinateSpace: .named("pullToRefresh")) {
-                        Task {
-                            await refreshHospitals()
-                        }
-                    }
-                    
-                    VStack(spacing: 20) {
+                
+                VStack(spacing: 0) {
+                    // Fixed Header - This will stay in place while scrolling
+                    VStack(spacing: 15) {
                         headerSection
+                            .padding(.top, 8)
+                        
                         searchAndFilterSection
                         
-                        if !hospitalVM.searchText.isEmpty {
-                            searchResultsSection
-                        } else {
-                            upcomingAppointmentsSection
-                            
-                            // Show all hospitals when not searching
-                            VStack(alignment: .leading, spacing: 15) {
-                                HStack {
-                                    Text("All Hospitals")
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                    
-                                    Spacer()
-                                    
-                                    Button(action: {
-                                        Task {
-                                            await refreshHospitals()
-                                        }
-                                    }) {
-                                        Image(systemName: "arrow.clockwise")
-                                            .foregroundColor(.teal)
-                                    }
-                                }
-                                .padding(.horizontal)
+                        Divider()
+                            .background(Color.gray.opacity(0.3))
+                            .padding(.horizontal, 8)
+                    }
+                    .padding(.bottom, 5)
+                    .background(Color(.systemGray6))
+                    .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 3)
+                    .zIndex(1) // Keep header on top
+                    
+                    // Scrollable Content
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            if !hospitalVM.searchText.isEmpty {
+                                searchResultsSection
+                                    .padding(.top, 5)
+                            } else {
+                                upcomingAppointmentsSection
+                                    .padding(.top, 5)
                                 
-                                if hospitalVM.isLoading {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                        .scaleEffect(1.5)
+                                // Show all hospitals when not searching
+                                VStack(alignment: .leading, spacing: 15) {
+                                    HStack {
+                                        Text("All Hospitals")
+                                            .font(.title2)
+                                            .fontWeight(.bold)
+                                        
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal)
+                                    
+                                    if hospitalVM.isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle())
+                                            .scaleEffect(1.5)
+                                            .frame(maxWidth: .infinity)
+                                            .padding()
+                                    } else if let error = hospitalVM.error {
+                                        VStack {
+                                            Text("Error loading hospitals")
+                                                .foregroundColor(.red)
+                                                .padding(.bottom, 4)
+                                            
+                                            Text(error.localizedDescription)
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                                .multilineTextAlignment(.center)
+                                                .padding(.horizontal)
+                                            
+                                            Button("Try Again") {
+                                                Task {
+                                                    await refreshHospitals()
+                                                }
+                                            }
+                                            .padding(.vertical, 8)
+                                            .padding(.horizontal, 16)
+                                            .background(Color.teal)
+                                            .foregroundColor(.white)
+                                            .cornerRadius(8)
+                                            .padding(.top, 8)
+                                        }
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                    } else if !hospitalVM.hospitals.isEmpty {
+                                        ForEach(hospitalVM.hospitals) { hospital in
+                                            NavigationLink {
+                                                DoctorListView(hospital: hospital)
+                                            } label: {
+                                                HospitalCard(hospital: hospital)
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+                                            .padding(.horizontal)
+                                        }
+                                    } else {
+                                        VStack(spacing: 12) {
+                                            Text("No hospitals found")
+                                                .foregroundColor(.gray)
+                                            
+                                            Button("Refresh") {
+                                                Task {
+                                                    await refreshHospitals()
+                                                }
+                                            }
+                                            .padding(.vertical, 8)
+                                            .padding(.horizontal, 16)
+                                            .background(Color.teal)
+                                            .foregroundColor(.white)
+                                            .cornerRadius(8)
+                                        }
                                         .frame(maxWidth: .infinity)
                                         .padding()
-                                } else if let error = hospitalVM.error {
-                                    VStack {
-                                        Text("Error loading hospitals")
-                                            .foregroundColor(.red)
-                                            .padding(.bottom, 4)
-                                        
-                                        Text(error.localizedDescription)
-                                            .font(.caption)
-                                            .foregroundColor(.gray)
-                                            .multilineTextAlignment(.center)
-                                            .padding(.horizontal)
-                                        
-                                        Button("Try Again") {
-                                            Task {
-                                                await refreshHospitals()
-                                            }
-                                        }
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 16)
-                                        .background(Color.teal)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(8)
-                                        .padding(.top, 8)
                                     }
-                                    .padding()
-                                    .frame(maxWidth: .infinity)
-                                } else if !hospitalVM.hospitals.isEmpty {
-                                    ForEach(hospitalVM.hospitals) { hospital in
-                                        NavigationLink {
-                                            DoctorListView(hospital: hospital)
-                                        } label: {
-                                            HospitalCard(hospital: hospital)
-                                        }
-                                        .buttonStyle(PlainButtonStyle())
-                                        .padding(.horizontal)
-                                    }
-                                } else {
-                                    VStack(spacing: 12) {
-                                        Text("No hospitals found")
-                                            .foregroundColor(.gray)
-                                        
-                                        Button("Refresh") {
-                                            Task {
-                                                await refreshHospitals()
-                                            }
-                                        }
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 16)
-                                        .background(Color.teal)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(8)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
                                 }
+                                .padding(.bottom, 30) // Extra padding at bottom for tab bar
                             }
                         }
+                        .padding(.top, 10) // Add padding to separate from fixed header
+                        .padding(.bottom, 80) // Extra padding at bottom for tab bar
+                    }
+                    .refreshable {
+                        await refreshHospitals()
                     }
                 }
-                .coordinateSpace(name: "pullToRefresh")
             }
             .navigationBarHidden(true)
+            .ignoresSafeArea(.container, edges: .bottom) // Only ignore bottom safe area
             .task {
+                print("🔄 Home tab task started - refreshing hospitals")
                 await refreshHospitals()
                 
                 if let userId = userId {
-                    print("🔍 Home Tab task using user ID: \(userId)")
+                    print("🔄 Fetching appointments for user ID: \(userId)")
                     try? await hospitalVM.fetchAppointments(for: userId)
-                } else {
-                    print("⚠️ No user ID found in HomeTab task")
+                    
+                    // Load patient profile data
+                    if profileController.patient == nil {
+                        print("🔄 Loading patient profile data")
+                        await profileController.loadProfile(userId: userId)
+                    }
                 }
             }
             .onAppear {
                 if let userId = userId {
-                    print("🔄 Home Tab appeared with user ID: \(userId)")
-                    // Add a direct call to refresh appointments
+                    print("📱 Home tab appeared with user ID: \(userId)")
                     appointmentManager.refreshAppointments()
-                } else {
-                    print("⚠️ No user ID found in HomeTab onAppear")
+                    
+                    // Ensure profile data is loaded when tab appears
+                    if profileController.patient == nil {
+                        Task {
+                            await profileController.loadProfile(userId: userId)
+                        }
+                    }
                 }
             }
         }
@@ -244,26 +282,35 @@ struct HomeTabView: View {
     
     // Helper function to refresh hospitals and cities
     private func refreshHospitals() async {
-        print("🔄 Refreshing hospitals and cities...")
-        
         // Check Supabase connectivity first
         let supabase = SupabaseController.shared
         let isConnected = await supabase.checkConnectivity()
         
         if isConnected {
-            print("✅ Supabase connectivity confirmed - proceeding with data fetch")
-            
             // Fetch hospitals and cities
             await hospitalVM.fetchHospitals()
             await hospitalVM.fetchAvailableCities()
             
-            if hospitalVM.hospitals.isEmpty {
-                print("⚠️ No hospitals found after refresh")
-            } else {
-                print("✅ Successfully loaded \(hospitalVM.hospitals.count) hospitals")
+            if !hospitalVM.hospitals.isEmpty {
+                // Add test doctors to hospitals if needed
+                await hospitalVM.addTestDoctorsToHospitals()
+                
+                // Update doctor counts for all hospitals
+                await hospitalVM.updateDoctorCounts()
+                
+                // Ensure doctor counts are reflected immediately
+                await MainActor.run {
+                    // Force UI refresh for hospital cards
+                    let updatedHospitals = hospitalVM.hospitals
+                    hospitalVM.hospitals = []
+                    
+                    // Reapply the updated hospitals after a tiny delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        self.hospitalVM.hospitals = updatedHospitals
+                    }
+                }
             }
         } else {
-            print("❌ Supabase connectivity failed - setting error")
             await MainActor.run {
                 hospitalVM.error = NSError(
                     domain: "HospitalViewModel",
@@ -272,37 +319,51 @@ struct HomeTabView: View {
                 )
             }
         }
-        
-        print("✅ Refresh complete!")
     }
     
     private var historyTab: some View {
         NavigationStack {
-            List {
-                if appointmentManager.appointments.filter({ $0.status == .completed || $0.status == .cancelled }).isEmpty {
-                    Text("No appointment history")
-                        .foregroundColor(.gray)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding()
-                } else {
-                    Section(header: Text("Completed Appointments")) {
-                        ForEach(appointmentManager.appointments.filter { $0.status == .completed }, id: \.id) { appointment in
-                            NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
-                                AppointmentHistoryCard(appointment: appointment)
-                                    .listRowBackground(Color.green.opacity(0.1))
+            VStack {
+                List {
+                    if appointmentManager.appointments.filter({ $0.status == .completed || $0.status == .cancelled }).isEmpty {
+                        Text("No appointment history")
+                            .foregroundColor(.gray)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding()
+                            .listRowBackground(Color.clear)
+                    } else {
+                        Section(header: Text("Completed Appointments")
+                            .font(.headline)
+                            .foregroundColor(.black)
+                            .padding(.top, 10)) {
+                            ForEach(appointmentManager.appointments.filter { $0.status == .completed }, id: \.id) { appointment in
+                                NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
+                                    AppointmentHistoryCard(appointment: appointment)
+                                        .listRowBackground(Color.green.opacity(0.1))
+                                }
+                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                            }
+                        }
+                        
+                        Section(header: Text("Cancelled Appointments")
+                            .font(.headline)
+                            .foregroundColor(.black)
+                            .padding(.top, 10)) {
+                            ForEach(appointmentManager.appointments.filter { $0.status == .cancelled }, id: \.id) { appointment in
+                                AppointmentHistoryCard(appointment: appointment, isCancelled: true)
+                                    .listRowBackground(Color.red.opacity(0.1))
+                                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                             }
                         }
                     }
-                    
-                    Section(header: Text("Cancelled Appointments")) {
-                        ForEach(appointmentManager.appointments.filter { $0.status == .cancelled }, id: \.id) { appointment in
-                            AppointmentHistoryCard(appointment: appointment, isCancelled: true)
-                                .listRowBackground(Color.red.opacity(0.1))
-                        }
-                    }
                 }
+                .listStyle(InsetGroupedListStyle())
+                .scrollContentBackground(.hidden)
+                .background(Color(.systemGray6))
             }
+            .background(Color(.systemGray6))
             .navigationTitle("Appointment History")
+            .navigationBarTitleDisplayMode(.inline)
             .refreshable {
                 print("🔃 Manually refreshing appointment history")
                 appointmentManager.refreshAppointments()
@@ -312,170 +373,10 @@ struct HomeTabView: View {
     
     private var bloodDonateTab: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    if isRegisteredDonor {
-                        // Registered Donor Card
-                        VStack(spacing: 15) {
-                            Image(systemName: "heart.fill")
-                                .font(.system(size: 40))
-                                .foregroundColor(.red)
-                            
-                            Text("Registered Blood Donor")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                            
-                            Text("Thank you for your commitment to saving lives!")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                                .multilineTextAlignment(.center)
-                            
-                            // Additional donor information or actions
-//                            HStack(spacing: 15) {
-//                                VStack {
-//                                    Image(systemName: "calendar")
-//                                        .font(.title2)
-//                                    Text("Next Eligible")
-//                                        .font(.caption)
-//                                    Text("3 months")
-//                                        .font(.caption2)
-//                                        .foregroundColor(.gray)
-//                                }
-//                                .padding()
-//                                .background(Color.white)
-//                                .cornerRadius(10)
-//                                .shadow(radius: 2)
-//                                
-//                                VStack {
-//                                    Image(systemName: "location")
-//                                        .font(.title2)
-//                                    Text("Donation Center")
-//                                        .font(.caption)
-//                                    Text("Find Nearby")
-//                                        .font(.caption2)
-//                                        .foregroundColor(.blue)
-//                                }
-//                                .padding()
-//                                .background(Color.white)
-//                                .cornerRadius(10)
-//                                .shadow(radius: 2)
-//                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(15)
-                        .padding()
-                    }
-                    
-                    // Active Blood Request Card (if exists)
-                    if hasActiveBloodRequest {
-                        VStack(spacing: 15) {
-                            HStack {
-                                Image(systemName: "drop.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.red)
-                                Text("Active Blood Request")
-                                    .font(.headline)
-                            }
-                            
-                            Text("Your request is being processed. We will notify you when a matching donor is found.")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                                .multilineTextAlignment(.center)
-                            
-                            Button(action: {
-                                hasActiveBloodRequest = false
-                            }) {
-                                Text("Cancel Request")
-                                    .font(.subheadline)
-                                    .foregroundColor(.red)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(15)
-                        .padding(.horizontal)
-                    }
-                    
-                    // Main Actions
-                    VStack(spacing: 15) {
-                        if !isRegisteredDonor {
-                            Text("Blood Donation")
-                                .font(.title)
-                                .fontWeight(.bold)
-                            
-                            Text("Be a lifesaver by donating blood")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                            
-                            Button(action: {
-                                showBloodDonationRegistration = true
-                            }) {
-                                HStack {
-                                    Image(systemName: "heart.fill")
-                                    Text("Register as Blood Donor")
-                                }
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.teal)
-                                .cornerRadius(10)
-                            }
-                            .padding(.horizontal)
-                        }
-                        
-                        if !hasActiveBloodRequest {
-                            Button(action: {
-                                showBloodRequest = true
-                            }) {
-                                HStack {
-                                    Image(systemName: "drop.fill")
-                                    Text("Request Blood")
-                                }
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.red)
-                                .cornerRadius(10)
-                            }
-                            .padding(.horizontal)
-                        }
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.top)
-            }
-            .navigationTitle("Blood Donation")
-            .sheet(isPresented: $showBloodDonationRegistration) {
-                if let patient = profileController.patient {
-                    BloodDonationRegistrationView(isRegistered: $isRegisteredDonor, patientId: patient.id)
-                } else {
-                    // Show error view if patient data is not available
-                    VStack {
-                        Text("Error")
-                            .font(.title)
-                            .foregroundColor(.red)
-                        Text("Unable to load patient data. Please try again later.")
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.gray)
-                        Button("Dismiss") {
-                            showBloodDonationRegistration = false
-                        }
-                        .padding()
-                        .background(Color.red)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
-                        .padding(.top)
-                    }
-                    .padding()
-                }
-            }
-            .sheet(isPresented: $showBloodRequest) {
-                BloodRequestView(hasActiveRequest: $hasActiveBloodRequest)
-            }
+            Color(.systemGray6)
+                .ignoresSafeArea()
+                .navigationTitle("Blood Donation")
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
     
@@ -501,17 +402,39 @@ struct HomeTabView: View {
     private var headerSection: some View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Welcome Back!")
-                    .font(.title)
-                    .fontWeight(.bold)
-                Text("Your Health Dashboard")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
+                if let patientName = profileController.patient?.name {
+                    Text("Welcome Back, \(patientName)!")
+                        .font(.title)
+                        .fontWeight(.bold)
+                } else {
+                    Text("Welcome Back!")
+                        .font(.title)
+                        .fontWeight(.bold)
+                }
             }
             Spacer()
 
             Button(action: {
-                showProfile.toggle()
+                // Create and initialize the profile controller before showing the sheet
+                let controller = PatientProfileController()
+                
+                // Preload the patient data
+                if let userId = UserDefaults.standard.string(forKey: "userId") ?? 
+                       UserDefaults.standard.string(forKey: "current_user_id") {
+                    Task {
+                        await controller.loadProfile(userId: userId)
+                        
+                        // Show the profile after we've attempted to load data
+                        DispatchQueue.main.async {
+                            self.profileController = controller
+                            self.showProfile = true
+                        }
+                    }
+                } else {
+                    // If no user ID, still show the profile with the empty controller
+                    self.profileController = controller
+                    self.showProfile = true
+                }
             }) {
                 Image(systemName: "person.circle.fill")
                     .resizable()
@@ -519,11 +442,15 @@ struct HomeTabView: View {
                     .foregroundColor(.teal)
             }
             .sheet(isPresented: $showProfile) {
-                PatientProfileView(profileController: PatientProfileController())
+                PatientProfileView(profileController: profileController)
             }
         }
         .padding()
         .background(Color.white)
+        .cornerRadius(10)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .padding(.horizontal)
+        .padding(.top, 8)
     }
 
     private var searchAndFilterSection: some View {
@@ -632,6 +559,99 @@ struct HomeTabView: View {
             .frame(height: 50)
         }
     }
+
+    // Helper function to fix appointment times
+    private func fixAppointmentTimes(for patientId: String) async throws {
+        print("🔧 TIMEFIXER: Starting fix for patient ID: \(patientId)")
+        let supabase = SupabaseController.shared
+        
+        // Get all appointments for this patient
+        let appointments = try await supabase.select(
+            from: "appointments",
+            where: "patient_id",
+            equals: patientId
+        )
+        
+        print("🔍 TIMEFIXER: Found \(appointments.count) appointments to check")
+        
+        var fixedCount = 0
+        for data in appointments {
+            guard let id = data["id"] as? String,
+                  let slotId = data["availability_slot_id"] as? Int else {
+                print("⚠️ TIMEFIXER: Skipping appointment without ID or slot ID")
+                continue
+            }
+            
+            let hasValidStartTime = data["slot_time"] as? String != nil && !(data["slot_time"] as? String)!.isEmpty
+            let hasValidEndTime = data["slot_end_time"] as? String != nil && !(data["slot_end_time"] as? String)!.isEmpty
+            
+            // Only fix appointments with missing or empty time slots
+            if !hasValidStartTime || !hasValidEndTime {
+                print("🔧 TIMEFIXER: Fixing time slots for appointment \(id)")
+                do {
+                    // Generate time slots based on slot ID
+                    let baseHour = 9 + (slotId % 8) // This gives hours between 9 and 16 (9 AM to 4 PM)
+                    let startTime = String(format: "%02d:00", baseHour)
+                    let endTime = String(format: "%02d:00", baseHour + 1)
+                    
+                    // Update the appointment with generated times
+                    let updateResult = try await supabase.update(
+                        table: "appointments",
+                        id: id,
+                        data: [
+                            "slot_time": startTime,
+                            "slot_end_time": endTime
+                        ]
+                    )
+                    
+                    print("✅ TIMEFIXER: Updated appointment \(id) with times \(startTime)-\(endTime)")
+                    fixedCount += 1
+                } catch {
+                    print("❌ TIMEFIXER: Error fixing time slots: \(error.localizedDescription)")
+                }
+            }
+        }
+        
+        print("🎉 TIMEFIXER: Fixed time slots for \(fixedCount) appointments")
+        
+        // Refresh the appointments list if we fixed any
+        if fixedCount > 0 {
+            try await hospitalVM.fetchAppointments(for: patientId)
+        }
+    }
+
+    // Helper debugging function to check doctor counts
+    private func debugHospitalDoctorCounts() async {
+        print("🔍 DEBUG: Checking hospital doctor counts directly...")
+        
+        let supabase = SupabaseController.shared
+        
+        // Check each hospital in the view model
+        for hospital in hospitalVM.hospitals {
+            do {
+                let sqlQuery = """
+                SELECT COUNT(*) as doctor_count 
+                FROM doctors 
+                WHERE hospital_id = '\(hospital.id)'
+                """
+                
+                let results = try await supabase.executeSQL(sql: sqlQuery)
+                
+                if let firstResult = results.first, let count = firstResult["doctor_count"] as? Int {
+                    print("🏥 Hospital: \(hospital.hospitalName) - SQL count: \(count), Model count: \(hospital.numberOfDoctors)")
+                    
+                    // If counts don't match, print a warning
+                    if count != hospital.numberOfDoctors {
+                        print("⚠️ Mismatch in doctor counts for \(hospital.hospitalName)!")
+                    }
+                } else {
+                    print("❌ Could not get doctor count from SQL for \(hospital.hospitalName)")
+                }
+            } catch {
+                print("❌ Error checking doctor count for \(hospital.hospitalName): \(error.localizedDescription)")
+            }
+        }
+    }
 }
 
 struct AppointmentHistoryCard: View {
@@ -639,9 +659,9 @@ struct AppointmentHistoryCard: View {
     var isCancelled: Bool = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(appointment.doctor.name)
                         .font(.headline)
                     Text(appointment.doctor.specialization)
@@ -652,25 +672,38 @@ struct AppointmentHistoryCard: View {
                 
                 Text(isCancelled ? "Cancelled" : "Completed")
                     .font(.caption)
+                    .fontWeight(.medium)
                     .foregroundColor(isCancelled ? .red : .green)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
                     .background(isCancelled ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
                     .cornerRadius(8)
             }
             
-            HStack {
-                Image(systemName: "calendar")
-                Text(appointment.date.formatted(date: .long, time: .omitted))
+            Divider()
+                .padding(.vertical, 4)
+            
+            HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar")
+                        .foregroundColor(.gray)
+                    Text(appointment.date.formatted(date: .long, time: .omitted))
+                }
+                .font(.subheadline)
+                
                 Spacer()
+            }
+            
+            HStack(spacing: 8) {
                 Image(systemName: "clock")
+                    .foregroundColor(.gray)
                 let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: appointment.time)!
                 Text("\(appointment.time.formatted(date: .omitted, time: .shortened)) to \(endTime.formatted(date: .omitted, time: .shortened))")
+                    .font(.subheadline)
             }
-            .font(.subheadline)
-            .foregroundColor(.gray)
         }
-        .padding()
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)

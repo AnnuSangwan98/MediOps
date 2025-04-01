@@ -6,7 +6,7 @@ struct PaymentFinalView: View {
     let appointmentTime: Date
     
     @Environment(\.dismiss) private var dismiss
-    @State private var showSuccess = false
+    @State private var navigateToSuccess = false
     @State private var sliderOffset: CGFloat = 0
     @State private var isDragging = false
     
@@ -50,7 +50,7 @@ struct PaymentFinalView: View {
                             Text("Rs.\(Int(bookingFee))")
                         }
                         
-                        if showSuccess {
+                        if navigateToSuccess {
                             HStack {
                                 Text("Promo applied")
                                     .foregroundColor(.green)
@@ -114,7 +114,7 @@ struct PaymentFinalView: View {
                                     if sliderOffset >= maxSliderOffset - 20 {
                                         withAnimation {
                                             sliderOffset = maxSliderOffset
-                                            showSuccess = true
+                                            navigateToSuccess = true
                                         }
                                     } else {
                                         withAnimation {
@@ -134,7 +134,7 @@ struct PaymentFinalView: View {
                 .padding()
             }
             .navigationBarItems(trailing: Button("✕") { dismiss() })
-            .sheet(isPresented: $showSuccess) {
+            .navigationDestination(isPresented: $navigateToSuccess) {
                 BookingSuccessView(doctor: doctor, appointmentDate: appointmentDate, appointmentTime: appointmentTime)
             }
         }

@@ -10,11 +10,19 @@ struct LocalDoctor: Identifiable, Codable {
     let qualifications: [String]
     let licenseNo: String
     let experience: Int
+    let addressLine: String
+    let state: String
+    let city: String
+    let pincode: String
     let email: String
     let contactNumber: String?
+    let emergencyContactNumber: String?
     let doctorStatus: String
-    let rating: Double
-    let consultationFee: Double
+    let createdAt: Date?
+    let updatedAt: Date?
+    let isFirstTimeLogin: Bool
+    let rating: Double // This is not in the database but useful for UI
+    let consultationFee: Double // This is not in the database but useful for UI
     
     // Convert this LocalDoctor to Models.Doctor for use in appointments
     func toModelDoctor() -> Models.Doctor {
@@ -27,16 +35,16 @@ struct LocalDoctor: Identifiable, Codable {
             qualifications: qualifications,
             licenseNo: licenseNo,
             experience: experience,
-            addressLine: "",
-            state: "",
-            city: "",
-            pincode: "",
+            addressLine: addressLine,
+            state: state,
+            city: city,
+            pincode: pincode,
             email: email,
             contactNumber: contactNumber,
-            emergencyContactNumber: nil,
+            emergencyContactNumber: emergencyContactNumber,
             doctorStatus: doctorStatus,
-            createdAt: Date(),
-            updatedAt: Date()
+            createdAt: createdAt ?? Date(),
+            updatedAt: updatedAt ?? Date()
         )
     }
 }
@@ -45,62 +53,119 @@ struct LocalDoctor: Identifiable, Codable {
 class DoctorViewModel: ObservableObject {
     @Published var doctors: [LocalDoctor] = []
     @Published var isLoading = false
+    @Published var error: Error? = nil
     
     private let supabase = SupabaseController.shared
     
     func loadDoctors(for hospital: HospitalModel) async {
         isLoading = true
-        print("Loading doctors for hospital: \(hospital.id)")
+        doctors = [] // Clear previous data
+        error = nil
         
         do {
-            // Only fetch doctors for the specific hospital
+            // Use standard select query instead of SQL execution
             let results = try await supabase.select(
                 from: "doctors",
                 where: "hospital_id",
                 equals: hospital.id
             )
             
-            print("Query returned \(results.count) doctors")
-            
-            self.doctors = results.compactMap { data in
-                guard let id = data["id"] as? String,
-                      let name = data["name"] as? String,
-                      let specialization = data["specialization"] as? String,
-                      let experience = data["experience"] as? Int
-                else {
-                    print("Failed to parse required doctor data: \(data)")
-                    return nil
-                }
-                
-                let hospitalId = data["hospital_id"] as? String ?? hospital.id
-                let qualifications = data["qualifications"] as? [String] ?? []
-                let licenseNo = data["license_no"] as? String ?? "N/A"
-                let email = data["email"] as? String ?? ""
-                let status = data["doctor_status"] as? String ?? "active"
-                let rating = data["rating"] as? Double ?? 4.5
-                let consultationFee = data["consultation_fee"] as? Double ?? 500.0
-                
-                return LocalDoctor(
-                    id: id,
-                    hospitalId: hospitalId,
-                    name: name,
-                    specialization: specialization,
-                    qualifications: qualifications,
-                    licenseNo: licenseNo,
-                    experience: experience,
-                    email: email,
-                    contactNumber: data["contact_number"] as? String,
-                    doctorStatus: status,
-                    rating: rating,
-                    consultationFee: consultationFee
-                )
+            // Filter active doctors client-side
+            let activeResults = results.filter { 
+                ($0["doctor_status"] as? String) == "active" 
             }
             
-            print("Successfully parsed \(self.doctors.count) doctors")
-            isLoading = false
+            // If no doctors found, just return empty array
+            if activeResults.isEmpty {
+                await MainActor.run {
+                    self.doctors = []
+                    self.isLoading = false
+                }
+                return
+            }
+            
+            let parsedDoctors = activeResults.compactMap { data -> LocalDoctor? in
+                do {
+                    guard let id = data["id"] as? String,
+                          let name = data["name"] as? String,
+                          let specialization = data["specialization"] as? String,
+                          let hospitalId = data["hospital_id"] as? String,
+                          let experience = data["experience"] as? Int else {
+                        return nil
+                    }
+                    
+                    // Handle arrays properly - qualifications might come as a JSON array
+                    var qualifications: [String] = []
+                    if let qualArray = data["qualifications"] as? [String] {
+                        qualifications = qualArray
+                    } else if let qualString = data["qualifications"] as? String {
+                        // Try to parse as JSON if it's a string
+                        if qualString.hasPrefix("[") && qualString.hasSuffix("]") {
+                            let jsonData = qualString.data(using: .utf8) ?? Data()
+                            if let parsed = try? JSONSerialization.jsonObject(with: jsonData) as? [String] {
+                                qualifications = parsed
+                            }
+                        }
+                    }
+                    
+                    // If we still don't have qualifications, use default values
+                    if qualifications.isEmpty {
+                        qualifications = ["MBBS"]
+                    }
+                    
+                    // Format date strings
+                    let dateFormatter = ISO8601DateFormatter()
+                    dateFormatter.formatOptions = [.withInternetDateTime]
+                    
+                    var createdAt: Date? = nil
+                    if let createdString = data["created_at"] as? String {
+                        createdAt = dateFormatter.date(from: createdString) ?? Date()
+                    }
+                    
+                    var updatedAt: Date? = nil
+                    if let updatedString = data["updated_at"] as? String {
+                        updatedAt = dateFormatter.date(from: updatedString) ?? Date()
+                    }
+                    
+                    // Use model defaults for optional fields
+                    let doctor = LocalDoctor(
+                        id: id,
+                        hospitalId: hospitalId,
+                        name: name,
+                        specialization: specialization,
+                        qualifications: qualifications,
+                        licenseNo: data["license_no"] as? String ?? "XX00000",
+                        experience: experience,
+                        addressLine: data["address_line"] as? String ?? "",
+                        state: data["state"] as? String ?? "",
+                        city: data["city"] as? String ?? "",
+                        pincode: data["pincode"] as? String ?? "",
+                        email: data["email"] as? String ?? "",
+                        contactNumber: data["contact_number"] as? String,
+                        emergencyContactNumber: data["emergency_contact_number"] as? String,
+                        doctorStatus: data["doctor_status"] as? String ?? "active",
+                        createdAt: createdAt,
+                        updatedAt: updatedAt,
+                        isFirstTimeLogin: data["is_first_time_login"] as? Bool ?? true,
+                        rating: 4.5, // Default rating since not in DB
+                        consultationFee: 500.0 // Default fee since not in DB
+                    )
+                    
+                    return doctor
+                } catch {
+                    return nil
+                }
+            }
+            
+            await MainActor.run {
+                self.doctors = parsedDoctors
+                self.isLoading = false
+            }
         } catch {
-            print("Error fetching doctors: \(error)")
-            isLoading = false
+            await MainActor.run {
+                self.error = error
+                self.isLoading = false
+            }
         }
     }
 }
