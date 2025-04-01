@@ -19,6 +19,8 @@ struct HomeTabView: View {
     @State private var isRegisteredDonor = false
     @State private var showBloodRequest = false
     @State private var hasActiveBloodRequest = false
+    @State private var showCancelRegistrationAlert = false
+    @State private var showCancelRequestAlert = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -331,16 +333,7 @@ struct HomeTabView: View {
                                 .multilineTextAlignment(.center)
                             
                             Button(action: {
-                                if let patient = profileController.patient {
-                                    Task {
-                                        do {
-                                            _ = try await PatientController.shared.updateBloodDonorStatus(id: patient.id, isDonor: false)
-                                            isRegisteredDonor = false
-                                        } catch {
-                                            print("Error cancelling registration: \(error.localizedDescription)")
-                                        }
-                                    }
-                                }
+                                showCancelRegistrationAlert = true
                             }) {
                                 Text("Cancel Registration")
                                     .font(.headline)
@@ -375,7 +368,7 @@ struct HomeTabView: View {
                                 .multilineTextAlignment(.center)
                             
                             Button(action: {
-                                hasActiveBloodRequest = false
+                                showCancelRequestAlert = true
                             }) {
                                 Text("Cancel Request")
                                     .font(.subheadline)
@@ -440,6 +433,31 @@ struct HomeTabView: View {
                 .padding(.top)
             }
             .navigationTitle("Blood Donation")
+            .alert("Cancel Blood Donor Registration", isPresented: $showCancelRegistrationAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Confirm", role: .destructive) {
+                    if let patient = profileController.patient {
+                        Task {
+                            do {
+                                _ = try await PatientController.shared.updateBloodDonorStatus(id: patient.id, isDonor: false)
+                                isRegisteredDonor = false
+                            } catch {
+                                print("Error cancelling registration: \(error.localizedDescription)")
+                            }
+                        }
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to cancel your blood donor registration? This will remove you from the donor list.")
+            }
+            .alert("Cancel Blood Request", isPresented: $showCancelRequestAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Confirm", role: .destructive) {
+                    hasActiveBloodRequest = false
+                }
+            } message: {
+                Text("Are you sure you want to cancel your blood request? This action cannot be undone.")
+            }
             .sheet(isPresented: $showBloodDonationRegistration) {
                 if let patient = profileController.patient {
                     BloodDonationRegistrationView(isRegistered: $isRegisteredDonor, patientId: patient.id)
