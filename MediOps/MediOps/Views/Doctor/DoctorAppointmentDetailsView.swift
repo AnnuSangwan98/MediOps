@@ -356,11 +356,11 @@ struct DoctorAppointmentDetailsView: View {
                             }) {
                                 HStack {
                                     Image(systemName: "pills.fill")
-                                        .foregroundColor(hasPrescription ? .gray : .blue)
+                                        .foregroundColor((hasPrescription || !isAppointmentTimeReached) ? .gray : .blue)
                                     
                                     Text("Write Prescription")
                                         .font(.body)
-                                        .foregroundColor(hasPrescription ? .gray : .blue)
+                                        .foregroundColor((hasPrescription || !isAppointmentTimeReached) ? .gray : .blue)
                                     
                                     Spacer()
                                     
@@ -370,7 +370,7 @@ struct DoctorAppointmentDetailsView: View {
                                 }
                                 .padding(.vertical, 8)
                             }
-                            .disabled(hasPrescription)
+                            .disabled(hasPrescription || !isAppointmentTimeReached)
                             
                             Divider()
                             
@@ -406,11 +406,11 @@ struct DoctorAppointmentDetailsView: View {
                             }) {
                                 HStack {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.teal)
+                                        .foregroundColor(!isAppointmentTimeReached ? .gray : .teal)
                                     
                                     Text("Mark as Completed")
                                         .font(.body)
-                                        .foregroundColor(.teal)
+                                        .foregroundColor(!isAppointmentTimeReached ? .gray : .teal)
                                     
                                     Spacer()
                                     
@@ -426,7 +426,7 @@ struct DoctorAppointmentDetailsView: View {
                                 }
                                 .padding(.vertical, 8)
                             }
-                            .disabled(isUpdatingStatus)
+                            .disabled(!isAppointmentTimeReached || isUpdatingStatus)
                         }
                         .padding()
                         .background(Color.white)
@@ -476,6 +476,15 @@ struct DoctorAppointmentDetailsView: View {
                     }
                 }
                 
+                if !isAppointmentTimeReached {
+                    Text("Actions will be available at the scheduled appointment time")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.top, 4)
+                        .padding(.bottom, 8)
+                        .padding(.leading, 2)
+                }
+                
                 Spacer()
                     .frame(height: 30)
             }
@@ -484,6 +493,12 @@ struct DoctorAppointmentDetailsView: View {
         .onAppear {
             fetchPatientDetails()
             checkForExistingPrescriptions()
+            
+            // Debug logs
+            print("DEBUG: Appointment date: \(appointment.appointmentDate)")
+            print("DEBUG: Appointment time: \(appointment.slotTime)")
+            print("DEBUG: Current time: \(Date())")
+            print("DEBUG: Is appointment time reached: \(isAppointmentTimeReached)")
         }
         .alert("Appointment Completed", isPresented: $showCompletionSuccess) {
             Button("OK") {
@@ -926,6 +941,51 @@ struct DoctorAppointmentDetailsView: View {
                 print("ERROR: Failed to check for existing prescriptions: \(error)")
             }
         }
+    }
+    
+    private var isAppointmentTimeReached: Bool {
+        let now = Date()
+        let calendar = Calendar.current
+        
+        // First check if appointment date is in the past
+        if calendar.compare(appointment.appointmentDate, to: now, toGranularity: .day) == .orderedAscending {
+            // If appointment date is in the past, enable the buttons
+            return true
+        }
+        
+        // If appointment is today, check if current time is past the slot_start_time
+        if calendar.isDateInToday(appointment.appointmentDate) {
+            // Create a date by combining today's date with the appointment time
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "h:mm a"
+            
+            // Try to parse the time
+            guard let timeDate = timeFormatter.date(from: appointment.slotTime) else {
+                print("DEBUG: Failed to parse time: \(appointment.slotTime)")
+                return false // If can't parse time, disable by default
+            }
+            
+            // Get time components
+            let timeComponents = calendar.dateComponents([.hour, .minute], from: timeDate)
+            
+            // Create datetime by combining today's date with appointment time
+            guard let appointmentDateTime = calendar.date(bySettingHour: timeComponents.hour ?? 0,
+                                                         minute: timeComponents.minute ?? 0,
+                                                         second: 0,
+                                                         of: Date()) else {
+                print("DEBUG: Failed to create appointment datetime")
+                return false
+            }
+            
+            print("DEBUG: Current time: \(now)")
+            print("DEBUG: Appointment time: \(appointmentDateTime)")
+            
+            // Enable if current time is at or past appointment time
+            return now >= appointmentDateTime
+        }
+        
+        // For future dates, disable buttons
+        return false
     }
 }
 
