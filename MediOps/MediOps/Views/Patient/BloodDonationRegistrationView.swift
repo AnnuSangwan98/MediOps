@@ -8,6 +8,7 @@ struct BloodDonationRegistrationView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var showCancelConfirmation = false
     
     let patientId: String
     
@@ -21,66 +22,100 @@ struct BloodDonationRegistrationView: View {
                         .fontWeight(.bold)
                         .padding(.bottom)
                     
-                    // Terms and Conditions
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Blood Donation Terms & Conditions")
-                            .font(.headline)
-                        
-                        VStack(alignment: .leading, spacing: 12) {
-                            TermRow(text: "You must be at least 18 years old and in good health.")
-                            TermRow(text: "Minimum weight: 50kg (110 lbs).")
-                            TermRow(text: "No blood donation in the last 3 months.")
-                            TermRow(text: "No recent infections, surgeries, or chronic illnesses.")
-                            TermRow(text: "No high-risk behaviors affecting blood safety.")
-                            TermRow(text: "You must pass the health screening before donation.")
-                        }
-                        
-                        Text("By proceeding, you confirm that you meet the above conditions.")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .padding(.top, 10)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    
-                    // Terms Acceptance
-                    Toggle(isOn: $isTermsAccepted) {
-                        Text("I accept the terms and conditions")
-                            .font(.subheadline)
-                    }
-                    .padding(.top)
-                    
-                    // Register Button
-                    Button(action: {
-                        if isTermsAccepted {
-                            Task {
-                                await registerAsBloodDonor()
-                            }
-                        }
-                    }) {
-                        ZStack {
-                            Text("Register")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(isTermsAccepted ? Color.teal : Color.gray)
-                                .cornerRadius(10)
-                                .opacity(isLoading ? 0 : 1)
+                    if isRegistered {
+                        // Registered Donor Card
+                        VStack(spacing: 15) {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 40))
+                                .foregroundColor(.red)
                             
-                            if isLoading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            Text("Registered Blood Donor")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            
+                            Text("Thank you for your commitment to saving lives!")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                            
+                            Button(action: {
+                                showCancelConfirmation = true
+                            }) {
+                                Text("Cancel Registration")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
                                     .frame(maxWidth: .infinity)
                                     .padding()
-                                    .background(Color.teal)
+                                    .background(Color.red)
                                     .cornerRadius(10)
                             }
+                            .padding(.top)
                         }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(15)
+                    } else {
+                        // Terms and Conditions
+                        VStack(alignment: .leading, spacing: 15) {
+                            Text("Blood Donation Terms & Conditions")
+                                .font(.headline)
+                            
+                            VStack(alignment: .leading, spacing: 12) {
+                                TermRow(text: "You must be at least 18 years old and in good health.")
+                                TermRow(text: "Minimum weight: 50kg (110 lbs).")
+                                TermRow(text: "No blood donation in the last 3 months.")
+                                TermRow(text: "No recent infections, surgeries, or chronic illnesses.")
+                                TermRow(text: "No high-risk behaviors affecting blood safety.")
+                                TermRow(text: "You must pass the health screening before donation.")
+                            }
+                            
+                            Text("By proceeding, you confirm that you meet the above conditions.")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                                .padding(.top, 10)
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        
+                        // Terms Acceptance
+                        Toggle(isOn: $isTermsAccepted) {
+                            Text("I accept the terms and conditions")
+                                .font(.subheadline)
+                        }
+                        .padding(.top)
+                        
+                        // Register Button
+                        Button(action: {
+                            if isTermsAccepted {
+                                Task {
+                                    await registerAsBloodDonor()
+                                }
+                            }
+                        }) {
+                            ZStack {
+                                Text("Register")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(isTermsAccepted ? Color.teal : Color.gray)
+                                    .cornerRadius(10)
+                                    .opacity(isLoading ? 0 : 1)
+                                
+                                if isLoading {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.teal)
+                                        .cornerRadius(10)
+                                }
+                            }
+                        }
+                        .disabled(!isTermsAccepted || isLoading)
+                        .padding(.top)
                     }
-                    .disabled(!isTermsAccepted || isLoading)
-                    .padding(.top)
                 }
                 .padding()
             }
@@ -100,6 +135,16 @@ struct BloodDonationRegistrationView: View {
             } message: {
                 Text(errorMessage)
             }
+            .alert("Cancel Registration", isPresented: $showCancelConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Confirm", role: .destructive) {
+                    Task {
+                        await cancelBloodDonorRegistration()
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to cancel your blood donor registration?")
+            }
         }
     }
     
@@ -110,6 +155,19 @@ struct BloodDonationRegistrationView: View {
             isLoading = false
             showRegistrationCard = true
             isRegistered = true
+        } catch {
+            isLoading = false
+            errorMessage = error.localizedDescription
+            showError = true
+        }
+    }
+    
+    private func cancelBloodDonorRegistration() async {
+        isLoading = true
+        do {
+            _ = try await PatientController.shared.updateBloodDonorStatus(id: patientId, isDonor: false)
+            isLoading = false
+            isRegistered = false
         } catch {
             isLoading = false
             errorMessage = error.localizedDescription

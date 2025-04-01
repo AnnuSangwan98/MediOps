@@ -330,36 +330,27 @@ struct HomeTabView: View {
                                 .foregroundColor(.gray)
                                 .multilineTextAlignment(.center)
                             
-                            // Additional donor information or actions
-//                            HStack(spacing: 15) {
-//                                VStack {
-//                                    Image(systemName: "calendar")
-//                                        .font(.title2)
-//                                    Text("Next Eligible")
-//                                        .font(.caption)
-//                                    Text("3 months")
-//                                        .font(.caption2)
-//                                        .foregroundColor(.gray)
-//                                }
-//                                .padding()
-//                                .background(Color.white)
-//                                .cornerRadius(10)
-//                                .shadow(radius: 2)
-//                                
-//                                VStack {
-//                                    Image(systemName: "location")
-//                                        .font(.title2)
-//                                    Text("Donation Center")
-//                                        .font(.caption)
-//                                    Text("Find Nearby")
-//                                        .font(.caption2)
-//                                        .foregroundColor(.blue)
-//                                }
-//                                .padding()
-//                                .background(Color.white)
-//                                .cornerRadius(10)
-//                                .shadow(radius: 2)
-//                            }
+                            Button(action: {
+                                if let patient = profileController.patient {
+                                    Task {
+                                        do {
+                                            _ = try await PatientController.shared.updateBloodDonorStatus(id: patient.id, isDonor: false)
+                                            isRegisteredDonor = false
+                                        } catch {
+                                            print("Error cancelling registration: \(error.localizedDescription)")
+                                        }
+                                    }
+                                }
+                            }) {
+                                Text("Cancel Registration")
+                                    .font(.headline)
+                                    .foregroundColor(.red)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.white)
+                                    .cornerRadius(10)
+                            }
+                            .padding(.top)
                         }
                         .padding()
                         .background(Color(.systemGray6))
