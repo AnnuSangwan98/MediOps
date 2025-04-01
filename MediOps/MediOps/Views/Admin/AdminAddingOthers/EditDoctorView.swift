@@ -16,6 +16,24 @@ struct EditDoctorView: View {
     @State private var alertMessage = ""
     @State private var isLoading = false
     
+    // Add time slot states
+    @State private var selectedTimeSlots: [String: [String: Bool]] = [:]
+    @State private var maxNormalPatients: Int = 5
+    @State private var maxPremiumPatients: Int = 2
+    @State private var selectedDate = Date()
+    
+    // Add time slots with ranges
+    private let timeSlots = (0...23).map { hour in
+        let startTime = String(format: "%d:00", hour)
+        let endHour = (hour + 1) % 24
+        let endTime = String(format: "%d:00", endHour)
+        return "\(startTime)-\(endTime)"
+    }
+    
+    private var selectedTimeSlotsCount: Int {
+        selectedTimeSlots["schedule"]?.filter { $0.value }.count ?? 0
+    }
+    
     // Add reference to AdminController
     private let adminController = AdminController.shared
     
@@ -107,6 +125,35 @@ struct EditDoctorView: View {
                     
                     TextField("Address", text: $address)
                 }
+                
+                Section(header: Text("Availability")) {
+                    DatePicker("Select Date", selection: $selectedDate, displayedComponents: .date)
+                        .datePickerStyle(.automatic)
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(timeSlots, id: \.self) { slot in
+                                TimeSlotButton(
+                                    slot: slot,
+                                    isSelected: selectedTimeSlots["schedule"]?[slot] ?? false,
+                                    action: {
+                                        toggleTimeSlot(slot)
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                    .frame(height: 60)
+                    
+                    HStack {
+                        Text("Selected slots: \(selectedTimeSlotsCount)")
+                        Spacer()
+                    }
+                    
+                    Stepper("Max Normal Patients: \(maxNormalPatients)", value: $maxNormalPatients, in: 1...20)
+                    Stepper("Max Premium Patients: \(maxPremiumPatients)", value: $maxPremiumPatients, in: 1...10)
+                }
             }
             .navigationTitle("Edit Doctor")
             .navigationBarTitleDisplayMode(.inline)
@@ -140,6 +187,9 @@ struct EditDoctorView: View {
                         dismiss()
                     }
                 }
+            }
+            .task {
+                await loadDoctorAvailability()
             }
         }
     }
@@ -190,6 +240,15 @@ struct EditDoctorView: View {
                     contactNumber: phoneNumber
                 )
                 
+                // Update doctor availability
+                let weeklySchedule = createWeeklySchedule()
+                try await adminController.updateDoctorAvailability(
+                    doctorId: doctor.id,
+                    weeklySchedule: weeklySchedule,
+                    maxNormalPatients: maxNormalPatients,
+                    maxPremiumPatients: maxPremiumPatients
+                )
+                
                 // Update UI on success
                 await MainActor.run {
                     // Call the update callback
@@ -210,6 +269,34 @@ struct EditDoctorView: View {
         }
     }
     
+    private func createWeeklySchedule() -> [String: [String: Bool]] {
+        var weeklySchedule: [String: [String: Bool]] = [:]
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "EEEE" // Get day name
+        let day = dateFormatter.string(from: selectedDate).lowercased()
+        
+        weeklySchedule[day] = createDaySchedule()
+        
+        return weeklySchedule
+    }
+    
+    private func createDaySchedule() -> [String: Bool] {
+        var daySchedule: [String: Bool] = [:]
+        
+        for slot in timeSlots {
+            daySchedule[slot] = selectedTimeSlots["schedule"]?[slot] ?? false
+        }
+        
+        return daySchedule
+    }
+    
+    private func toggleTimeSlot(_ slot: String) {
+        if selectedTimeSlots["schedule"] == nil {
+            selectedTimeSlots["schedule"] = [:]
+        }
+        selectedTimeSlots["schedule"]?[slot] = !(selectedTimeSlots["schedule"]?[slot] ?? false)
+    }
+    
     private func isValidEmail(_ email: String) -> Bool {
         let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
         return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email)
@@ -218,5 +305,27 @@ struct EditDoctorView: View {
     private func isValidLicense(_ license: String) -> Bool {
         let licenseRegex = #"^[A-Z]{2}\d{5}$"#
         return NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: license)
+    }
+    
+    private func loadDoctorAvailability() async {
+        do {
+            if let availability = try await adminController.getDoctorAvailability(doctorId: doctor.id) {
+                // Get today's day name
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "EEEE"
+                let today = dateFormatter.string(from: Date()).lowercased()
+                
+                // Initialize selected time slots with today's schedule
+                if let todaySchedule = availability.weeklySchedule[today] {
+                    selectedTimeSlots["schedule"] = todaySchedule
+                }
+                
+                // Set patient limits
+                maxNormalPatients = availability.maxNormalPatients
+                maxPremiumPatients = availability.maxPremiumPatients
+            }
+        } catch {
+            print("Failed to load doctor availability: \(error)")
+        }
     }
 } 

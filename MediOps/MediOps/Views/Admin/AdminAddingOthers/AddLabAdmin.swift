@@ -16,13 +16,12 @@ struct AddLabAdminView: View {
     @State private var gender: UILabAdmin.Gender = .male
     @State private var dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
     @State private var experience = 0
-    @State private var selectedQualifications: Set<String> = ["MBBS"] // Default to MBBS
+    @State private var selectedQualifications: Set<String> = []  // Remove default MBBS
     @State private var license = ""
     @State private var address = ""
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var isLoading = false
-    @State private var errorMessage = ""
     var onSave: (UIActivity) -> Void
     
     // Add reference to AdminController
@@ -41,7 +40,7 @@ struct AddLabAdminView: View {
     
     // Add computed property to check if form is valid
     private var isFormValid: Bool {
-        !fullName.isEmpty &&
+        isValidName(fullName) &&
         isValidEmail(email) &&
         phoneNumber.count == 10 &&
         !selectedQualifications.isEmpty &&
@@ -49,11 +48,37 @@ struct AddLabAdminView: View {
         !address.isEmpty
     }
     
+    // Add validation functions
+    private func isValidName(_ name: String) -> Bool {
+        let nameRegex = "^[A-Za-z\\s]{2,}$"
+        return name.range(of: nameRegex, options: .regularExpression) != nil
+    }
+    
+    private func isValidLicense(_ license: String) -> Bool {
+        // Check if license is exactly 7 characters
+        guard license.count == 7 else { return false }
+        
+        // Check first two characters are letters and last five are numbers
+        let firstTwo = license.prefix(2)
+        let lastFive = license.suffix(5)
+        
+        return firstTwo.allSatisfy { $0.isLetter } && lastFive.allSatisfy { $0.isNumber }
+    }
+    
     var body: some View {
         NavigationStack {
             Form {
                 Section(header: Text("Personal Information")) {
                     TextField("Full Name", text: $fullName)
+                        .onChange(of: fullName) { _, newValue in
+                            // Only allow letters and spaces
+                            fullName = newValue.filter { $0.isLetter || $0.isWhitespace }
+                        }
+                    if !fullName.isEmpty && !isValidName(fullName) {
+                        Text("Name should only contain letters and spaces")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
                     
                     Picker("Gender", selection: $gender) {
                         ForEach(UILabAdmin.Gender.allCases) { gender in
@@ -108,8 +133,28 @@ struct AddLabAdminView: View {
                     
                     TextField("License (XX12345)", text: $license)
                         .onChange(of: license) { _, newValue in
-                            // Format license to uppercase
-                            license = newValue.uppercased()
+                            // Format and validate license input
+                            var formatted = newValue.uppercased()
+                            
+                            // If length is more than 7, truncate it
+                            if formatted.count > 7 {
+                                formatted = String(formatted.prefix(7))
+                            }
+                            
+                            // For the first two characters, only allow letters
+                            if formatted.count <= 2 {
+                                formatted = formatted.filter { $0.isLetter }
+                            } else {
+                                // Split into letters and numbers
+                                let prefix = String(formatted.prefix(2)).filter { $0.isLetter }
+                                let remainingInput = String(formatted.dropFirst(2))
+                                let numbers = remainingInput.filter { $0.isNumber }
+                                
+                                // Combine with proper formatting
+                                formatted = prefix + (numbers.count > 5 ? String(numbers.prefix(5)) : numbers)
+                            }
+                            
+                            license = formatted
                         }
                     
                     Stepper("Experience: \(experience) years", value: $experience, in: 0...maximumExperience)
@@ -173,11 +218,7 @@ struct AddLabAdminView: View {
                 }
             }
             .alert(alertMessage, isPresented: $showAlert) {
-                Button("OK", role: .cancel) {
-                    if !errorMessage.isEmpty {
-                        isLoading = false
-                    }
-                }
+                Button("OK", role: .cancel) { }
             }
         }
     }
@@ -232,12 +273,7 @@ struct AddLabAdminView: View {
                     }
                 }
                 
-                // Generate a secure password that meets the Supabase constraints:
-                // - At least 8 characters
-                // - At least one uppercase letter
-                // - At least one lowercase letter
-                // - At least one digit
-                // - At least one special character (@$!%*?&)
+                // Generate a secure password
                 let password = generateSecurePassword()
                 
                 // Get hospital ID from UserDefaults
@@ -250,82 +286,47 @@ struct AddLabAdminView: View {
                     return
                 }
                 
-                print("SAVE LAB ADMIN: Using hospital ID from UserDefaults: \(hospitalId)")
-                
                 // Save to database using AdminController
                 do {
-                    print("SAVE LAB ADMIN: Starting creation with email: \(labAdmin.email)")
-                    
                     let (labAdminResult, _) = try await adminController.createLabAdmin(
                         email: labAdmin.email,
                         password: password,
                         name: labAdmin.fullName,
-                        labName: labAdmin.qualification, // This is actually mapped to department
+                        labName: labAdmin.qualification,
                         hospitalAdminId: hospitalId,
-                        contactNumber: phoneWithoutCountryCode, // Remove country code for 10-digit format
-                        department: "Pathology & Laboratory" // Fixed to match the constraint
+                        contactNumber: phoneWithoutCountryCode,
+                        department: "Pathology & Laboratory"
                     )
                     
-                    print("SAVE LAB ADMIN: Successfully created lab admin with ID: \(labAdminResult.id)")
-                    
-                    // If successful, send credentials email
-                    await MainActor.run {
-                        sendLabCredentials(activity: activity, password: password)
-                    }
-                } catch let error as AdminError {
-                    // Handle specific admin errors with better messages
+                    // If successful, immediately update UI and dismiss
                     await MainActor.run {
                         isLoading = false
-                        
-                        switch error {
-                        case .emailAlreadyExists(_):
-                            alertMessage = "This email address is already in use by another lab admin. Please use a different email."
-                        case .invalidContactNumber(_):
-                            alertMessage = "Invalid phone number. Must be exactly 10 digits."
-                        case .invalidPassword(message: _):
-                            alertMessage = "The generated password didn't meet security requirements. Please try again."
-                        case .invalidFormat(let message):
-                            alertMessage = "Format error: \(message)"
-                        case .invalidData(let message):
-                            if message.contains("hospital") || message.contains("Hospital") {
-                                alertMessage = "Hospital ID validation failed. Please check that you're logged in correctly as a hospital admin. Additional details: \(message)"
-                                
-                                // Print debug info about the hospital ID
-                                print("DEBUG: Hospital ID validation failed")
-                                print("DEBUG: Hospital ID from UserDefaults: \(hospitalId)")
-                            } else {
-                                alertMessage = "Data validation error: \(message)"
-                            }
-                        default:
-                            alertMessage = "Failed to save lab admin: \(error.errorDescription ?? "Unknown error")"
-                        }
-                        
+                        onSave(activity)
+                        dismiss()
+                    }
+                    
+                    // Then send credentials email in the background
+                    Task {
+                        await sendLabCredentials(activity: activity, password: password)
+                    }
+                    
+                } catch let error as AdminError {
+                    await MainActor.run {
+                        isLoading = false
+                        alertMessage = "Failed to save lab admin: \(error.errorDescription ?? "Unknown error")"
                         showAlert = true
                     }
                 } catch {
-                    // Handle other errors
                     await MainActor.run {
                         isLoading = false
                         alertMessage = "Failed to save lab admin: \(error.localizedDescription)"
                         showAlert = true
                     }
                 }
-            } catch {
-                await MainActor.run {
-                    isLoading = false
-                    alertMessage = "Failed to prepare data: \(error.localizedDescription)"
-                    showAlert = true
-                }
             }
         }
     }
     
-    // Generate a password that meets the Supabase constraints:
-    // - At least 8 characters
-    // - At least one uppercase letter
-    // - At least one lowercase letter
-    // - At least one digit
-    // - At least one special character (@$!%*?&)
     private func generateSecurePassword() -> String {
         let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
@@ -372,10 +373,8 @@ struct AddLabAdminView: View {
         }
     }
     
-    private func sendLabCredentials(activity: UIActivity, password: String) {
+    private func sendLabCredentials(activity: UIActivity, password: String) async {
         guard let url = URL(string: "http://localhost:8082/send-credentials") else {
-            alertMessage = "Invalid server URL"
-            showAlert = true
             return
         }
         
@@ -395,54 +394,22 @@ struct AddLabAdminView: View {
                 "license": license,
                 "labName": selectedQualifications.joined(separator: ", "),
                 "labId": "LAB001",
-                "password": password // Include the password in the email
+                "password": password
             ]
         ]
         
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: emailData)
             
-            URLSession.shared.dataTask(with: request) { data, response, error in
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    
-                    if let error = error as NSError? {
-                        switch error.code {
-                        case NSURLErrorTimedOut:
-                            self.alertMessage = "Request timed out. Please try again."
-                        case NSURLErrorNotConnectedToInternet:
-                            self.alertMessage = "No internet connection. Please check your network settings."
-                        case NSURLErrorCannotConnectToHost:
-                            self.alertMessage = "Cannot connect to server. Please try again later."
-                        default:
-                            self.alertMessage = "Network error: \(error.localizedDescription)"
-                        }
-                        self.showAlert = true
-                        return
-                    }
-                    
-                    if let httpResponse = response as? HTTPURLResponse {
-                        if httpResponse.statusCode == 200 {
-                            // Show success message
-                            self.alertMessage = "Lab admin created and credentials sent successfully to \(email)"
-                            self.showAlert = true
-                            // Call onSave callback with the new activity
-                            self.onSave(activity)
-                            // Dismiss the view after successful save
-                            self.dismiss()
-                        } else {
-                            // Lab admin was created in database, but email failed
-                            self.alertMessage = "Lab admin created, but failed to send credentials email (Status: \(httpResponse.statusCode))"
-                            self.showAlert = true
-                            // Still call onSave as the database operation was successful
-                            self.onSave(activity)
-                        }
-                    }
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode != 200 {
+                    print("Failed to send credentials email (Status: \(httpResponse.statusCode))")
                 }
-            }.resume()
+            }
         } catch {
-            alertMessage = "Failed to prepare email data"
-            showAlert = true
+            print("Failed to send credentials email: \(error.localizedDescription)")
         }
     }
     
@@ -453,7 +420,7 @@ struct AddLabAdminView: View {
         gender = .male
         dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
         experience = 0
-        selectedQualifications = ["MBBS"]
+        selectedQualifications = []
         license = ""
         address = ""
     }
@@ -461,10 +428,5 @@ struct AddLabAdminView: View {
     private func isValidEmail(_ email: String) -> Bool {
         let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
         return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email)
-    }
-    
-    private func isValidLicense(_ license: String) -> Bool {
-        let licenseRegex = #"^[A-Z]{2}\d{5}$"#
-        return NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: license)
     }
 }

@@ -642,8 +642,8 @@ class AdminController {
                         equals: id
                     )
                     
-                    print("DELETE DOCTOR: Successfully updated doctor status to '\(status)' with ID: \(id)")
-                    return // Exit the function if this status update works
+                    print("DELETE DOCTOR: Successfully performed soft delete with status: \(status)")
+                    return
                 } catch {
                     print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
                     // Continue trying other statuses
@@ -1838,6 +1838,134 @@ class AdminController {
         result["message"] = "Lab admin can be safely deleted"
         
         return result
+    }
+    
+    /// Create doctor availability
+    func createDoctorAvailability(
+        doctorId: String,
+        hospitalId: String,
+        weeklySchedule: [String: [String: Bool]],
+        maxNormalPatients: Int = 5,
+        maxPremiumPatients: Int = 2
+    ) async throws {
+        let now = Date()
+        let dateFormatter = ISO8601DateFormatter()
+        let createdAt = dateFormatter.string(from: now)
+        
+        // Create a struct for the availability data
+        struct DoctorAvailabilityData: Encodable {
+            let doctor_id: String
+            let hospital_id: String
+            let weekly_schedule: [String: [String: Bool]]
+            let effective_from: String
+            let max_normal_patients: Int
+            let max_premium_patients: Int
+            let created_at: String
+            let updated_at: String
+        }
+        
+        // Create availability data using the struct
+        let availabilityData = DoctorAvailabilityData(
+            doctor_id: doctorId,
+            hospital_id: hospitalId,
+            weekly_schedule: weeklySchedule,
+            effective_from: dateFormatter.string(from: now),
+            max_normal_patients: maxNormalPatients,
+            max_premium_patients: maxPremiumPatients,
+            created_at: createdAt,
+            updated_at: createdAt
+        )
+        
+        // Insert into doctor_availability_efficient table
+        try await supabase.insert(
+            into: "doctor_availability_efficient",
+            data: availabilityData
+        )
+    }
+    
+    // MARK: - Doctor Availability Methods
+    
+    /// Get doctor's availability schedule and patient limits
+    func getDoctorAvailability(doctorId: String) async throws -> DoctorAvailability? {
+        let availabilityData = try await supabase.select(
+            from: "doctor_availability_efficient",
+            where: "doctor_id",
+            equals: doctorId
+        )
+        
+        guard let data = availabilityData.first,
+              let weeklySchedule = data["weekly_schedule"] as? [String: [String: Bool]],
+              let maxNormalPatients = data["max_normal_patients"] as? Int,
+              let maxPremiumPatients = data["max_premium_patients"] as? Int else {
+            return nil
+        }
+        
+        return DoctorAvailability(
+            doctorId: doctorId,
+            weeklySchedule: weeklySchedule,
+            maxNormalPatients: maxNormalPatients,
+            maxPremiumPatients: maxPremiumPatients
+        )
+    }
+    
+    /// Update doctor's availability schedule and patient limits
+    func updateDoctorAvailability(
+        doctorId: String,
+        weeklySchedule: [String: [String: Bool]],
+        maxNormalPatients: Int,
+        maxPremiumPatients: Int
+    ) async throws {
+        struct AvailabilityData: Encodable {
+            let weekly_schedule: [String: [String: Bool]]
+            let max_normal_patients: Int
+            let max_premium_patients: Int
+            let updated_at: String
+        }
+        
+        let updateData = AvailabilityData(
+            weekly_schedule: weeklySchedule,
+            max_normal_patients: maxNormalPatients,
+            max_premium_patients: maxPremiumPatients,
+            updated_at: ISO8601DateFormatter().string(from: Date())
+        )
+        
+        // Check if record exists
+        let existingData = try await supabase.select(
+            from: "doctor_availability_efficient",
+            where: "doctor_id",
+            equals: doctorId
+        )
+        
+        if existingData.isEmpty {
+            // Insert new record
+            struct InsertData: Encodable {
+                let doctor_id: String
+                let weekly_schedule: [String: [String: Bool]]
+                let max_normal_patients: Int
+                let max_premium_patients: Int
+                let created_at: String
+                let updated_at: String
+            }
+            
+            let insertData = InsertData(
+                doctor_id: doctorId,
+                weekly_schedule: weeklySchedule,
+                max_normal_patients: maxNormalPatients,
+                max_premium_patients: maxPremiumPatients,
+                created_at: ISO8601DateFormatter().string(from: Date()),
+                updated_at: ISO8601DateFormatter().string(from: Date())
+            )
+            
+            try await supabase.insert(into: "doctor_availability_efficient", data: insertData)
+        } else {
+            // Update existing record
+            try await supabase.update(
+                table: "doctor_availability_efficient",
+                data: updateData,
+                where: "doctor_id",
+                equals: doctorId
+            )
+        }
     }
 }
 
