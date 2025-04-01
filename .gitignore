@@ -23,3 +23,10 @@ Podfile.lock
 *.dSYM/
 
 *.xcuserstate
+
+
+
+
+*.extension
+*.pbxproj
+

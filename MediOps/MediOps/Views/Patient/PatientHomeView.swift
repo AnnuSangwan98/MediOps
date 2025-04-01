@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct PatientHomeView: View {
+    @EnvironmentObject private var navigationState: AppNavigationState
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -24,13 +26,19 @@ struct PatientHomeView: View {
                             Spacer()
                             
                             Button(action: {
-                                // TODO: Implement profile action
+                                // TODO: Navigate to profile
                             }) {
                                 Image(systemName: "person.circle.fill")
                                     .resizable()
                                     .frame(width: 40, height: 40)
                                     .foregroundColor(.teal)
+                                    .background(Circle().fill(Color.white))
+                                    .shadow(color: .gray.opacity(0.2), radius: 3)
                             }
+                            .padding(.trailing)
+                        }
+                        .padding(.horizontal)
+                        .padding(.top)
                         }
                         .padding(.horizontal)
                         .padding(.top)
@@ -90,10 +98,10 @@ struct PatientHomeView: View {
                     }
                 }
             }
-            .navigationBarHidden(true)
+            .navigationBarBackButtonHidden(true)
         }
     }
-}
+
 
 struct DashboardCard: View {
     let title: String
@@ -123,4 +131,4 @@ struct DashboardCard: View {
 
 #Preview {
     PatientHomeView()
-} 
+}

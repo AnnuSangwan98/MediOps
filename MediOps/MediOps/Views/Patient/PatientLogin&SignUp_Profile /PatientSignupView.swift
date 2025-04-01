@@ -4,7 +4,7 @@ struct PatientSignupView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String = ""
     @State private var age: String = ""
-    @State private var gender: String = "Male"
+    @State private var gender: String = "Not Specified"
     @State private var email: String = ""
     @State private var password: String = ""
     @State private var confirmPassword: String = ""
@@ -12,8 +12,10 @@ struct PatientSignupView: View {
     @State private var errorMessage: String = ""
     @State private var navigateToOTP = false
     @State private var suggestedPassword: String? = nil
+    @State private var currentOTP: String = ""
+    @State private var isLoading = false
     
-    let genders = ["Male", "Female", "Other"]
+    let genders = ["Not Specified", "Male", "Female", "Other"]
     
     private var isValidName: Bool {
         let nameRegex = "^[A-Za-z\\s]+$"
@@ -33,12 +35,99 @@ struct PatientSignupView: View {
         let passwordPred = NSPredicate(format: "SELF MATCHES %@", passwordRegex)
         return passwordPred.evaluate(with: password)
     }
+    
+    // MARK: - Validation
+    
+    private func validateAndShowError() -> Bool {
+        // Check all validation conditions
+        if name.isEmpty {
+            errorMessage = "Name cannot be empty"
+            showError = true
+            return false
+        }
         
+        if !isValidName {
+            errorMessage = "Name can only contain letters and spaces"
+            showError = true
+            return false
+        }
+        
+        if email.isEmpty {
+            errorMessage = "Email cannot be empty"
+            showError = true
+            return false
+        }
+        
+        if !isValidEmail(email) {
+            errorMessage = "Please enter a valid email address"
+            showError = true
+            return false
+        }
+        
+        if password.isEmpty {
+            errorMessage = "Password cannot be empty"
+            showError = true
+            return false
+        }
+        
+        if !isValidPassword {
+            errorMessage = "Password must be at least 8 characters with uppercase, lowercase, number and special character"
+            showError = true
+            return false
+        }
+        
+        if confirmPassword.isEmpty {
+            errorMessage = "Please confirm your password"
+            showError = true
+            return false
+        }
+        
+        if password != confirmPassword {
+            errorMessage = "Passwords do not match"
+            showError = true
+            return false
+        }
+        
+        if age.isEmpty {
+            errorMessage = "Age cannot be empty"
+            showError = true
+            return false
+        }
+        
+        if !isValidAge {
+            errorMessage = "Please enter a valid age"
+            showError = true
+            return false
+        }
+        
+        if gender.isEmpty {
+            errorMessage = "Please select a gender"
+            showError = true
+            return false
+        }
+        
+        return true
+    }
+
+    private func isValidInput() -> Bool {
+        // Only check validation conditions without modifying state
+        if name.isEmpty || !isValidName { return false }
+        if email.isEmpty || !isValidEmail(email) { return false }
+        if password.isEmpty || !isValidPassword { return false }
+        if confirmPassword.isEmpty || password != confirmPassword { return false }
+        if age.isEmpty || !isValidAge { return false }
+        if gender.isEmpty { return false }
+        return true
+    }
+    
     private var isSubmitButtonEnabled: Bool {
-        !name.isEmpty && isValidName &&
-        !age.isEmpty && isValidAge &&
-        !email.isEmpty && isValidEmail &&
-        isValidPassword && confirmPassword == password
+        isValidInput()
+    }
+    
+    private func isValidEmail(_ email: String) -> Bool {
+        let emailRegex = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
+        let emailPredicate = NSPredicate(format: "SELF MATCHES %@", emailRegex)
+        return emailPredicate.evaluate(with: email)
     }
     
     private func generateSuggestedPassword() -> String {
@@ -154,7 +243,7 @@ struct PatientSignupView: View {
                                 .autocapitalization(.none)
                                 .textFieldStyle(CustomTextFieldStyle())
                             
-                            if !email.isEmpty && !isValidEmail {
+                            if !email.isEmpty && !isValidEmail(email) {
                                 Text("Please enter a valid email address")
                                     .font(.caption)
                                     .foregroundColor(.red)
@@ -270,7 +359,7 @@ struct PatientSignupView: View {
                             }
                         }
 
-                        Button(action: handleSubmit) {
+                        Button(action: handleSignup) {
                             HStack {
                                 Text("Proceed")
                                     .font(.title3)
@@ -319,47 +408,105 @@ struct PatientSignupView: View {
             Text(errorMessage)
         }
         .navigationDestination(isPresented: $navigateToOTP) {
-            PatientOTPVerificationView(email: email)
+            PatientOTPVerificationView(email: email, expectedOTP: currentOTP)
+        }
+        if isLoading {
+            ProgressView("Creating account...")
+                .progressViewStyle(CircularProgressViewStyle())
+                .padding()
         }
     }
     
-    private var isValidEmail: Bool {
-        let emailRegEx = "^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}$"
-        let emailPred = NSPredicate(format: "SELF MATCHES %@", emailRegEx)
-        return emailPred.evaluate(with: email)
-    }
-    
-    private func handleSubmit() {
-        if !isValidName {
-            errorMessage = "Please enter a valid name (letters only)"
-            showError = true
-            return
-        }
-            
-        if !isValidAge {
-            errorMessage = "Please enter a valid age (between 1 and 199)"
-            showError = true
-            return
-        }
-            
-        if !isValidPassword {
-            errorMessage = "Password doesn't meet the requirements"
-            showError = true
-            return
-        }
-            
-        if password != confirmPassword {
-            errorMessage = "Passwords do not match"
-            showError = true
-            return
-        }
+    private func handleSignup() {
+        guard validateAndShowError() else { return }
+        isLoading = true
         
-        if !isValidEmail {
-            errorMessage = "Please enter a valid email address"
-            showError = true
-            return
-        }
+        // Normalize email for consistency
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         
-        navigateToOTP = true
+        print("SIGNUP VIEW: Starting signup process for email: \(normalizedEmail)")
+        
+        Task {
+            do {
+                // Try to register the patient with all required fields
+                let (patient, _) = try await AuthService.shared.signUpPatient(
+                    email: normalizedEmail,
+                    password: password,
+                    username: name,
+                    age: Int(age) ?? 0,
+                    gender: gender
+                )
+                
+                print("SIGNUP VIEW: Patient registered successfully with ID: \(patient.id)")
+                
+                // Send OTP email to the user for verification
+                do {
+                    let otp = try await EmailService.shared.sendOTP(to: normalizedEmail, role: "Patient")
+                    print("SIGNUP VIEW: OTP sent via email: \(otp) to: \(normalizedEmail)")
+                    
+                    // Update UI on main thread
+                    await MainActor.run {
+                        isLoading = false
+                        currentOTP = otp
+                        
+                        // Navigate to OTP verification
+                        navigateToOTP = true
+                    }
+                } catch {
+                    print("SIGNUP VIEW: Failed to send OTP email: \(error.localizedDescription)")
+                    
+                    // Fallback to local OTP generation for testing purposes
+                    let otp = String(Int.random(in: 100000...999999))
+                    print("SIGNUP VIEW: Fallback to local OTP: \(otp) for email: \(normalizedEmail)")
+                    
+                    await MainActor.run {
+                        isLoading = false
+                        currentOTP = otp
+                        
+                        // Navigate to OTP verification
+                        navigateToOTP = true
+                    }
+                }
+            } catch let error as AuthError {
+                await MainActor.run {
+                    isLoading = false
+                    
+                    if error == AuthError.emailAlreadyExists {
+                        errorMessage = "A user with this email already exists. Please login instead."
+                    } else if error == AuthError.invalidUserData {
+                        errorMessage = "Invalid user data provided. Please check your information."
+                    } else {
+                        errorMessage = error.localizedDescription
+                    }
+                    
+                    // More detailed error for debugging
+                    print("SIGNUP ERROR: \(error)")
+                    
+                    showError = true
+                }
+            } catch let error as NSError {
+                await MainActor.run {
+                    isLoading = false
+                    
+                    // Check for PostgreSQL unique constraint violation error
+                    if error.localizedDescription.contains("violates unique constraint") {
+                        errorMessage = "This email is already registered. Please login instead."
+                        print("SIGNUP VIEW: Caught unique constraint violation, email already in use")
+                    } else {
+                        errorMessage = "An unexpected error occurred: \(error.localizedDescription)"
+                    }
+                    
+                    print("SIGNUP ERROR: Unexpected error: \(error)")
+                    showError = true
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "An unexpected error occurred: \(error.localizedDescription)"
+                    print("SIGNUP ERROR: Unknown error: \(error)")
+                    showError = true
+                }
+            }
+        }
     }
 }

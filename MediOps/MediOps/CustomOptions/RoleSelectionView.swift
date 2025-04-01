@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RoleSelectionView: View {
     @State private var selectedRole: Role = .none
+    @EnvironmentObject private var navigationState: AppNavigationState
     
     enum Role {
         case superAdmin, admin, doctor, lab, patient, none
@@ -9,7 +10,6 @@ struct RoleSelectionView: View {
     
     var body: some View {
         NavigationStack {
-            
             VStack(spacing: 40) {
                 // Logo and Welcome Text
                 VStack(spacing: 20) {
@@ -43,7 +43,7 @@ struct RoleSelectionView: View {
                 
                 // Role Selection Buttons
                 VStack(spacing: 20) {
-                    // Administrator Button
+                    // Super Admin Button
                     NavigationLink(destination: SuperAdminLoginView()) {
                         RoleButton(
                             icon: "person.badge.key",
@@ -53,11 +53,13 @@ struct RoleSelectionView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded {
                         selectedRole = .superAdmin
+                        navigationState.selectRole(.superAdmin)
                     })
+                    
                     // Administrator Button
                     NavigationLink(destination: AdminLoginView()) {
                         RoleButton(
-                            icon: "person.badge.key",
+                            icon: "person.badge.plus",
                             title: "Admin",
                             isHighlighted: selectedRole == .admin
                         )
@@ -76,18 +78,20 @@ struct RoleSelectionView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded {
                         selectedRole = .doctor
+                        navigationState.selectRole(.doctor)
                     })
                     
                     // Lab Button
-                    NavigationLink(destination: LabLoginView()) {
+                    NavigationLink(destination: LabAdminLoginView()) {
                         RoleButton(
-                            icon: "document",
-                            title: "Lab",
+                            icon: "flask",
+                            title: "Lab Admin",
                             isHighlighted: selectedRole == .lab
                         )
                     }
                     .simultaneousGesture(TapGesture().onEnded {
                         selectedRole = .lab
+                        navigationState.selectRole(.labAdmin)
                     })
                     
                     // Patient Button
@@ -100,6 +104,7 @@ struct RoleSelectionView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded {
                         selectedRole = .patient
+                        navigationState.selectRole(.patient)
                     })
                 }
                 .padding(.horizontal, 20)
@@ -108,6 +113,12 @@ struct RoleSelectionView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.white)
+            .navigationBarBackButtonHidden(true)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    EmptyView()
+                }
+            }
         }
     }
 }

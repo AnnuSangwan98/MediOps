@@ -8,6 +8,8 @@ struct SuperAdminLoginView: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var isPasswordVisible: Bool = false
+     let SuperAdminId = "SUPER1"
+    private let SuperAdminPassword = "Super@123"
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
@@ -26,16 +28,18 @@ struct SuperAdminLoginView: View {
             VStack(spacing: 30) {
                 // Logo and Header
                 VStack(spacing: 15) {
-                    Image(systemName: "person.badge.key.fill")
-                        .resizable()
-                        .frame(width: 80, height: 80)
-                        .foregroundColor(.teal)
-                        .padding()
-                        .background(
-                            Circle()
-                                .fill(Color.white)
-                                .shadow(color: .gray.opacity(0.2), radius: 10, x: 0, y: 5)
-                        )
+                    ZStack {
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 120, height: 120)
+                            .shadow(color: .gray.opacity(0.2), radius: 10)
+                        
+                        Image(systemName: "person.badge.key.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 60, height: 60)
+                            .foregroundColor(.teal)
+                    }
                     
                     Text("Super Admin Login")
                         .font(.system(size: 32, weight: .bold))
@@ -51,17 +55,10 @@ struct SuperAdminLoginView: View {
                             .font(.subheadline)
                             .foregroundColor(.gray)
                         
-                        TextField("Enter super admin ID (e.g. HOS001)", text: $adminId)
+                        TextField("Enter super admin ID", text: $adminId)
                             .textFieldStyle(CustomTextFieldStyle())
                             .onChange(of: adminId) { _, newValue in
-                                // Automatically format to uppercase for "HOS" part
-                                if newValue.count >= 3 {
-                                    let hosPrefix = newValue.prefix(3).uppercased()
-                                    let numericPart = newValue.dropFirst(3)
-                                    adminId = hosPrefix + numericPart
-                                } else if newValue.count > 0 {
-                                    adminId = newValue.uppercased()
-                                }
+                                adminId = newValue.uppercased()
                             }
                     }
                     
@@ -124,8 +121,9 @@ struct SuperAdminLoginView: View {
                 Spacer()
             }
             
-            NavigationLink(destination: SuperAdminDashboardView(), isActive: $isLoggedIn) {
-                EmptyView()
+            // Use modern navigation API
+            .navigationDestination(isPresented: $isLoggedIn) {
+                SuperAdminDashboardView()
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -138,13 +136,17 @@ struct SuperAdminLoginView: View {
     }
     
     private func handleLogin() {
-        // TODO: Implement actual login logic here
-        isLoggedIn = true
+        if adminId == SuperAdminId && password == SuperAdminPassword {
+            isLoggedIn = true
+        } else {
+            showError = true
+            errorMessage = "No user found. Please check your credentials."
+        }
     }
     
     // Validates that the admin ID is in format HOS followed by numbers
     private func isValidAdminId(_ id: String) -> Bool {
-        let adminIdRegex = #"^HOS\d+$"#
+        let adminIdRegex = #"^SUPER\d+$"#
         return NSPredicate(format: "SELF MATCHES %@", adminIdRegex).evaluate(with: id)
     }
     
