@@ -25,6 +25,7 @@ enum ActiveSheet: Identifiable {
 struct HomeTabView: View {
     @ObservedObject var hospitalVM = HospitalViewModel.shared
     @StateObject var appointmentManager = AppointmentManager.shared
+    @StateObject private var labReportManager = LabReportManager.shared
     @State private var showProfile = false
     @State private var showAddVitals = false
     @State private var selectedHospital: HospitalModel?
@@ -34,6 +35,7 @@ struct HomeTabView: View {
     @State private var selectedTab = 0
     @AppStorage("current_user_id") private var currentUserId: String?
     @AppStorage("userId") private var userId: String?
+    @State private var selectedHistoryType = 0
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -248,7 +250,62 @@ struct HomeTabView: View {
         }
     }
     
-    // Helper function to refresh hospitals and cities
+    private var historyTab: some View {
+        NavigationStack {
+            VStack {
+                Picker("History Type", selection: $selectedHistoryType) {
+                    Text("Appointments").tag(0)
+                    Text("Lab Reports").tag(1)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .padding()
+
+                if selectedHistoryType == 0 {
+                    List {
+                        if appointmentManager.appointments.filter({ $0.status == .completed || $0.status == .cancelled }).isEmpty {
+                            Text("No appointment history")
+                                .foregroundColor(.gray)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding()
+                        } else {
+                            Section(header: Text("Completed Appointments")) {
+                                ForEach(appointmentManager.appointments.filter { $0.status == .completed }, id: \.id) { appointment in
+                                    NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
+                                        AppointmentHistoryCard(appointment: appointment)
+                                            .listRowBackground(Color.green.opacity(0.1))
+                                    }
+                                }
+                            }
+                            
+                            Section(header: Text("Cancelled Appointments")) {
+                                ForEach(appointmentManager.appointments.filter { $0.status == .cancelled }, id: \.id) { appointment in
+                                    AppointmentHistoryCard(appointment: appointment, isCancelled: true)
+                                        .listRowBackground(Color.red.opacity(0.1))
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    labReportsSection
+                }
+            }
+            .navigationTitle("History")
+            .refreshable {
+                print("🔃 Manually refreshing history")
+                if selectedHistoryType == 0 {
+                    appointmentManager.refreshAppointments()
+                } else if let userId = userId {
+                    labReportManager.fetchLabReports(for: userId)
+                }
+            }
+            .onAppear {
+                if selectedHistoryType == 1, let userId = userId {
+                    labReportManager.fetchLabReports(for: userId)
+                }
+            }
+        }
+    }
+
     private func refreshHospitals() async {
         // Check Supabase connectivity first
         let supabase = SupabaseController.shared
@@ -288,41 +345,7 @@ struct HomeTabView: View {
             }
         }
     }
-    
-    private var historyTab: some View {
-        NavigationStack {
-            List {
-                if appointmentManager.appointments.filter({ $0.status == .completed || $0.status == .cancelled }).isEmpty {
-                    Text("No appointment history")
-                        .foregroundColor(.gray)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding()
-                } else {
-                    Section(header: Text("Completed Appointments")) {
-                        ForEach(appointmentManager.appointments.filter { $0.status == .completed }, id: \.id) { appointment in
-                            NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
-                                AppointmentHistoryCard(appointment: appointment)
-                                    .listRowBackground(Color.green.opacity(0.1))
-                            }
-                        }
-                    }
-                    
-                    Section(header: Text("Cancelled Appointments")) {
-                        ForEach(appointmentManager.appointments.filter { $0.status == .cancelled }, id: \.id) { appointment in
-                            AppointmentHistoryCard(appointment: appointment, isCancelled: true)
-                                .listRowBackground(Color.red.opacity(0.1))
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Appointment History")
-            .refreshable {
-                print("🔃 Manually refreshing appointment history")
-                appointmentManager.refreshAppointments()
-            }
-        }
-    }
-    
+
     private var bloodDonateTab: some View {
         Text("Blood Donation")
             .navigationTitle("Blood Donation")
@@ -364,7 +387,7 @@ struct HomeTabView: View {
                 let controller = PatientProfileController()
                 
                 // Preload the patient data
-                if let userId = UserDefaults.standard.string(forKey: "userId") ?? 
+                if let userId = UserDefaults.standard.string(forKey: "userId") ??
                        UserDefaults.standard.string(forKey: "current_user_id") {
                     Task {
                         await controller.loadProfile(userId: userId)
@@ -448,6 +471,89 @@ struct HomeTabView: View {
             }
         }
         .padding(.vertical)
+    }
+
+    private var labReportsSection: some View {
+        List {
+            if labReportManager.isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            } else if let error = labReportManager.error {
+                Text(error.localizedDescription)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            } else if labReportManager.labReports.isEmpty {
+                Text("No lab reports available")
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            } else {
+                ForEach(labReportManager.labReports) { report in
+                    LabReportCard(report: report)
+                        .padding(.vertical, 4)
+                }
+            }
+        }
+        .refreshable {
+            if let userId = userId {
+                // First get the patient's PAT ID from patients table
+                Task {
+                    do {
+//                        let patientData = try await SupabaseController.shared.select(
+//                            from: "patients",
+//                            columns: "patient_id",
+//                            where: "id",
+//                            equals: userId
+//                        )
+                        
+                        struct PatientIds: Codable {
+                            var patient_id: String
+                        }
+
+                        let patient: [PatientIds] = try await SupabaseController.shared.client
+                            .from("patients")
+                            .select("patient_id")
+                            .eq("user_id", value: userId)
+                            .execute()
+                            .value
+//
+                        labReportManager.fetchLabReports(for: patient[0].patient_id)
+//                        if let patientRecord = patientData.first,
+//                           let patId = patientRecord["patient_id"] as? String {
+//                            print("📍 Found patient_id: \(patId)")
+//                            labReportManager.fetchLabReports(for: patId)
+//                        }
+                    } catch {
+                        print("❌ Error getting patient ID: \(error)")
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if let userId = userId {
+                // First get the patient's PAT ID from patients table
+                Task {
+                    do {
+                        let patientData = try await SupabaseController.shared.select(
+                            from: "patients",
+                            columns: "patient_id",
+                            where: "id",
+                            equals: userId
+                        )
+                        
+                        if let patientRecord = patientData.first,
+                           let patId = patientRecord["patient_id"] as? String {
+                            print("📍 Found patient_id: \(patId)")
+                            labReportManager.fetchLabReports(for: patId)
+                        }
+                    } catch {
+                        print("❌ Error getting patient ID: \(error)")
+                    }
+                }
+            }
+        }
     }
 
     // Pull-to-refresh control
