@@ -77,12 +77,10 @@ struct DoctorHomeView: View {
     @State private var showProfileView = false
     @State private var navigateToRoleSelection = false
     @State private var selectedTab = "Upcoming"
-    @State private var showNotifications = false
     
     // Appointment state
     @State private var isLoadingAppointments = true
     @State private var appointments: [DoctorAppointmentModel] = []
-    @State private var notifications: [DoctorNotification] = []
     @State private var error: String? = nil
     @State private var doctorName: String = ""
     @State private var isLoadingDoctorInfo = true
@@ -91,10 +89,6 @@ struct DoctorHomeView: View {
     @State private var todayCount = 0
     @State private var upcomingCount = 0
     @State private var completedCount = 0
-    
-    var hasUnreadNotifications: Bool {
-        notifications.contains { !$0.isRead }
-    }
     
     var body: some View {
         NavigationStack {
@@ -133,30 +127,8 @@ struct DoctorHomeView: View {
                             }
                             Spacer()
                             
-                        // Notification Bell
-                            Button(action: {
-                            showNotifications.toggle()
-                            if showNotifications {
-                                markNotificationsAsRead()
-                            }
-                        }) {
-                            ZStack {
-                                Image(systemName: "bell.fill")
-                                    .font(.system(size: 20))
-                                    .foregroundColor(.teal)
-                                
-                                if hasUnreadNotifications {
-                                    Circle()
-                                        .fill(Color.red)
-                                        .frame(width: 8, height: 8)
-                                        .offset(x: 7, y: -7)
-                                }
-                            }
-                            .padding(.trailing, 15)
-                        }
-                        
-                        // Profile Link
-                        NavigationLink(destination: DoctorProfileView()) {
+                            // Profile Link
+                            NavigationLink(destination: DoctorProfileView()) {
                                 Image(systemName: "person.circle.fill")
                                     .resizable()
                                     .frame(width: 40, height: 40)
@@ -253,6 +225,10 @@ struct DoctorHomeView: View {
                             }
                             .padding(.top, 10)
                         }
+                        .refreshable {
+                            // Refresh data when pulled down
+                            await refreshData()
+                        }
                         .frame(maxHeight: .infinity)
                     }
                 }
@@ -265,102 +241,71 @@ struct DoctorHomeView: View {
                 fetchDoctorData()
                 fetchDoctorAppointments()
             }
-            .overlay(
-                ZStack {
-                    if showNotifications {
-                        // Semi-transparent background
-                        Color.black.opacity(0.4)
-                            .ignoresSafeArea()
-                            .onTapGesture {
-                                showNotifications = false
-                            }
-                            .transition(.opacity)
-                        
-                        // Notification popup centered on screen
-                        NotificationsPopover(notifications: notifications)
-                            .frame(maxWidth: 320)
-                            .transition(.scale(scale: 0.9).combined(with: .opacity))
-                    }
-                }
-            )
-            .animation(.easeInOut(duration: 0.2), value: showNotifications)
         }
     }
     
-    private func fetchDoctorData() {
-        isLoadingDoctorInfo = true
+    // Add a new async function to refresh all data
+    private func refreshData() async {
+        // Show loading state
+        await MainActor.run {
+            isLoadingDoctorInfo = true
+            isLoadingAppointments = true
+        }
         
-        // Get doctor ID from UserDefaults
+        // Create a task group to fetch all data concurrently
+        await withTaskGroup(of: Void.self) { group in
+            // Fetch doctor data
+            group.addTask {
+                await fetchDoctorDataAsync()
+            }
+            
+            // Fetch appointments
+            group.addTask {
+                await fetchDoctorAppointmentsAsync()
+            }
+            
+            // Wait for all tasks to complete
+            await group.waitForAll()
+        }
+    }
+    
+    // Async version of fetchDoctorData
+    private func fetchDoctorDataAsync() async {
         guard let doctorId = UserDefaults.standard.string(forKey: "current_doctor_id") else {
-            print("ERROR: Doctor ID not found in UserDefaults")
-            // Set loading to false and continue with empty doctor name
-            isLoadingDoctorInfo = false
+            await MainActor.run {
+                isLoadingDoctorInfo = false
+            }
             return
         }
         
-        print("FETCH DOCTOR: Loading doctor info for ID: \(doctorId)")
-        
-        Task {
-            do {
-                let supabase = SupabaseController.shared
-                
-                // Fetch doctor information
-                let result = try await supabase.select(
-                    from: "doctors",
-                    where: "id",
-                    equals: doctorId
-                )
-                
-                if result.isEmpty {
-                    print("FETCH DOCTOR: No records found for doctor ID: \(doctorId)")
-                    await MainActor.run {
-                        isLoadingDoctorInfo = false
-                        // Keep doctorName empty, UI will show fallback
-                    }
-                    return
-                }
-                
-                guard let doctorData = result.first else {
-                    print("FETCH DOCTOR: Result is not empty but first item is nil")
-                    await MainActor.run {
-                        isLoadingDoctorInfo = false
-                    }
-                    return
-                }
-                
-                // Extract doctor name with detailed logging
+        do {
+            let supabase = SupabaseController.shared
+            let result = try await supabase.select(
+                from: "doctors",
+                where: "id",
+                equals: doctorId
+            )
+            
+            if let doctorData = result.first {
                 if let name = doctorData["name"] as? String, !name.isEmpty {
-                    print("FETCH DOCTOR: Successfully retrieved doctor name: \(name)")
-                    
-                    // Ensure the name includes the Dr. prefix
                     let formattedName: String
                     if name.hasPrefix("Dr.") || name.hasPrefix("Dr. ") {
-                        formattedName = name // Keep as is if already has Dr. prefix
+                        formattedName = name
                     } else {
-                        formattedName = "Dr. \(name)" // Add prefix if not present
+                        formattedName = "Dr. \(name)"
                     }
-                    
-                    print("FETCH DOCTOR: Formatted name with Dr. prefix: \(formattedName)")
                     
                     await MainActor.run {
                         self.doctorName = formattedName
                         isLoadingDoctorInfo = false
                     }
                 } else {
-                    print("FETCH DOCTOR: Doctor record found but name field is missing, empty, or not a string")
-                    
-                    // Debug available fields
-                    let availableFields = Array(doctorData.keys).joined(separator: ", ")
-                    print("FETCH DOCTOR: Available fields: \(availableFields)")
-                    
-                    // Try to extract ID as a last resort if name is not available
+                    // Fallback to ID or default
                     let doctorDisplayName: String
                     if let id = doctorData["id"] as? String, !id.isEmpty {
-                        doctorDisplayName = "Dr. \(id)" // Always add prefix to ID
-                        print("FETCH DOCTOR: Using ID as fallback with Dr. prefix: \(doctorDisplayName)")
+                        doctorDisplayName = "Dr. \(id)"
                     } else {
-                        doctorDisplayName = "Dr. Doctor" // Default with prefix
-                        print("FETCH DOCTOR: Using default name with Dr. prefix")
+                        doctorDisplayName = "Dr. Doctor"
                     }
                     
                     await MainActor.run {
@@ -368,162 +313,97 @@ struct DoctorHomeView: View {
                         isLoadingDoctorInfo = false
                     }
                 }
-            } catch {
-                print("FETCH DOCTOR ERROR: \(error.localizedDescription)")
+            } else {
                 await MainActor.run {
                     isLoadingDoctorInfo = false
-                    // Keep doctorName empty, UI will show fallback
                 }
+            }
+        } catch {
+            await MainActor.run {
+                isLoadingDoctorInfo = false
             }
         }
     }
     
-    private func fetchDoctorAppointments() {
-        isLoadingAppointments = true
-        error = nil
-        
-        // Get doctor ID from UserDefaults
+    // Async version of fetchDoctorAppointments
+    private func fetchDoctorAppointmentsAsync() async {
         guard let doctorId = UserDefaults.standard.string(forKey: "current_doctor_id") else {
-            error = "Doctor ID not found. Please log in again."
-            isLoadingAppointments = false
+            await MainActor.run {
+                error = "Doctor ID not found. Please log in again."
+                isLoadingAppointments = false
+            }
             return
         }
         
-        Task {
-            do {
-                let supabase = SupabaseController.shared
+        do {
+            let supabase = SupabaseController.shared
+            let result = try await supabase.select(
+                from: "appointments",
+                columns: "id, patient_id, doctor_id, hospital_id, appointment_date, booking_time, status, reason, isdone, is_premium, slot_start_time, slot_end_time, slot",
+                where: "doctor_id",
+                equals: doctorId
+            )
+            
+            // Parse result
+            let appointments = try parseAppointments(result)
+            
+            // Fetch additional details for each appointment (patient, hospital)
+            var enhancedAppointments: [DoctorAppointmentModel] = []
+            
+            for appointment in appointments {
+                // Load patient details
+                var patientName = "Unknown Patient"
+                if let patientResult = try? await supabase.select(
+                    from: "patients",
+                    where: "patient_id",
+                    equals: appointment.patientId
+                ).first, let name = patientResult["name"] as? String {
+                    patientName = name
+                }
                 
-                // Use standard select method with specific fields matching the table structure
-                let result = try await supabase.select(
-                    from: "appointments",
-                    columns: "id, patient_id, doctor_id, hospital_id, appointment_date, booking_time, status, reason, isdone, is_premium, slot_start_time, slot_end_time, slot",
-                    where: "doctor_id",
-                    equals: doctorId
+                // Load hospital details
+                var hospitalName = "Unknown Hospital"
+                if let hospitalResult = try? await supabase.select(
+                    from: "hospitals",
+                    where: "id",
+                    equals: appointment.hospitalId
+                ).first, let name = hospitalResult["name"] as? String {
+                    hospitalName = name
+                }
+                
+                // Create enhanced appointment
+                let enhancedAppointment = DoctorAppointmentModel(
+                    id: appointment.id,
+                    patientId: appointment.patientId,
+                    patientName: patientName,
+                    hospitalId: appointment.hospitalId,
+                    hospitalName: hospitalName,
+                    appointmentDate: appointment.appointmentDate,
+                    bookingTime: appointment.bookingTime,
+                    status: appointment.status,
+                    reason: appointment.reason,
+                    isDone: appointment.isDone,
+                    isPremium: appointment.isPremium,
+                    slotId: 0,
+                    slotTime: appointment.slotTime,
+                    slotEndTime: appointment.slotEndTime
                 )
                 
-                print("FETCH APPOINTMENTS: Raw result: \(result)")
-                
-                // Parse result
-                let appointments = try parseAppointments(result)
-                
-                // Fetch additional details for each appointment (patient, hospital)
-                var enhancedAppointments: [DoctorAppointmentModel] = []
-                
-                for appointment in appointments {
-                    // Load patient details
-                    var patientName = "Unknown Patient"
-                    if let patientResult = try? await supabase.select(
-                        from: "patients",
-                        where: "patient_id",
-                        equals: appointment.patientId
-                    ).first, let name = patientResult["name"] as? String {
-                        patientName = name
-                    }
-                    
-                    // Load hospital details
-                    var hospitalName = "Unknown Hospital"
-                    if let hospitalResult = try? await supabase.select(
-                        from: "hospitals",
-                        where: "id",
-                        equals: appointment.hospitalId
-                    ).first, let name = hospitalResult["name"] as? String {
-                        hospitalName = name
-                    }
-                    
-                    // Create enhanced appointment
-                    let enhancedAppointment = DoctorAppointmentModel(
-                        id: appointment.id,
-                        patientId: appointment.patientId,
-                        patientName: patientName,
-                        hospitalId: appointment.hospitalId,
-                        hospitalName: hospitalName,
-                        appointmentDate: appointment.appointmentDate,
-                        bookingTime: appointment.bookingTime,
-                        status: appointment.status,
-                        reason: appointment.reason,
-                        isDone: appointment.isDone,
-                        isPremium: appointment.isPremium,
-                        slotId: 0, // This field is not in the table anymore
-                        slotTime: appointment.slotTime,
-                        slotEndTime: appointment.slotEndTime
-                    )
-                    
-                    enhancedAppointments.append(enhancedAppointment)
-                }
-                
-                // Generate notifications from appointments
-                let recentNotifications = generateNotifications(from: enhancedAppointments)
-                
-                // Update UI on main thread
-                await MainActor.run {
-                    self.appointments = enhancedAppointments
-                    self.notifications = recentNotifications
-                    updateCounts(enhancedAppointments)
-                    isLoadingAppointments = false
-                }
-            } catch {
-                print("FETCH APPOINTMENTS ERROR: \(error)")
-                await MainActor.run {
-                    self.error = "Failed to load appointments: \(error.localizedDescription)"
-                    isLoadingAppointments = false
-                }
-            }
-        }
-    }
-    
-    private func markNotificationsAsRead() {
-        // Mark all notifications as read
-        for i in 0..<notifications.count {
-            notifications[i].isRead = true
-        }
-    }
-    
-    private func generateNotifications(from appointments: [DoctorAppointmentModel]) -> [DoctorNotification] {
-        // Sort appointments by booking time, most recent first
-        let sortedAppointments = appointments.sorted { $0.bookingTime > $1.bookingTime }
-        
-        // Take up to 10 most recent appointments
-        let recentAppointments = Array(sortedAppointments.prefix(10))
-        
-        // Get existing notifications to preserve read status
-        let existingNotificationIds = Dictionary(uniqueKeysWithValues: 
-            notifications.map { ($0.appointmentId, $0.isRead) })
-        
-        // Convert to notifications
-        return recentAppointments.map { appointment in
-            let type: DoctorNotification.NotificationType
-            let message: String
-            
-            switch appointment.status {
-            case .upcoming:
-                type = .booked
-                message = "New appointment with \(appointment.patientName) booked for \(formatDate(appointment.appointmentDate))"
-            case .cancelled:
-                type = .cancelled
-                message = "Appointment with \(appointment.patientName) on \(formatDate(appointment.appointmentDate)) was cancelled"
-            case .completed:
-                type = .completed
-                message = "Appointment with \(appointment.patientName) on \(formatDate(appointment.appointmentDate)) was completed"
+                enhancedAppointments.append(enhancedAppointment)
             }
             
-            // Preserve read status for existing notifications, otherwise mark as unread
-            let isRead = existingNotificationIds[appointment.id] ?? false
-            
-            var notification = DoctorNotification(
-                message: message,
-                date: appointment.bookingTime,
-                type: type,
-                appointmentId: appointment.id
-            )
-            notification.isRead = isRead
-            return notification
+            // Update UI on main thread
+            await MainActor.run {
+                self.appointments = enhancedAppointments
+                updateCounts(enhancedAppointments)
+                isLoadingAppointments = false
+            }
+        } catch {
+            await MainActor.run {
+                self.error = "Failed to load appointments: \(error.localizedDescription)"
+                isLoadingAppointments = false
+            }
         }
-    }
-    
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: date)
     }
     
     private func parseAppointments(_ data: [[String: Any]]) throws -> [DoctorAppointmentModel] {
@@ -637,88 +517,17 @@ struct DoctorHomeView: View {
         upcomingCount = appointments.filter { $0.status == .upcoming }.count
         completedCount = appointments.filter { $0.status == .completed }.count
     }
-}
-
-// Notifications Popover View
-struct NotificationsPopover: View {
-    let notifications: [DoctorNotification]
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Notifications")
-                .font(.headline)
-                .padding(.horizontal)
-                .padding(.top)
-            
-            Divider()
-            
-            if notifications.isEmpty {
-                VStack(spacing: 15) {
-                    Image(systemName: "bell.slash")
-                        .font(.system(size: 30))
-                        .foregroundColor(.gray.opacity(0.5))
-                    
-                    Text("No recent notifications")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                }
-                .frame(maxWidth: .infinity, minHeight: 150)
-                .padding()
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(notifications) { notification in
-                            NotificationRow(notification: notification)
-                            
-                            if notification.id != notifications.last?.id {
-                                Divider()
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                .frame(height: 300)
-            }
+    private func fetchDoctorData() {
+        Task {
+            await fetchDoctorDataAsync()
         }
-        .frame(width: 300)
-        .background(Color.white)
-        .cornerRadius(15)
-        .shadow(radius: 10)
-        .zIndex(100)
-    }
-}
-
-// Individual Notification Row
-struct NotificationRow: View {
-    let notification: DoctorNotification
-    
-    private var formattedDate: String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: notification.date, relativeTo: Date())
     }
     
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: notification.type.icon)
-                .font(.system(size: 16))
-                .foregroundColor(.white)
-                .frame(width: 30, height: 30)
-                .background(notification.type.color)
-                .cornerRadius(15)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(notification.message)
-                    .font(.subheadline)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                
-//                Text(formattedDate)
-//                    .font(.caption)
-//                    .foregroundColor(.gray)
-            }
+    private func fetchDoctorAppointments() {
+        Task {
+            await fetchDoctorAppointmentsAsync()
         }
-        .padding(.vertical, 6)
     }
 }
 
