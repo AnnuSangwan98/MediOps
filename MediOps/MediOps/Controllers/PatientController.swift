@@ -70,7 +70,7 @@ class PatientController {
                 "age": String(age),
                 "gender": gender,
                 "email": normalizedEmail,
-                "email_verified": "false", 
+                "email_verified": "false",
                 "created_at": createdAt,
                 "updated_at": createdAt,
                 "bloodGroup": bloodGroup,  // Use the passed parameter
@@ -144,8 +144,8 @@ class PatientController {
     /// Get patient by ID
     func getPatient(id: String) async throws -> Patient {
         let patients = try await supabase.select(
-            from: "patients", 
-            where: "id", 
+            from: "patients",
+            where: "id",
             equals: id
         )
         
@@ -159,8 +159,8 @@ class PatientController {
     /// Get patient by user ID
     func getPatientByUserId(userId: String) async throws -> Patient {
         let patients = try await supabase.select(
-            from: "patients", 
-            where: "user_id", 
+            from: "patients",
+            where: "user_id",
             equals: userId
         )
         
@@ -172,12 +172,25 @@ class PatientController {
     }
     
     /// Update patient profile
-    func updatePatient(id: String, name: String? = nil, age: Int? = nil, gender: String? = nil) async throws -> Patient {
+    func updatePatient(
+        id: String,
+        name: String? = nil,
+        age: Int? = nil,
+        gender: String? = nil,
+        bloodGroup: String? = nil,
+        email: String? = nil,
+        address: String? = nil,
+        phoneNumber: String? = nil,
+        emergencyContactName: String? = nil,
+        emergencyContactNumber: String? = nil,
+        emergencyRelationship: String? = nil
+    ) async throws -> Patient {
         // 1. Get current patient data to verify it exists
         _ = try await getPatient(id: id)
         
         // 2. Prepare update data - convert everything to strings for the API
         var updateData: [String: String] = [:]
+        
         if let name = name {
             updateData["name"] = name
         }
@@ -187,18 +200,43 @@ class PatientController {
         if let gender = gender {
             updateData["gender"] = gender
         }
+        if let bloodGroup = bloodGroup {
+            updateData["bloodGroup"] = bloodGroup
+        }
+        if let email = email {
+            updateData["email"] = email
+        }
+        if let address = address {
+            updateData["address"] = address
+        }
+        if let phoneNumber = phoneNumber {
+            updateData["phoneNumber"] = phoneNumber
+        }
+        if let emergencyContactName = emergencyContactName {
+            updateData["emergencyContactName"] = emergencyContactName
+        }
+        if let emergencyContactNumber = emergencyContactNumber {
+            updateData["emergencyContactNumber"] = emergencyContactNumber
+        }
+        if let emergencyRelationship = emergencyRelationship {
+            updateData["emergencyRelationship"] = emergencyRelationship
+        }
         
         // Add updated_at timestamp
         let dateFormatter = ISO8601DateFormatter()
         updateData["updated_at"] = dateFormatter.string(from: Date())
         
+        print("UPDATE PATIENT: Updating patient with data:", updateData)
+        
         // 3. Update patient
         try await supabase.update(
-            table: "patients", 
-            data: updateData, 
-            where: "id", 
+            table: "patients",
+            data: updateData,
+            where: "id",
             equals: id
         )
+        
+        print("UPDATE PATIENT: Update successful, fetching updated patient data")
         
         // 4. Return updated patient
         return try await getPatient(id: id)
@@ -212,11 +250,34 @@ class PatientController {
         ]
         
         try await supabase.update(
-            table: "patients", 
-            data: updateData, 
-            where: "id", 
+            table: "patients",
+            data: updateData,
+            where: "id",
             equals: patientId
         )
+    }
+    
+    /// Update patient's blood donor status
+    func updateBloodDonorStatus(id: String, isDonor: Bool) async throws -> Patient {
+        // 1. Get current patient data to verify it exists
+        _ = try await getPatient(id: id)
+        
+        // 2. Prepare update data
+        let updateData: [String: String] = [
+            "is_blood_donor": String(isDonor),
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        // 3. Update the patient record
+        try await supabase.update(
+            table: "patients",
+            data: updateData,
+            where: "id",
+            equals: id
+        )
+        
+        // 4. Return updated patient data
+        return try await getPatient(id: id)
     }
     
     // MARK: - Helper Methods
@@ -303,4 +364,4 @@ enum PatientError: Error, LocalizedError {
             return "Invalid patient data"
         }
     }
-} 
+}
