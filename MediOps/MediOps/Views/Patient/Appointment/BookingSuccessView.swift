@@ -106,9 +106,13 @@ struct BookingSuccessView: View {
                     equals: userId
                 )
                 
-                guard let patientData = patientResults.first, let patientId = patientData["id"] as? String else {
-                    throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Patient record not found"])
+                guard let patientData = patientResults.first, 
+                      let patientRecordId = patientData["id"] as? String,
+                      let patientId = patientData["patient_id"] as? String else {
+                    throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Patient record not found or patient_id not available"])
                 }
+                
+                print("✅ Found patient with record ID: \(patientRecordId) and patient_id: \(patientId)")
                 
                 // Format date for database
                 let dateFormatter = DateFormatter()
@@ -170,9 +174,26 @@ struct BookingSuccessView: View {
                 {"doctor_id": "\(doctor.id)", "start_time": "\(startTime)", "end_time": "\(endTime)"}
                 """
                 
+                // Prepare appointment data
+                let appointmentData: [String: Any] = [
+                    "id": appointmentId,
+                    "patient_id": patientId,
+                    "doctor_id": doctor.id,
+                    "hospital_id": hospitalId,
+                    "appointment_date": formattedDate,
+                    "status": "upcoming",
+                    "reason": "Medical consultation",
+                    "isdone": false,
+                    "is_premium": false,
+                    "slot_start_time": startTime,
+                    "slot_end_time": endTime,
+                    "slot": slotJsonb
+                ]
+                
+                // Print detailed information
                 print("📊 APPOINTMENT DETAILS:")
                 print("- ID: \(appointmentId)")
-                print("- Patient ID: \(patientId)")
+                print("- Patient ID: \(patientId) (using patient_id field from patients table)")
                 print("- Doctor ID: \(doctor.id)")
                 print("- Hospital ID: \(hospitalId)")
                 print("- Date: \(formattedDate)")
@@ -194,22 +215,6 @@ struct BookingSuccessView: View {
                 request.addValue("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk", forHTTPHeaderField: "Authorization")
                 request.addValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.addValue("return=representation", forHTTPHeaderField: "Prefer")
-                
-                // Prepare appointment data
-                let appointmentData: [String: Any] = [
-                    "id": appointmentId,
-                    "patient_id": patientId,
-                    "doctor_id": doctor.id,
-                    "hospital_id": hospitalId,
-                    "appointment_date": formattedDate,
-                    "status": "upcoming",
-                    "reason": "Medical consultation",
-                    "isdone": false,
-                    "is_premium": false,
-                    "slot_start_time": startTime,
-                    "slot_end_time": endTime,
-                    "slot": slotJsonb
-                ]
                 
                 // Encode data
                 let jsonData = try JSONSerialization.data(withJSONObject: appointmentData)
@@ -285,10 +290,14 @@ struct BookingSuccessView: View {
                             equals: userId
                         )
                         
-                        guard let patientData = patientResults.first, let patientId = patientData["id"] as? String else {
-                            print("❌ No patient ID found for fallback approach")
+                        guard let patientData = patientResults.first, 
+                              let patientRecordId = patientData["id"] as? String,
+                              let patientId = patientData["patient_id"] as? String else {
+                            print("❌ No patient ID found for fallback approach or patient_id not available")
                             return
                         }
+                        
+                        print("✅ Fallback: Found patient with record ID: \(patientRecordId) and patient_id: \(patientId)")
                         
                         // Format date for database
                         let dateFormatter = DateFormatter()
@@ -471,12 +480,14 @@ struct BookingSuccessView: View {
                     equals: userId
                 )
                 
-                guard let patientData = patientResults.first, let patientId = patientData["id"] as? String else {
+                guard let patientData = patientResults.first, 
+                      let patientRecordId = patientData["id"] as? String, 
+                      let patientId = patientData["patient_id"] as? String else {
                     print("🩺 DIAGNOSTIC: No patient ID found for current user")
                     return
                 }
                 
-                print("🩺 DIAGNOSTIC: Using patient ID: \(patientId) for test")
+                print("🩺 DIAGNOSTIC: Using patient record ID: \(patientRecordId) and patient_id: \(patientId) for test")
                 
                 // Test simple insert with minimal data
                 let testSQL = """
