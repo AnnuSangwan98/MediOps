@@ -157,6 +157,7 @@ struct PatientReport: Identifiable {
     let summary: String?
     let fileUrl: String
     let uploadedAt: Date
+    let labId: String?
     
     init(from data: [String: Any]) {
         // Extract id as UUID
@@ -176,6 +177,9 @@ struct PatientReport: Identifiable {
         
         // Extract required file URL
         self.fileUrl = data["file_url"] as? String ?? ""
+        
+        // Get the lab_id (optional)
+        self.labId = data["lab_id"] as? String
         
         // Parse uploaded_at timestamp
         if let dateString = data["uploaded_at"] as? String {
@@ -650,12 +654,21 @@ struct AddReportView: View {
         // Generate a placeholder for the file_url, which will be used to identify this is a generated PDF
         let placeholderUrl = "generated_pdf_\(UUID().uuidString)"
         
+        // Get the lab admin ID from UserDefaults
+        guard let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") else {
+            errorMessage = "Lab admin ID not found. Please log in again."
+            showError = true
+            isLoading = false
+            return
+        }
+        
         // Create a new report with the required fields following the table definition
         let newReport: [String: Any] = [
             "patient_name": patientName,
             "patient_id": patientId,
             "summary": summary,
-            "file_url": placeholderUrl // Required field in the database schema
+            "file_url": placeholderUrl, // Required field in the database schema
+            "lab_id": labAdminId // Associate with the lab admin
         ]
         
         Task {
@@ -666,7 +679,7 @@ struct AddReportView: View {
                 // Insert the new report
                 try await supabase.insert(into: "pat_reports", values: newReport)
                 
-                print("Report successfully added to pat_reports table")
+                print("Report successfully added to pat_reports table for lab admin: \(labAdminId)")
                 
                 await MainActor.run {
                     isLoading = false
@@ -755,12 +768,18 @@ struct EditReportView: View {
     private func updateReport() {
         isLoading = true
         
-        // Create updated report with the edited fields
-        let updatedReport: [String: Any] = [
+        // Create an updated report object with only the fields we want to update
+        var updatedReport: [String: Any] = [
             "patient_name": patientName,
             "patient_id": patientId,
             "summary": summary
         ]
+        
+        // Get the lab admin ID from UserDefaults
+        // We'll include it in the update to ensure it's preserved or updated if missing
+        if let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") {
+            updatedReport["lab_id"] = labAdminId
+        }
         
         Task {
             do {
@@ -1323,31 +1342,33 @@ struct PatientReportsView: View {
         isLoading = true
         
         do {
+            // Get the lab admin ID from UserDefaults (set during login)
+            guard let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") else {
+                throw NSError(domain: "LabReportError", code: 1, 
+                              userInfo: [NSLocalizedDescriptionKey: "Lab admin ID not found. Please log in again."])
+            }
+            
+            print("FETCH REPORTS: Fetching for lab admin ID: \(labAdminId)")
+            
             // Ensure the pat_reports table exists with the correct schema
             try await supabase.ensurePatReportsTableExists()
             
-            // Fetch reports from Supabase
-            let patientReportsData = try await supabase.select(from: "pat_reports")
-            print("FETCH REPORTS: Retrieved \(patientReportsData.count) reports")
+            // Fetch only reports associated with this lab admin
+            let patientReportsData = try await supabase.select(
+                from: "pat_reports",
+                where: "lab_id",
+                equals: labAdminId
+            )
             
-            // If no reports exist, insert a sample one for testing
+            print("FETCH REPORTS: Retrieved \(patientReportsData.count) reports for lab admin: \(labAdminId)")
+            
+            // If no reports exist, simply update the UI with empty data instead of creating a sample report
             if patientReportsData.isEmpty {
-                print("No reports found, adding sample data")
-                
-                // Sample report data matching the table schema
-                let sampleReport: [String: Any] = [
-                    "patient_name": "Sample Patient",
-                    "patient_id": "PAT001",
-                    "summary": "This is a sample lab report for demonstration purposes.",
-                    "file_url": "generated_pdf_sample"
-                ]
-                
-                try await supabase.insert(into: "pat_reports", values: sampleReport)
-                print("Sample report added successfully")
-                
-                // Fetch again after adding sample
-                let refreshedData = try await supabase.select(from: "pat_reports")
-                await updateReportsUI(with: refreshedData)
+                print("No reports found for lab admin ID: \(labAdminId)")
+                await MainActor.run {
+                    reports = []
+                    isLoading = false
+                }
             } else {
                 await updateReportsUI(with: patientReportsData)
             }
