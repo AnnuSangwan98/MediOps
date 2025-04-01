@@ -1,8 +1,8 @@
 import SwiftUI
 import PDFKit
 
-struct LabReportCard: View {
-    let report: LabReport
+struct PatientLabReportCard: View {
+    let report: PatientLabReport
     @State private var showPdfViewer = false
     @State private var pdfData: Data?
     @State private var isGeneratingPDF = false
@@ -129,7 +129,7 @@ struct LabReportCard: View {
 
 struct PDFViewerSheet: View {
     let pdfData: Data
-    let report: LabReport
+    let report: PatientLabReport
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -177,7 +177,7 @@ struct PDFKitView: UIViewRepresentable {
 }
 
 enum LabReportPDFGenerator {
-    static func generatePDF(for report: LabReport) -> Data {
+    static func generatePDF(for report: PatientLabReport) -> Data {
         // Create a PDF renderer with A4 page size
         let pageWidth: CGFloat = 595.2
         let pageHeight: CGFloat = 841.8

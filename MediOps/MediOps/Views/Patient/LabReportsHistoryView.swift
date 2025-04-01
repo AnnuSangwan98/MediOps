@@ -50,8 +50,8 @@ struct LabReportsHistoryView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 16) {
-                            ForEach(labReportManager.labReports) { report in
-                                LabReportCard(report: report)
+                            ForEach(labReportManager.labReports, id: \.id) { report in
+                                PatientLabReportCard(report: report)
                                     .padding(.horizontal)
                             }
                         }

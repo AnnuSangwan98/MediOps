@@ -45,7 +45,7 @@ struct LabReport: Identifiable, Codable {
 }
 
 class LabReportManager: ObservableObject {
-    @Published var labReports: [LabReport] = []
+    @Published var labReports: [PatientLabReport] = []
     @Published var isLoading = false
     @Published var error: Error?
     
@@ -72,10 +72,38 @@ class LabReportManager: ObservableObject {
                 print("📊 Found \(data.count) reports in pat_reports for patient_id: \(patientId)")
                 print("Raw data: \(data)")
                 
-                let jsonData = try JSONSerialization.data(withJSONObject: data)
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                let reports = try decoder.decode([LabReport].self, from: jsonData)
+                var reports: [PatientLabReport] = []
+                
+                for reportData in data {
+                    guard let idString = reportData["id"] as? String,
+                          let id = UUID(uuidString: idString),
+                          let patientName = reportData["patient_name"] as? String,
+                          let patientId = reportData["patient_id"] as? String,
+                          let fileUrl = reportData["file_url"] as? String,
+                          let uploadedAtString = reportData["uploaded_at"] as? String else {
+                        continue
+                    }
+                    
+                    // Parse date
+                    let dateFormatter = ISO8601DateFormatter()
+                    let uploadedAt = dateFormatter.date(from: uploadedAtString) ?? Date()
+                    
+                    // Optional fields
+                    let summary = reportData["summary"] as? String
+                    let labId = reportData["lab_id"] as? String
+                    
+                    let report = PatientLabReport(
+                        id: id,
+                        patientName: patientName,
+                        patientId: patientId,
+                        summary: summary,
+                        fileUrl: fileUrl,
+                        uploadedAt: uploadedAt,
+                        labId: labId
+                    )
+                    
+                    reports.append(report)
+                }
                 
                 await MainActor.run {
                     print("✅ Successfully loaded \(reports.count) reports")

@@ -498,7 +498,7 @@ struct HomeTabView: View {
                     .padding()
             } else {
                 ForEach(labReportManager.labReports) { report in
-                    LabReportCard(report: report)
+                    PatientLabReportCard(report: report)
                         .padding(.vertical, 4)
                 }
             }
