@@ -213,6 +213,25 @@ struct AddLabAdminView: View {
     private func saveToDatabase(labAdmin: UILabAdmin, activity: UIActivity) {
         Task {
             do {
+                // Set loading state
+                await MainActor.run {
+                    isLoading = true
+                }
+                
+                // Validate phone number format (must be 10 digits)
+                let phoneWithoutCountryCode = labAdmin.phone.replacingOccurrences(of: "+91", with: "")
+                if !phoneWithoutCountryCode.isEmpty {
+                    let isValid = phoneWithoutCountryCode.range(of: "^[0-9]{10}$", options: .regularExpression) != nil
+                    if !isValid {
+                        await MainActor.run {
+                            isLoading = false
+                            alertMessage = "Invalid phone number. Must be 10 digits."
+                            showAlert = true
+                        }
+                        return
+                    }
+                }
+                
                 // Generate a secure password that meets the Supabase constraints:
                 // - At least 8 characters
                 // - At least one uppercase letter
@@ -234,24 +253,67 @@ struct AddLabAdminView: View {
                 print("SAVE LAB ADMIN: Using hospital ID from UserDefaults: \(hospitalId)")
                 
                 // Save to database using AdminController
-                let (_, _) = try await adminController.createLabAdmin(
-                    email: labAdmin.email,
-                    password: password,
-                    name: labAdmin.fullName,
-                    labName: labAdmin.qualification, // This is actually mapped to department
-                    hospitalAdminId: hospitalId,
-                    contactNumber: labAdmin.phone.replacingOccurrences(of: "+91", with: ""), // Remove country code for 10-digit format
-                    department: "Pathology & Laboratory" // Fixed to match the constraint
-                )
-                
-                // If successful, send credentials email
-                await MainActor.run {
-                    sendLabCredentials(activity: activity, password: password)
+                do {
+                    print("SAVE LAB ADMIN: Starting creation with email: \(labAdmin.email)")
+                    
+                    let (labAdminResult, _) = try await adminController.createLabAdmin(
+                        email: labAdmin.email,
+                        password: password,
+                        name: labAdmin.fullName,
+                        labName: labAdmin.qualification, // This is actually mapped to department
+                        hospitalAdminId: hospitalId,
+                        contactNumber: phoneWithoutCountryCode, // Remove country code for 10-digit format
+                        department: "Pathology & Laboratory" // Fixed to match the constraint
+                    )
+                    
+                    print("SAVE LAB ADMIN: Successfully created lab admin with ID: \(labAdminResult.id)")
+                    
+                    // If successful, send credentials email
+                    await MainActor.run {
+                        sendLabCredentials(activity: activity, password: password)
+                    }
+                } catch let error as AdminError {
+                    // Handle specific admin errors with better messages
+                    await MainActor.run {
+                        isLoading = false
+                        
+                        switch error {
+                        case .emailAlreadyExists(_):
+                            alertMessage = "This email address is already in use by another lab admin. Please use a different email."
+                        case .invalidContactNumber(_):
+                            alertMessage = "Invalid phone number. Must be exactly 10 digits."
+                        case .invalidPassword(message: _):
+                            alertMessage = "The generated password didn't meet security requirements. Please try again."
+                        case .invalidFormat(let message):
+                            alertMessage = "Format error: \(message)"
+                        case .invalidData(let message):
+                            if message.contains("hospital") || message.contains("Hospital") {
+                                alertMessage = "Hospital ID validation failed. Please check that you're logged in correctly as a hospital admin. Additional details: \(message)"
+                                
+                                // Print debug info about the hospital ID
+                                print("DEBUG: Hospital ID validation failed")
+                                print("DEBUG: Hospital ID from UserDefaults: \(hospitalId)")
+                            } else {
+                                alertMessage = "Data validation error: \(message)"
+                            }
+                        default:
+                            alertMessage = "Failed to save lab admin: \(error.errorDescription ?? "Unknown error")"
+                        }
+                        
+                        showAlert = true
+                    }
+                } catch {
+                    // Handle other errors
+                    await MainActor.run {
+                        isLoading = false
+                        alertMessage = "Failed to save lab admin: \(error.localizedDescription)"
+                        showAlert = true
+                    }
                 }
             } catch {
                 await MainActor.run {
                     isLoading = false
-                    alertMessage = "Failed to save lab admin: \(error.localizedDescription)"
+                    alertMessage = "Failed to prepare data: \(error.localizedDescription)"
                     showAlert = true
                 }
             }
@@ -270,23 +332,44 @@ struct AddLabAdminView: View {
         let numbers = "0123456789"
         let specialChars = "@$!%*?&" // Only allowed special characters per constraint
         
-        // Ensure at least one character from each required category
+        // Start with a guaranteed set of characters to meet all requirements
         var passwordChars: [String] = []
-        passwordChars.append(String(uppercaseLetters.randomElement()!))
-        passwordChars.append(String(lowercaseLetters.randomElement()!))
-        passwordChars.append(String(numbers.randomElement()!))
-        passwordChars.append(String(specialChars.randomElement()!))
+        passwordChars.append(String(uppercaseLetters.randomElement()!)) // Guarantee uppercase
+        passwordChars.append(String(lowercaseLetters.randomElement()!)) // Guarantee lowercase
+        passwordChars.append(String(numbers.randomElement()!))          // Guarantee digit
+        passwordChars.append(String(specialChars.randomElement()!))     // Guarantee special char
         
-        // Add more random characters to reach at least 8 characters
+        // Add more random characters to reach at least 12 characters for better security
         let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
-        let additionalLength = 8 // Will give us a 12-character password
+        let additionalLength = 8 // Results in a 12-character password (4 guaranteed + 8 additional)
         
         for _ in 0..<additionalLength {
             passwordChars.append(String(allChars.randomElement()!))
         }
         
         // Shuffle and join the characters
-        return passwordChars.shuffled().joined()
+        let shuffled = passwordChars.shuffled().joined()
+        
+        // Double check that the password meets all requirements before returning
+        let meetsRequirements = 
+            shuffled.count >= 8 &&
+            shuffled.range(of: "[A-Z]", options: .regularExpression) != nil &&
+            shuffled.range(of: "[a-z]", options: .regularExpression) != nil &&
+            shuffled.range(of: "[0-9]", options: .regularExpression) != nil &&
+            shuffled.range(of: "[@$!%*?&]", options: .regularExpression) != nil
+        
+        // Verify password matches the database constraint pattern
+        let passwordConstraintRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$"
+        let matchesConstraint = shuffled.range(of: passwordConstraintRegex, options: .regularExpression) != nil
+        
+        if meetsRequirements && matchesConstraint {
+            print("Generated password meets all requirements (length: \(shuffled.count))")
+            return shuffled
+        } else {
+            // If by some chance we didn't meet requirements, generate again
+            print("Generated password did not meet all requirements. Regenerating...")
+            return generateSecurePassword()
+        }
     }
     
     private func sendLabCredentials(activity: UIActivity, password: String) {

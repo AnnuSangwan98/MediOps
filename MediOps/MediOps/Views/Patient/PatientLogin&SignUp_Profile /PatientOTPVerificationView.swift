@@ -151,19 +151,36 @@ struct PatientOTPVerificationView: View {
         } message: {
             Text(errorMessage)
         }
-        .alert("Success", isPresented: $showSuccess) {
-            Button("OK", role: .cancel) {
-                if isVerified {
-                    // Set root view to HomeTabView
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let window = windowScene.windows.first {
-                        window.rootViewController = UIHostingController(rootView: HomeTabView())
-                    }
+        .overlay(
+            ZStack {
+                if showSuccess {
+                    SuccessAlertView(
+                        isPresented: $showSuccess,
+                        message: successMessage,
+                        onDismiss: {
+                            if isVerified {
+                                // Only navigate after user dismisses the alert
+                                DispatchQueue.main.async {
+                                    // Set root view to HomeTabView
+                                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                                       let window = windowScene.windows.first {
+                                        let homeView = HomeTabView()
+                                        window.rootViewController = UIHostingController(rootView: 
+                                            NavigationView {
+                                                homeView
+                                            }
+                                            .environmentObject(navigationState)
+                                        )
+                                        window.makeKeyAndVisible()
+                                    }
+                                }
+                            }
+                        }
+                    )
+                    .transition(.opacity)
                 }
             }
-        } message: {
-            Text(successMessage)
-        }
+        )
         .onAppear {
             startTimer()
         }
@@ -181,50 +198,62 @@ struct PatientOTPVerificationView: View {
         
         if otpInput == currentOTP {
             isLoading = true
-            Task {
-                do {
-                    let isValid = EmailService.shared.verifyOTP(email: email, otp: otpInput)
-                    
-                    await MainActor.run {
-                        // Print all relevant UserDefaults for debugging
-                        print("🔑 VERIFICATION: All UserDefaults keys related to patient IDs:")
-                        print("  current_user_id = \(UserDefaults.standard.string(forKey: "current_user_id") ?? "nil")")
-                        print("  current_patient_id = \(UserDefaults.standard.string(forKey: "current_patient_id") ?? "nil")")
-                        print("  userId = \(UserDefaults.standard.string(forKey: "userId") ?? "nil")")
+            
+            // Add a slight delay to make the verification feel more substantial
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                Task {
+                    do {
+                        let isValid = EmailService.shared.verifyOTP(email: email, otp: otpInput)
                         
-                        // Try to get the user ID from multiple possible sources
-                        var userIdToUse = UserDefaults.standard.string(forKey: "current_user_id")
-                        
-                        if userIdToUse == nil {
-                            // Try other keys if current_user_id is nil
-                            userIdToUse = UserDefaults.standard.string(forKey: "user_id")
+                        await MainActor.run {
+                            // Print all relevant UserDefaults for debugging
+                            print("🔑 VERIFICATION: All UserDefaults keys related to patient IDs:")
+                            print("  current_user_id = \(UserDefaults.standard.string(forKey: "current_user_id") ?? "nil")")
+                            print("  current_patient_id = \(UserDefaults.standard.string(forKey: "current_patient_id") ?? "nil")")
+                            print("  userId = \(UserDefaults.standard.string(forKey: "userId") ?? "nil")")
+                            
+                            // Try to get the user ID from multiple possible sources
+                            var userIdToUse = UserDefaults.standard.string(forKey: "current_user_id")
+                            
+                            if userIdToUse == nil {
+                                // Try other keys if current_user_id is nil
+                                userIdToUse = UserDefaults.standard.string(forKey: "user_id")
+                            }
+                            
+                            // Use a hardcoded value as last resort (for testing only)
+                            if userIdToUse == nil {
+                                userIdToUse = "USER001"
+                                print("⚠️ WARNING: Using hardcoded user ID for testing: \(userIdToUse!)")
+                            }
+                            
+                            // Set both keys to ensure we have the user ID available
+                            print("✅ Setting both userId and current_user_id to: \(userIdToUse!)")
+                            UserDefaults.standard.set(userIdToUse, forKey: "userId")
+                            UserDefaults.standard.set(userIdToUse, forKey: "current_user_id")
+                            
+                            // Ensure the changes are immediately saved
+                            UserDefaults.standard.synchronize()
+                            
+                            isLoading = false
+                            isVerified = true
+                            
+                            // Set navigation state but don't auto-navigate
+                            navigationState.signIn(as: .patient)
+                            
+                            // Show success message
+                            successMessage = "Verification successful!"
+                            
+                            // Ensure alert is shown
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                showSuccess = true
+                            }
                         }
-                        
-                        // Use a hardcoded value as last resort (for testing only)
-                        if userIdToUse == nil {
-                            userIdToUse = "USER001"
-                            print("⚠️ WARNING: Using hardcoded user ID for testing: \(userIdToUse!)")
+                    } catch {
+                        await MainActor.run {
+                            isLoading = false
+                            errorMessage = "Verification failed: \(error.localizedDescription)"
+                            showError = true
                         }
-                        
-                        // Set both keys to ensure we have the user ID available
-                        print("✅ Setting both userId and current_user_id to: \(userIdToUse!)")
-                        UserDefaults.standard.set(userIdToUse, forKey: "userId")
-                        UserDefaults.standard.set(userIdToUse, forKey: "current_user_id")
-                        
-                        // Ensure the changes are immediately saved
-                        UserDefaults.standard.synchronize()
-                        
-                        isLoading = false
-                        isVerified = true
-                        successMessage = "Verification successful!"
-                        showSuccess = true
-                        navigationState.signIn(as: .patient)
-                    }
-                } catch {
-                    await MainActor.run {
-                        isLoading = false
-                        errorMessage = "Verification failed: \(error.localizedDescription)"
-                        showError = true
                     }
                 }
             }
@@ -276,5 +305,89 @@ struct PatientOTPVerificationView: View {
         email: "test@example.com",
         expectedOTP: "123456"
     )
+}
+
+// Custom success alert with animation
+struct SuccessAlertView: View {
+    @Binding var isPresented: Bool
+    var message: String
+    var onDismiss: () -> Void
+    
+    @State private var scale: CGFloat = 0.5
+    @State private var opacity: Double = 0
+    
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.4)
+                .edgesIgnoringSafeArea(.all)
+                .onTapGesture {
+                    withAnimation {
+                        scale = 0.5
+                        opacity = 0
+                    }
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        isPresented = false
+                        onDismiss()
+                    }
+                }
+            
+            VStack(spacing: 20) {
+                // Success checkmark icon
+                ZStack {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 80, height: 80)
+                    
+                    Image(systemName: "checkmark")
+                        .foregroundColor(.white)
+                        .font(.system(size: 40, weight: .bold))
+                }
+                
+                Text("Success")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Text(message)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                
+                Button(action: {
+                    withAnimation {
+                        scale = 0.5
+                        opacity = 0
+                    }
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        isPresented = false
+                        onDismiss()
+                    }
+                }) {
+                    Text("OK")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.teal)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .padding(.horizontal)
+                .padding(.top, 10)
+            }
+            .padding(30)
+            .background(Color.white)
+            .cornerRadius(20)
+            .shadow(radius: 20)
+            .padding(.horizontal, 40)
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .onAppear {
+                withAnimation(.spring()) {
+                    scale = 1
+                    opacity = 1
+                }
+            }
+        }
+    }
 }
 

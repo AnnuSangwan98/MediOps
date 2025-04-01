@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MediOps}",
+            "name": "Debug MediOps",
+            "program": "${workspaceFolder:MediOps}/.build/debug/MediOps",
+            "preLaunchTask": "swift: Build Debug MediOps"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MediOps}",
+            "name": "Release MediOps",
+            "program": "${workspaceFolder:MediOps}/.build/release/MediOps",
+            "preLaunchTask": "swift: Build Release MediOps"
+        }
+    ]
+}

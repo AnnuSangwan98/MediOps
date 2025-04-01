@@ -63,11 +63,11 @@ struct AppointmentCard: View {
     
     // Helper function to format time strings consistently
     private func formatTimeString(_ timeStr: String) -> String {
-        // Handle "HH:MM" format
+        // Handle "HH:MM:SS" format with seconds
         let components = timeStr.components(separatedBy: ":")
-        if components.count == 2,
-           let hour = Int(components[0]),
-           let minute = Int(components[1]) {
+        if components.count >= 2 {
+            let hour = Int(components[0]) ?? 0
+            let minute = Int(components[1]) ?? 0
             
             let period = hour >= 12 ? "PM" : "AM"
             let hour12 = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour)

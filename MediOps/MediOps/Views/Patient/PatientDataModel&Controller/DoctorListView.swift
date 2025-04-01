@@ -235,6 +235,11 @@ struct DoctorCard: View {
                 }
             }
             
+            NavigationLink(destination: AppointmentView(doctor: doctor), isActive: $showAppointment) {
+                EmptyView()
+            }
+            .hidden()
+            
             Button(action: {
                 showAppointment.toggle()
             }) {
@@ -251,8 +256,5 @@ struct DoctorCard: View {
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
-        .sheet(isPresented: $showAppointment) {
-            AppointmentView(doctor: doctor)
-        }
     }
 }

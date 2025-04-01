@@ -8,7 +8,7 @@ struct AppointmentView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDate = Date()
     @State private var selectedTime: Date? = nil
-    @State private var showReviewAndPay = false
+    @State private var navigateToReviewAndPay = false
     
     private let timeSlots: [Date] = {
         var slots: [Date] = []
@@ -26,7 +26,8 @@ struct AppointmentView: View {
     
     private func formatTimeSlot(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
         let startTime = formatter.string(from: date)
         
         if let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: date) {
@@ -44,13 +45,13 @@ struct AppointmentView: View {
     }
     
     var body: some View {
-        NavigationStack {
+        ZStack {
             VStack(spacing: 0) {
                 // Calendar
                 DatePicker("Select Date", 
-                          selection: $selectedDate,
-                          in: Date()...,
-                          displayedComponents: [.date])
+                         selection: $selectedDate,
+                         in: Date()...,
+                         displayedComponents: [.date])
                     .datePickerStyle(.graphical)
                     .padding()
                     .background(Color.white)
@@ -63,7 +64,7 @@ struct AppointmentView: View {
                 ScrollView {
                     LazyVGrid(columns: Array(repeating: .init(.flexible(), spacing: 10), count: 2), spacing: 15) {
                         ForEach(timeSlots, id: \.self) { time in
-                            let isSelected = selectedTime?.formatted(date: .omitted, time: .shortened) == time.formatted(date: .omitted, time: .shortened)
+                            let isSelected = selectedTime == time
                             let calendar = Calendar.current
                             let isToday = calendar.isDateInToday(selectedDate)
                             let currentHour = calendar.component(.hour, from: Date())
@@ -98,7 +99,9 @@ struct AppointmentView: View {
                 
                 // Book button
                 Button(action: {
-                    showReviewAndPay = true
+                    if selectedTime != nil {
+                        navigateToReviewAndPay = true
+                    }
                 }) {
                     Text("Book Appointment")
                         .fontWeight(.medium)
@@ -111,14 +114,20 @@ struct AppointmentView: View {
                 .disabled(selectedTime == nil)
                 .padding()
             }
-            .navigationTitle("Book Appointment")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarItems(leading: Button("Cancel") { dismiss() })
-            .sheet(isPresented: $showReviewAndPay) {
-                if let time = selectedTime {
-                    ReviewAndPayView(doctor: doctor, appointmentDate: selectedDate, appointmentTime: time)
-                }
+            
+            NavigationLink(
+                destination: ReviewAndPayView(
+                    doctor: doctor,
+                    appointmentDate: selectedDate,
+                    appointmentTime: selectedTime ?? Date()
+                ),
+                isActive: $navigateToReviewAndPay
+            ) {
+                EmptyView()
             }
+            .opacity(0)
         }
+        .navigationTitle("Book Appointment")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

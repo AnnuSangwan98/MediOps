@@ -24,6 +24,7 @@ class HospitalAdminProfileViewModel: ObservableObject {
     @Published var errorMessage: String?
     
     private let supabase = SupabaseController.shared
+    private let adminController = AdminController.shared
     
     init() {
         fetchAdminProfile()
@@ -145,44 +146,52 @@ class HospitalAdminProfileViewModel: ObservableObject {
         }
     }
     
-    func resetPassword(currentPassword: String, newPassword: String) async -> Result<Void, Error> {
+    func resetPassword(currentPassword: String, newPassword: String, useForceReset: Bool = false) async -> Result<Void, Error> {
         guard let admin = admin else { 
             return .failure(NSError(domain: "AdminProfile", code: 1, userInfo: [NSLocalizedDescriptionKey: "Admin profile not loaded"]))
         }
         
         do {
-            // First verify the current password
-            let admins = try await supabase.select(
-                from: "hospital_admins",
-                where: "id",
-                equals: admin.id
-            )
+            print("PROFILE: Attempting to reset password for admin ID: \(admin.id)")
+            print("PROFILE: Using force reset: \(useForceReset)")
             
-            guard let adminData = admins.first,
-                  let storedPassword = adminData["password"] as? String else {
-                return .failure(NSError(domain: "AdminProfile", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not retrieve password information"]))
+            if useForceReset {
+                // Use the emergency override reset (doesn't require current password)
+                try await adminController.forceResetHospitalAdminPassword(
+                    adminId: admin.id, 
+                    newPassword: newPassword
+                )
+                print("PROFILE: Force password reset successful")
+            } else {
+                // Use the standard reset (requires current password)
+                try await adminController.resetHospitalAdminPassword(
+                    adminId: admin.id,
+                    currentPassword: currentPassword,
+                    newPassword: newPassword
+                )
+                print("PROFILE: Standard password reset successful")
             }
             
-            // Verify current password matches
-            if storedPassword != currentPassword {
-                return .failure(NSError(domain: "AdminProfile", code: 3, userInfo: [NSLocalizedDescriptionKey: "Current password is incorrect"]))
-            }
-            
-            // Update the password
-            let updateData: [String: Any] = [
-                "password": newPassword,
-                "updated_at": ISO8601DateFormatter().string(from: Date())
-            ]
-            
-            try await supabase.update(
-                table: "hospital_admins",
-                id: admin.id,
-                data: updateData
-            )
-            
+            print("PROFILE: Password successfully reset for admin ID: \(admin.id)")
             return .success(())
         } catch {
-            print("Password reset error: \(error.localizedDescription)")
+            print("PROFILE ERROR: Password reset failed: \(error.localizedDescription)")
+            
+            // Extract more specific error messages from AdminError if available
+            if let adminError = error as? AdminError {
+                let errorMessage: String
+                switch adminError {
+                case .invalidPassword(let message):
+                    errorMessage = message
+                case .adminNotFound:
+                    errorMessage = "Admin account not found"
+                default:
+                    errorMessage = adminError.errorDescription ?? error.localizedDescription
+                }
+                
+                return .failure(NSError(domain: "AdminProfile", code: 4, userInfo: [NSLocalizedDescriptionKey: errorMessage]))
+            }
+            
             return .failure(error)
         }
     }
@@ -210,6 +219,8 @@ struct HospitalAdminProfileView: View {
     @State private var showResetSuccess = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var successMessage = "Your password has been successfully reset."
+    @State private var useForceReset = true // Temporarily set to true for emergency use
     
     var body: some View {
         NavigationStack {
@@ -571,7 +582,11 @@ struct HospitalAdminProfileView: View {
             }
             
             // Reset password
-            let result = await viewModel.resetPassword(currentPassword: currentPassword, newPassword: newPassword)
+            let result = await viewModel.resetPassword(
+                currentPassword: currentPassword, 
+                newPassword: newPassword,
+                useForceReset: useForceReset // Use the force reset option
+            )
             
             await MainActor.run {
                 showResetPasswordSheet = false
@@ -582,11 +597,23 @@ struct HospitalAdminProfileView: View {
                     currentPassword = ""
                     newPassword = ""
                     confirmPassword = ""
+                    successMessage = "Your password has been successfully reset and updated in all systems."
                     showResetSuccess = true
                     
                 case .failure(let error):
                     showError = true
-                    errorMessage = "Failed to reset password: \(error.localizedDescription)"
+                    // Check for common error messages and provide more user-friendly feedback
+                    let errorString = error.localizedDescription
+                    if errorString.contains("Current password is incorrect") {
+                        errorMessage = "The current password you entered is incorrect. Please try again."
+                    } else if errorString.contains("already in use") {
+                        errorMessage = "This password is already in use. Please choose a different password."
+                    } else if errorString.contains("meet the required format") || 
+                              errorString.contains("meet security requirements") {
+                        errorMessage = "Your password does not meet the required format. It must contain at least 8 characters, one uppercase letter, one lowercase letter, one digit, and one special character (@$!%*?&)."
+                    } else {
+                        errorMessage = "Failed to reset password: \(error.localizedDescription)"
+                    }
                 }
             }
         }

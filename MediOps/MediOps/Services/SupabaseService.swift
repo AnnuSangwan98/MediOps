@@ -46,10 +46,57 @@ class SupabaseController {
     /// Generic method to insert data into a table
     func insert<T: Encodable>(into table: String, data: T) async throws {
         print("SUPABASE: Inserting data into \(table)")
+        
+        // For debugging purposes, print out the data structure for lab_admins
+        if table == "lab_admins" {
+            do {
+                let jsonData = try JSONEncoder().encode(data)
+                if let jsonString = String(data: jsonData, encoding: .utf8) {
+                    print("SUPABASE DEBUG - lab_admins data: \(jsonString)")
+                }
+            } catch {
+                print("SUPABASE WARNING: Unable to encode lab_admins data for debugging: \(error.localizedDescription)")
+            }
+        }
+        
+        do {
         try await client.database
             .from(table)
             .insert(data)
             .execute()
+            print("SUPABASE: Successfully inserted data into \(table)")
+        } catch {
+            print("SUPABASE ERROR: Failed to insert into \(table): \(error.localizedDescription)")
+            
+            // For more detailed error inspection for lab_admins insertions
+            if table == "lab_admins" {
+                // Try to extract more detailed error information
+                if let supabaseError = error as? PostgrestError {
+                    let errorMessage = supabaseError.message ?? "No detailed message"
+                    let errorCode = supabaseError.code ?? "No error code"
+                    
+                    print("SUPABASE DETAILED ERROR: \(errorMessage)")
+                    print("SUPABASE ERROR CODE: \(errorCode)")
+                    
+                    // Check for common constraints
+                    if errorMessage.contains("violates check constraint") {
+                        if errorMessage.contains("lab_admins_id_format") {
+                            throw SupabaseError.invalidData("Lab admin ID must be in the format LAB followed by 3 digits")
+                        } else if errorMessage.contains("lab_admins_contact_number_format") {
+                            throw SupabaseError.invalidData("Contact number must be exactly 10 digits")
+                        } else if errorMessage.contains("lab_admins_password_format") {
+                            throw SupabaseError.invalidData("Password must be at least 8 characters with at least one uppercase letter, one lowercase letter, one digit, and one special character")
+                        } else if errorMessage.contains("lab_admins_department_check") {
+                            throw SupabaseError.invalidData("Department must be 'Pathology & Laboratory'")
+                        }
+                    } else if errorMessage.contains("duplicate key") && errorMessage.contains("email") {
+                        throw SupabaseError.invalidData("Email address is already in use")
+                    }
+                }
+            }
+            
+            throw error
+        }
     }
     
     /// Attempt to rollback a previously inserted record if a subsequent operation fails
@@ -249,11 +296,28 @@ class SupabaseController {
     /// Generic method to delete data from a table
     func delete(from table: String, where column: String, equals value: String) async throws {
         print("SUPABASE: Deleting from \(table) where \(column) = \(value)")
-        try await client.database
+        do {
+            let result = try await client.database
             .from(table)
             .delete()
             .eq(column, value: value)
             .execute()
+            
+            // Add logging about the deletion result
+            print("SUPABASE: Delete operation completed successfully")
+            print("SUPABASE: Response status: \(result.status)")
+            
+            // Check if any rows were affected (deleted)
+            if let count = result.count, count > 0 {
+                print("SUPABASE: Successfully deleted \(count) records")
+            } else {
+                print("SUPABASE WARNING: Delete operation completed but no records were affected")
+            }
+        } catch {
+            print("SUPABASE ERROR: Delete operation failed: \(error.localizedDescription)")
+            print("SUPABASE ERROR DETAILS: \(String(describing: error))")
+            throw error
+        }
     }
     
     // MARK: - Helper Methods
@@ -1062,12 +1126,22 @@ extension SupabaseController {
             CREATE TABLE IF NOT EXISTS public.pat_reports (
               id uuid not null default gen_random_uuid(),
               patient_name text not null,
-              patient_id text not null,
+              patient_id character varying(10) not null,
               summary text null,
               file_url text not null,
               uploaded_at timestamp with time zone not null default timezone('utc'::text, now()),
-              constraint pat_reports_pkey primary key (id)
+              lab_id character varying(255) null,
+              constraint pat_reports_pkey primary key (id),
+              constraint fk_lab_id foreign KEY (lab_id) references lab_admins (id) on delete CASCADE,
+              constraint fk_patient_id foreign KEY (patient_id) references patients (patient_id) on delete CASCADE
             ) TABLESPACE pg_default;
+            
+            CREATE INDEX IF NOT EXISTS idx_pat_reports_lab_id ON public.pat_reports USING btree (lab_id) TABLESPACE pg_default;
+            
+            CREATE INDEX IF NOT EXISTS idx_pat_reports_patient_id ON public.pat_reports USING btree (patient_id) TABLESPACE pg_default;
+            
+            CREATE TRIGGER set_patient_name BEFORE INSERT ON pat_reports FOR EACH ROW
+            EXECUTE FUNCTION fetch_patient_name();
             """
             
             // Execute the SQL through Supabase
@@ -1090,7 +1164,7 @@ extension SupabaseController {
                 throw SupabaseError.requestFailed("Failed to create pat_reports table")
             }
             
-            print("Successfully created pat_reports table")
+            print("Successfully created pat_reports table with lab_id field and constraints")
         }
     }
     
@@ -1142,6 +1216,72 @@ extension SupabaseController {
         } catch {
             print("SUPABASE ERROR: Failed to fetch data from \(table): \(error.localizedDescription)")
             throw error
+        }
+    }
+    
+    // Update hospital password with special handling for constraints
+    func updateHospitalPassword(hospitalId: String, newPassword: String) async throws {
+        print("SUPABASE: Updating hospital password for ID: \(hospitalId)")
+        
+        // First check if the hospital exists
+        let hospitals = try await select(
+            from: "hospitals",
+            where: "id",
+            equals: hospitalId
+        )
+        
+        guard !hospitals.isEmpty else {
+            print("SUPABASE ERROR: Hospital not found with ID: \(hospitalId)")
+            throw SupabaseError.tableNotFound("Hospital not found with ID: \(hospitalId)")
+        }
+        
+        // Prepare the update data
+        let updateData: [String: Any] = [
+            "password": newPassword,
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        // Update the hospital record
+        do {
+            let url = URL(string: "\(supabaseURL)/rest/v1/hospitals?id=eq.\(hospitalId)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.addValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            request.addValue("return=representation", forHTTPHeaderField: "Prefer")
+            
+            request.httpBody = try JSONSerialization.data(withJSONObject: updateData)
+            
+            let (data, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw SupabaseError.invalidResponse
+            }
+            
+            if httpResponse.statusCode >= 400 {
+                // Parse the error message
+                if let errorStr = String(data: data, encoding: .utf8) {
+                    print("SUPABASE ERROR: Failed to update hospital password - \(errorStr)")
+                    
+                    // Check for constraint violations
+                    if errorStr.contains("violates unique constraint") && errorStr.contains("hospitals_password_key") {
+                        throw SupabaseError.invalidData("This password is already in use by another hospital")
+                    } else if errorStr.contains("violates check constraint") {
+                        throw SupabaseError.invalidData("Password does not meet the required format")
+                    }
+                }
+                
+                throw SupabaseError.requestFailed("Failed to update hospital password, status: \(httpResponse.statusCode)")
+            }
+            
+            print("SUPABASE: Successfully updated hospital password for ID: \(hospitalId)")
+        } catch let error as SupabaseError {
+            print("SUPABASE ERROR: Hospital password update failed - \(error.localizedDescription)")
+            throw error
+        } catch {
+            print("SUPABASE ERROR: Unexpected error updating hospital password - \(error.localizedDescription)")
+            throw SupabaseError.requestFailed("Failed to update hospital password: \(error.localizedDescription)")
         }
     }
 }

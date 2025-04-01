@@ -9,7 +9,172 @@ class AdminController {
     
     private init() {}
     
+    // MARK: - Diagnostic Methods
+    
+    /// Gets diagnostic information about the database connection
+    func getDatabaseDiagnosticInfo() async throws -> [String: Any] {
+        var diagnosticInfo: [String: Any] = [:]
+        
+        // Add Supabase URL to diagnostics
+        diagnosticInfo["supabaseURL"] = supabase.supabaseURL.absoluteString
+        
+        // Get count of lab admins
+        let labAdminCount = try await supabase.select(from: "lab_admins", columns: "count(*)")
+        if let firstResult = labAdminCount.first, let count = firstResult["count"] as? Int {
+            diagnosticInfo["totalLabAdmins"] = count
+        }
+        
+        return diagnosticInfo
+    }
+    
+    /// Check if lab admins exist for a specific hospital ID
+    func checkLabAdminsForHospital(hospitalId: String) async throws -> [String: Any] {
+        var result: [String: Any] = [:]
+        
+        // Try direct query for matching lab admins
+        let directQuery = try await supabase.select(
+            from: "lab_admins",
+            where: "hospital_id",
+            equals: hospitalId
+        )
+        
+        result["hospitalId"] = hospitalId
+        result["count"] = directQuery.count
+        result["recordsExist"] = directQuery.count > 0
+        
+        return result
+    }
+    
     // MARK: - Hospital Admin Management
+    
+    /// Force reset a hospital admin's password without requiring the current password (admin override)
+    /// Use this only for emergency cases when a user has forgotten their password
+    func forceResetHospitalAdminPassword(adminId: String, newPassword: String) async throws {
+        print("ADMIN: Force resetting password for admin ID: \(adminId)")
+        
+        // 1. Find the admin record and get hospital ID
+        let admins = try await supabase.select(
+            from: "hospital_admins",
+            where: "id",
+            equals: adminId
+        )
+        
+        guard let adminData = admins.first,
+              let hospitalId = adminData["hospital_id"] as? String else {
+            print("ADMIN ERROR: Could not retrieve admin data or hospital ID")
+            throw AdminError.adminNotFound
+        }
+        
+        // 2. Validate the new password
+        if newPassword.count < 8 {
+            throw AdminError.invalidPassword(message: "Password must be at least 8 characters long")
+        }
+        
+        let passwordRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$"
+        let passwordPredicate = NSPredicate(format: "SELF MATCHES %@", passwordRegex)
+        
+        if !passwordPredicate.evaluate(with: newPassword) {
+            throw AdminError.invalidPassword(message: "Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
+        }
+        
+        // 3. Update the password in the hospital_admins table
+        let updateData: [String: Any] = [
+            "password": newPassword,
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        print("ADMIN: Updating password in hospital_admins table")
+        try await supabase.update(
+            table: "hospital_admins",
+            id: adminId,
+            data: updateData
+        )
+        
+        // 4. Update the password in the hospitals table
+        print("ADMIN: Updating password in hospitals table for hospital ID: \(hospitalId)")
+        try await supabase.updateHospitalPassword(hospitalId: hospitalId, newPassword: newPassword)
+        
+        print("ADMIN: Force password reset successful for admin ID: \(adminId)")
+    }
+    
+    /// Reset a hospital admin's password, updating both hospital_admins and hospitals tables
+    func resetHospitalAdminPassword(adminId: String, currentPassword: String, newPassword: String) async throws {
+        print("ADMIN: Resetting password for admin ID: \(adminId)")
+        print("ADMIN DEBUG: Current password length: \(currentPassword.count)")
+        
+        // 1. First verify the current password is correct
+        let admins = try await supabase.select(
+            from: "hospital_admins",
+            where: "id",
+            equals: adminId
+        )
+        
+        guard let adminData = admins.first,
+              let storedPassword = adminData["password"] as? String,
+              let hospitalId = adminData["hospital_id"] as? String else {
+            print("ADMIN ERROR: Could not retrieve admin password or hospital ID")
+            throw AdminError.adminNotFound
+        }
+        
+        print("ADMIN DEBUG: Retrieved admin details - Name: \(adminData["admin_name"] as? String ?? "unknown")")
+        print("ADMIN DEBUG: Stored password length: \(storedPassword.count)")
+        print("ADMIN DEBUG: Stored password first 3 chars: \(String(storedPassword.prefix(3)))")
+        print("ADMIN DEBUG: Input password first 3 chars: \(String(currentPassword.prefix(3)))")
+        
+        // Add more detailed debug info about the password fields
+        if storedPassword.isEmpty {
+            print("ADMIN DEBUG: WARNING - Stored password is empty!")
+        }
+        
+        if currentPassword.isEmpty {
+            print("ADMIN DEBUG: WARNING - Input current password is empty!")
+        }
+        
+        // Check for whitespace or other invisible characters
+        let storedPasswordHasWhitespace = storedPassword.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
+        let currentPasswordHasWhitespace = currentPassword.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
+        
+        print("ADMIN DEBUG: Stored password has whitespace: \(storedPasswordHasWhitespace)")
+        print("ADMIN DEBUG: Current password has whitespace: \(currentPasswordHasWhitespace)")
+        
+        // Verify current password matches
+        if storedPassword != currentPassword {
+            print("ADMIN ERROR: Current password is incorrect")
+            print("ADMIN DEBUG: Password comparison failed - input: '\(currentPassword)' vs stored: '\(storedPassword)'")
+            throw AdminError.invalidPassword(message: "Current password is incorrect")
+        }
+        
+        // Validate the new password
+        if newPassword.count < 8 {
+            throw AdminError.invalidPassword(message: "Password must be at least 8 characters long")
+        }
+        
+        let passwordRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$"
+        let passwordPredicate = NSPredicate(format: "SELF MATCHES %@", passwordRegex)
+        
+        if !passwordPredicate.evaluate(with: newPassword) {
+            throw AdminError.invalidPassword(message: "Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
+        }
+        
+        // 2. Update the password in the hospital_admins table
+        let updateData: [String: Any] = [
+            "password": newPassword,
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        print("ADMIN: Updating password in hospital_admins table")
+        try await supabase.update(
+            table: "hospital_admins",
+            id: adminId,
+            data: updateData
+        )
+        
+        // 3. Update the password in the hospitals table
+        print("ADMIN: Updating password in hospitals table for hospital ID: \(hospitalId)")
+        try await supabase.updateHospitalPassword(hospitalId: hospitalId, newPassword: newPassword)
+        
+        print("ADMIN: Password reset successful for admin ID: \(adminId)")
+    }
     
     /// Register a new hospital admin
     func registerHospitalAdmin(email: String, password: String, name: String, hospitalName: String) async throws -> (HospitalAdmin, String) {
@@ -433,22 +598,79 @@ class AdminController {
         // Verify that the hospital admin exists and get their correct ID
         var verifiedHospitalId = hospitalAdminId
         
+        // Basic validation for empty hospital ID
+        if verifiedHospitalId.isEmpty {
+            print("CREATE LAB ADMIN ERROR: Empty hospital ID provided")
+            throw AdminError.invalidData("Hospital ID cannot be empty")
+        }
+        
         // Try to verify hospital admin exists
         do {
+            // Get hospital details to verify it exists
             let hospitalAdmin = try await getHospitalAdmin(id: hospitalAdminId)
             // Use the verified hospital_id from the admin record
             verifiedHospitalId = hospitalAdmin.id
             print("CREATE LAB ADMIN: Verified hospital admin ID: \(verifiedHospitalId)")
         } catch {
             print("CREATE LAB ADMIN WARNING: Could not verify hospital admin ID: \(error.localizedDescription)")
-            // Continue with the provided ID, but log the warning
+            
+            // Since we couldn't verify the hospital admin, let's try to check if the hospital exists directly
+            do {
+                _ = try await getHospital(id: hospitalAdminId)
+                print("CREATE LAB ADMIN: Hospital exists with ID: \(hospitalAdminId), using this ID directly")
+                verifiedHospitalId = hospitalAdminId // Use the original ID if hospital exists
+            } catch {
+                print("CREATE LAB ADMIN ERROR: Could not verify hospital either: \(error.localizedDescription)")
+                // Now we throw an error since we couldn't verify the hospital ID through any method
+                throw AdminError.invalidData("Invalid hospital ID. Please ensure you're using a valid hospital identifier.")
+            }
         }
         
         // Generate a LAB-prefixed ID
-        let labAdminId = "LAB" + String(format: "%03d", Int.random(in: 1...999))
+        // Ensure it's exactly 6 characters (LAB followed by 3 digits)
+        let randomNumber = Int.random(in: 1...999)
+        let labAdminId = "LAB" + String(format: "%03d", randomNumber) // Ensures 3 digits with leading zeros
+        
+        // Double-check that the generated ID matches the required format
+        let idFormatRegex = "^LAB[0-9]{3}$"
+        let isValidId = labAdminId.range(of: idFormatRegex, options: .regularExpression) != nil
+        if !isValidId {
+            print("CREATE LAB ADMIN ERROR: Generated ID '\(labAdminId)' does not match required format")
+            throw AdminError.invalidFormat("Invalid lab admin ID format. Generated ID does not match required pattern.")
+        } else {
+            print("CREATE LAB ADMIN: Generated valid ID: \(labAdminId)")
+        }
+        
         let now = Date()
         let dateFormatter = ISO8601DateFormatter()
         let createdAt = dateFormatter.string(from: now)
+        
+        // Validate data against table constraints
+        
+        // 1. Ensure contact number follows the format constraint (10 digits)
+        let contactNumberToUse = contactNumber.isEmpty ? "" : contactNumber
+        if !contactNumberToUse.isEmpty {
+            let isValid = contactNumberToUse.range(of: "^[0-9]{10}$", options: .regularExpression) != nil
+            if !isValid {
+                throw AdminError.invalidContactNumber("Contact number must be 10 digits")
+            }
+        }
+        
+        // 2. Validate the ID format
+        let idFormatValid = labAdminId.range(of: "^LAB[0-9]{3}$", options: .regularExpression) != nil
+        if !idFormatValid {
+            throw AdminError.invalidFormat("Invalid lab admin ID format")
+        }
+        
+        // 3. Ensure password meets requirements
+        // At least 8 characters with at least one uppercase, one lowercase, one digit, and one special character
+        if password.count < 8 || 
+           password.range(of: ".*[A-Z].*", options: .regularExpression) == nil ||
+           password.range(of: ".*[a-z].*", options: .regularExpression) == nil ||
+           password.range(of: ".*[0-9].*", options: .regularExpression) == nil ||
+           password.range(of: ".*[@$!%*?&].*", options: .regularExpression) == nil {
+            throw AdminError.invalidPassword(message: "Password does not meet security requirements")
+        }
         
         // Create lab admin record directly (no user record)
         let labAdminData: [String: String] = [
@@ -457,14 +679,63 @@ class AdminController {
             "password": password,
             "name": name,
             "email": email,
-            "contact_number": contactNumber,
-            "department": department,
+            "contact_number": contactNumberToUse,
+            "department": "Pathology & Laboratory", // Always use the fixed value to match constraint
             "Address": "", // Default empty address
             "created_at": createdAt,
             "updated_at": createdAt
         ]
         
+        // Validate data against table constraints one more time before submission
+        print("CREATE LAB ADMIN: Validating lab admin data before submission")
+        print("- ID: \(labAdminId) (format: \(labAdminId.range(of: "^LAB[0-9]{3}$", options: .regularExpression) != nil ? "✓" : "✗"))")
+        print("- Hospital ID: \(verifiedHospitalId)")
+        print("- Name: \(name)")
+        print("- Email: \(email)")
+        print("- Contact number: \(contactNumberToUse.isEmpty ? "[empty]" : contactNumberToUse) (format: \(contactNumberToUse.isEmpty || contactNumberToUse.range(of: "^[0-9]{10}$", options: .regularExpression) != nil ? "✓" : "✗"))")
+        print("- Password: [hidden] (length: \(password.count), meets requirements: \(password.count >= 8 && password.range(of: ".*[A-Z].*", options: .regularExpression) != nil && password.range(of: ".*[a-z].*", options: .regularExpression) != nil && password.range(of: ".*[0-9].*", options: .regularExpression) != nil && password.range(of: ".*[@$!%*?&].*", options: .regularExpression) != nil ? "✓" : "✗"))")
+        print("- Department: \(labAdminData["department"] ?? "") (required: 'Pathology & Laboratory')")
+        
+        do {
         try await supabase.insert(into: "lab_admins", data: labAdminData)
+            print("CREATE LAB ADMIN: Successfully inserted data into lab_admins table")
+        } catch {
+            print("CREATE LAB ADMIN ERROR: Failed to insert lab admin: \(error.localizedDescription)")
+            
+            // If there's a specific insert error, provide a more helpful message
+            let errorDesc = error.localizedDescription.lowercased()
+            if errorDesc.contains("duplicate") && errorDesc.contains("email") {
+                throw AdminError.emailAlreadyExists("Email address already in use")
+            } else if errorDesc.contains("violates") && errorDesc.contains("constraint") {
+                if errorDesc.contains("lab_admins_hospital_id_fkey") {
+                    // Add more diagnostic information for hospital ID issues
+                    print("CREATE LAB ADMIN DIAGNOSTIC: Hospital ID verification failed. Used ID: \(verifiedHospitalId)")
+                    print("CREATE LAB ADMIN DIAGNOSTIC: Original hospital ID from request: \(hospitalAdminId)")
+                    
+                    // Try to get additional details about the hospital
+                    do {
+                        _ = try await getHospital(id: verifiedHospitalId)
+                        print("CREATE LAB ADMIN DIAGNOSTIC: Strange - hospital lookup succeeded but constraint failed")
+                    } catch {
+                        print("CREATE LAB ADMIN DIAGNOSTIC: Hospital lookup also failed: \(error.localizedDescription)")
+                    }
+                    
+                    throw AdminError.invalidData("Invalid hospital ID: \(verifiedHospitalId). The referenced hospital does not exist in the database.")
+                } else if errorDesc.contains("lab_admins_id_format") {
+                    throw AdminError.invalidFormat("Invalid lab admin ID format: \(labAdminId)")
+                } else if errorDesc.contains("lab_admins_contact_number_format") {
+                    throw AdminError.invalidContactNumber("Invalid contact number format: \(contactNumberToUse)")
+                } else if errorDesc.contains("lab_admins_password_format") {
+                    throw AdminError.invalidPassword(message: "Password does not meet security requirements")
+                } else if errorDesc.contains("lab_admins_department_check") {
+                    throw AdminError.invalidFormat("Department must be 'Pathology & Laboratory'")
+                } else {
+                    throw AdminError.invalidFormat("Database constraint violation: \(error.localizedDescription)")
+                }
+            } else {
+                throw error
+            }
+        }
         
         // Return lab admin object with a dummy token
         let labAdmin = LabAdmin(
@@ -472,8 +743,8 @@ class AdminController {
             hospitalId: verifiedHospitalId,
             name: name,
             email: email,
-            contactNumber: contactNumber,
-            department: department,
+            contactNumber: contactNumberToUse,
+            department: "Pathology & Laboratory", // Fixed to match the constraint
             address: "",
             createdAt: now,
             updatedAt: now
@@ -502,6 +773,12 @@ class AdminController {
     func getLabAdmins(hospitalAdminId: String) async throws -> [LabAdmin] {
         print("GET LAB ADMINS: Retrieving lab admins for hospital ID: \(hospitalAdminId)")
         
+        // Basic validation for hospital ID
+        if hospitalAdminId.isEmpty {
+            print("GET LAB ADMINS ERROR: Empty hospital ID provided")
+            throw AdminError.invalidData("Hospital ID cannot be empty")
+        }
+        
         // Verify that the hospital admin exists
         var verifiedHospitalId = hospitalAdminId
         
@@ -513,10 +790,22 @@ class AdminController {
             print("GET LAB ADMINS: Verified hospital admin ID: \(verifiedHospitalId)")
         } catch {
             print("GET LAB ADMINS WARNING: Could not verify hospital admin ID: \(error.localizedDescription)")
+            
+            // Since we couldn't verify the hospital admin, let's try to check if the hospital exists directly
+            do {
+                _ = try await getHospital(id: hospitalAdminId)
+                print("GET LAB ADMINS: Hospital exists with ID: \(hospitalAdminId), using this ID directly")
+                verifiedHospitalId = hospitalAdminId // Use the original ID if hospital exists
+            } catch {
+                print("GET LAB ADMINS WARNING: Could not verify hospital either: \(error.localizedDescription)")
             // Continue with the provided ID, but log the warning
+            }
         }
         
+        print("GET LAB ADMINS: Final hospital ID for query: \(verifiedHospitalId)")
+        
         // Fetch lab admins with the verified ID
+        do {
         let labAdmins = try await supabase.select(
             from: "lab_admins",
             where: "hospital_id",
@@ -528,22 +817,35 @@ class AdminController {
         // If no lab admins are found, it's not necessarily an error, could just be an empty list
         if labAdmins.isEmpty {
             print("GET LAB ADMINS: No lab admins found for hospital ID: \(verifiedHospitalId)")
+                
+                // Check if the lab_admins table exists and has any records at all
+                let allLabAdmins = try await supabase.select(from: "lab_admins", columns: "count(*)")
+                if let firstResult = allLabAdmins.first, let count = firstResult["count"] as? Int {
+                    print("GET LAB ADMINS INFO: Total lab admins in database: \(count)")
+                }
+                
             return []
         }
         
         // Parse each lab admin record
         var parsedLabAdmins: [LabAdmin] = []
-        for labAdminData in labAdmins {
+            for (index, labAdminData) in labAdmins.enumerated() {
             do {
+                    print("GET LAB ADMINS: Processing lab admin \(index + 1) of \(labAdmins.count)")
                 let labAdmin = try parseLabAdminData(labAdminData)
+                    print("GET LAB ADMINS: Successfully parsed lab admin: ID=\(labAdmin.id), Name=\(labAdmin.name)")
                 parsedLabAdmins.append(labAdmin)
             } catch {
-                print("GET LAB ADMINS WARNING: Failed to parse lab admin: \(error.localizedDescription)")
+                    print("GET LAB ADMINS WARNING: Failed to parse lab admin \(index + 1): \(error.localizedDescription)")
                 // Continue with other records
             }
         }
         
         return parsedLabAdmins
+        } catch {
+            print("GET LAB ADMINS ERROR: Failed to fetch lab admins: \(error.localizedDescription)")
+            throw error
+        }
     }
     
     /// Update lab admin
@@ -583,8 +885,47 @@ class AdminController {
     func deleteLabAdmin(id: String) async throws {
         print("DELETE LAB ADMIN: Attempting to delete lab admin with ID: \(id)")
         
-        // First try direct deletion
+        // First verify if the lab admin exists
         do {
+            let verifyResult = try await verifyLabAdminExists(id: id)
+            if !(verifyResult["exists"] as? Bool ?? false) {
+                print("DELETE LAB ADMIN ERROR: Lab admin with ID \(id) does not exist")
+                throw AdminError.labAdminNotFound
+            }
+            
+            if let name = verifyResult["name"] as? String {
+                print("DELETE LAB ADMIN: Confirmed lab admin exists - Name: \(name)")
+            }
+        } catch {
+            if let adminError = error as? AdminError {
+                throw adminError
+            } else {
+                print("DELETE LAB ADMIN WARNING: Verification check failed: \(error.localizedDescription)")
+                print("DELETE LAB ADMIN: Continuing with deletion attempt anyway")
+            }
+        }
+        
+        // Check for constraints that might prevent deletion
+        do {
+            let constraintCheck = try await checkLabAdminDeletionConstraints(id: id)
+            if !(constraintCheck["canDelete"] as? Bool ?? false) {
+                if let message = constraintCheck["message"] as? String {
+                    print("DELETE LAB ADMIN ERROR: Constraint check failed - \(message)")
+                    throw AdminError.customError(message)
+                } else {
+                    throw AdminError.customError("Cannot delete lab admin due to database constraints")
+                }
+            }
+        } catch let adminError as AdminError {
+            throw adminError
+        } catch {
+            print("DELETE LAB ADMIN WARNING: Constraint check failed: \(error.localizedDescription)")
+            print("DELETE LAB ADMIN: Continuing with deletion attempt anyway")
+        }
+        
+        // Try direct deletion
+        do {
+            print("DELETE LAB ADMIN: Attempting direct deletion with ID: \(id)")
             try await supabase.delete(
                 from: "lab_admins",
                 where: "id",
@@ -595,12 +936,94 @@ class AdminController {
         } catch {
             print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
             
-            // If there are foreign key constraints preventing deletion,
-            // we could implement a soft delete by updating a status field
-            // (if such a field exists in the lab_admins table)
+            // Check if this is a constraint violation (possibly foreign key constraint)
+            let errorMessage = error.localizedDescription.lowercased()
+            if errorMessage.contains("violates") && errorMessage.contains("constraint") {
+                print("DELETE LAB ADMIN WARNING: Constraint violation detected. Attempting soft delete if possible.")
+                
+                // Try to implement a soft delete by updating a status field if it exists
+                do {
+                    // Create a struct for the status update
+                    struct LabAdminStatusUpdate: Encodable {
+                        let status: String
+                        let updated_at: String
+                    }
+                    
+                    // Try to update the status to "inactive" or "deleted" or similar
+                    let possibleStatuses = ["inactive", "deleted", "disabled", "removed"]
+                    
+                    for status in possibleStatuses {
+                        do {
+                            print("DELETE LAB ADMIN: Trying soft delete with status: \(status)")
+                            let updateData = LabAdminStatusUpdate(
+                                status: status,
+                                updated_at: ISO8601DateFormatter().string(from: Date())
+                            )
+                            
+                            try await supabase.update(
+                                table: "lab_admins",
+                                data: updateData,
+                                where: "id",
+                                equals: id
+                            )
+                            
+                            print("DELETE LAB ADMIN: Successfully performed soft delete with status: \(status)")
+                            return
+                        } catch {
+                            print("DELETE LAB ADMIN: Soft delete failed with status \(status): \(error.localizedDescription)")
+                            // Continue trying other statuses
+                        }
+                    }
+                    
+                    // If soft delete with status field fails, try another approach
+                    // Try adding "_deleted" to the email to allow re-registration with same email
+                    do {
+                        print("DELETE LAB ADMIN: Attempting email modification as soft delete")
+                        
+                        // Get the current lab admin data
+                        let labAdmins = try await supabase.select(
+                            from: "lab_admins",
+                            where: "id",
+                            equals: id
+                        )
+                        
+                        if let labAdmin = labAdmins.first, let email = labAdmin["email"] as? String {
+                            // Create a struct for the email update
+                            struct EmailUpdate: Encodable {
+                                let email: String
+                                let updated_at: String
+                            }
+                            
+                            let timestamp = Int(Date().timeIntervalSince1970)
+                            let newEmail = "\(email)_deleted_\(timestamp)"
+                            
+                            let updateData = EmailUpdate(
+                                email: newEmail,
+                                updated_at: ISO8601DateFormatter().string(from: Date())
+                            )
+                            
+                            try await supabase.update(
+                                table: "lab_admins",
+                                data: updateData,
+                                where: "id",
+                                equals: id
+                            )
+                            
+                            print("DELETE LAB ADMIN: Successfully performed soft delete by email modification")
+                            return
+                        }
+                    } catch {
+                        print("DELETE LAB ADMIN: Email modification failed: \(error.localizedDescription)")
+                    }
+                } catch {
+                    print("DELETE LAB ADMIN ERROR: All soft delete attempts failed: \(error.localizedDescription)")
+                }
+            }
             
-            // For now, just rethrow the error
-            throw error
+            // If we got here, neither hard delete nor soft delete worked
+            let details = "Failed to delete lab admin with ID: \(id). Error: \(error.localizedDescription)"
+            print("DELETE LAB ADMIN ERROR: \(details)")
+            throw AdminError.customError(details)
         }
     }
     
@@ -812,17 +1235,17 @@ class AdminController {
         guard let id = data["id"] as? String,
               let hospitalId = data["hospital_id"] as? String else {
             print("CRITICAL ERROR: Missing id or hospital_id fields")
-            throw AdminError.invalidData
+            throw AdminError.invalidData("Missing id or hospital_id fields")
         }
         
         guard let adminName = data["admin_name"] as? String else {
             print("CRITICAL ERROR: Missing admin_name field")
-            throw AdminError.invalidData
+            throw AdminError.invalidData("Missing admin_name field")
         }
         
         guard let email = data["email"] as? String else {
             print("CRITICAL ERROR: Missing email field")
-            throw AdminError.invalidData
+            throw AdminError.invalidData("Missing email field")
         }
         
         // Handle date fields with maximum resilience
@@ -934,7 +1357,7 @@ class AdminController {
         // Required fields with fallbacks for more resilience
         guard let id = data["id"] as? String else {
             print("PARSE DOCTOR ERROR: Missing id field")
-            throw AdminError.invalidData
+            throw AdminError.invalidData("Missing id field")
         }
         
         // Optional user_id
@@ -942,17 +1365,17 @@ class AdminController {
                 
         guard let name = data["name"] as? String else {
             print("PARSE DOCTOR ERROR: Missing name field")
-            throw AdminError.invalidData
+            throw AdminError.invalidData("Missing name field")
         }
         
         guard let specialization = data["specialization"] as? String else {
             print("PARSE DOCTOR ERROR: Missing specialization field")
-            throw AdminError.invalidData
+            throw AdminError.invalidData("Missing specialization field")
         }
         
         guard let hospitalId = data["hospital_id"] as? String else {
             print("PARSE DOCTOR ERROR: Missing hospital_id field")
-            throw AdminError.invalidData
+            throw AdminError.invalidData("Missing hospital_id field")
         }
         
         // Handle qualifications with fallback
@@ -1039,21 +1462,113 @@ class AdminController {
     }
     
     private func parseLabAdminData(_ data: [String: Any]) throws -> LabAdmin {
-        guard let id = data["id"] as? String,
-              let hospitalId = data["hospital_id"] as? String,
-              let name = data["name"] as? String,
-              let email = data["email"] as? String,
-              let contactNumber = data["contact_number"] as? String,
-              let department = data["department"] as? String,
-              let createdAtString = data["created_at"] as? String,
-              let updatedAtString = data["updated_at"] as? String else {
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing required fields in lab admin data"])
+        print("PARSE LAB ADMIN: Raw data keys: \(data.keys.joined(separator: ", "))")
+        
+        // Check for required fields first and log any missing ones
+        var missingFields: [String] = []
+        
+        if data["id"] == nil { missingFields.append("id") }
+        if data["hospital_id"] == nil { missingFields.append("hospital_id") }
+        if data["name"] == nil { missingFields.append("name") }
+        if data["email"] == nil { missingFields.append("email") }
+        if data["contact_number"] == nil { missingFields.append("contact_number") }
+        if data["department"] == nil { missingFields.append("department") }
+        if data["created_at"] == nil { missingFields.append("created_at") }
+        if data["updated_at"] == nil { missingFields.append("updated_at") }
+        
+        if !missingFields.isEmpty {
+            let errorMessage = "Missing required fields in lab admin data: \(missingFields.joined(separator: ", "))"
+            print("PARSE LAB ADMIN ERROR: \(errorMessage)")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage])
         }
         
+        // Extract the fields with better error handling
+        guard let id = data["id"] as? String else {
+            print("PARSE LAB ADMIN ERROR: 'id' field is not a string")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'id' field format"])
+        }
+        
+        guard let hospitalId = data["hospital_id"] as? String else {
+            print("PARSE LAB ADMIN ERROR: 'hospital_id' field is not a string")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'hospital_id' field format"])
+        }
+        
+        guard let name = data["name"] as? String else {
+            print("PARSE LAB ADMIN ERROR: 'name' field is not a string")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'name' field format"])
+        }
+        
+        guard let email = data["email"] as? String else {
+            print("PARSE LAB ADMIN ERROR: 'email' field is not a string")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'email' field format"])
+        }
+        
+        guard let contactNumber = data["contact_number"] as? String else {
+            print("PARSE LAB ADMIN ERROR: 'contact_number' field is not a string")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'contact_number' field format"])
+        }
+        
+        guard let department = data["department"] as? String else {
+            print("PARSE LAB ADMIN ERROR: 'department' field is not a string")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'department' field format"])
+        }
+        
+        guard let createdAtString = data["created_at"] as? String else {
+            print("PARSE LAB ADMIN ERROR: 'created_at' field is not a string")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'created_at' field format"])
+        }
+        
+        guard let updatedAtString = data["updated_at"] as? String else {
+            print("PARSE LAB ADMIN ERROR: 'updated_at' field is not a string")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'updated_at' field format"])
+        }
+        
+        // Parse dates with multiple format support
         let dateFormatter = ISO8601DateFormatter()
-        guard let createdAt = dateFormatter.date(from: createdAtString),
-              let updatedAt = dateFormatter.date(from: updatedAtString) else {
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid date format"])
+        var createdAt: Date?
+        var updatedAt: Date?
+        
+        // Try ISO 8601 format first
+        createdAt = dateFormatter.date(from: createdAtString)
+        updatedAt = dateFormatter.date(from: updatedAtString)
+        
+        // If ISO 8601 fails, try PostgreSQL timestamp format
+        if createdAt == nil || updatedAt == nil {
+            let pgFormatter = DateFormatter()
+            pgFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            
+            if createdAt == nil {
+                createdAt = pgFormatter.date(from: createdAtString)
+            }
+            
+            if updatedAt == nil {
+                updatedAt = pgFormatter.date(from: updatedAtString)
+            }
+            
+            // Try another common PostgreSQL format
+            if createdAt == nil || updatedAt == nil {
+                pgFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                
+                if createdAt == nil {
+                    createdAt = pgFormatter.date(from: createdAtString)
+                }
+                
+                if updatedAt == nil {
+                    updatedAt = pgFormatter.date(from: updatedAtString)
+                }
+            }
+        }
+        
+        // If dates still can't be parsed, use current date as fallback
+        let now = Date()
+        if createdAt == nil {
+            print("PARSE LAB ADMIN WARNING: Could not parse created_at date: '\(createdAtString)', using current date")
+            createdAt = now
+        }
+        
+        if updatedAt == nil {
+            print("PARSE LAB ADMIN WARNING: Could not parse updated_at date: '\(updatedAtString)', using current date")
+            updatedAt = now
         }
         
         // Handle address field which might have inconsistent capitalization
@@ -1064,9 +1579,10 @@ class AdminController {
             address = addr
         } else {
             address = ""
+            print("PARSE LAB ADMIN WARNING: No address field found (neither 'Address' nor 'address'), using empty string")
         }
         
-        return LabAdmin(
+        let labAdmin = LabAdmin(
             id: id,
             hospitalId: hospitalId,
             name: name,
@@ -1074,9 +1590,12 @@ class AdminController {
             contactNumber: contactNumber,
             department: department,
             address: address,
-            createdAt: createdAt,
-            updatedAt: updatedAt
+            createdAt: createdAt!,
+            updatedAt: updatedAt!
         )
+        
+        print("PARSE LAB ADMIN: Successfully parsed lab admin with ID: \(id), Name: \(name)")
+        return labAdmin
     }
     
     private func parseActivityData(_ data: [String: Any]) throws -> Activity {
@@ -1121,7 +1640,7 @@ class AdminController {
             let email = data["email"] as? String,
             let statusString = data["status"] as? String
         else {
-            throw AdminError.invalidData
+            throw AdminError.invalidData("Missing required fields in hospital data")
         }
         
         // Parse dates
@@ -1137,7 +1656,7 @@ class AdminController {
         
         // Convert status string to enum
         guard let status = HospitalStatus(rawValue: statusString) else {
-            throw AdminError.invalidData
+            throw AdminError.invalidData("Invalid status format")
         }
         
         return Hospital(
@@ -1159,6 +1678,101 @@ class AdminController {
             imageData: nil
         )
     }
+    
+    // MARK: - Debug Methods
+    
+    /// Verify if a lab admin ID exists in the database (for debugging delete issues)
+    func verifyLabAdminExists(id: String) async throws -> [String: Any] {
+        print("VERIFY LAB ADMIN: Checking if lab admin with ID \(id) exists")
+        
+        var result: [String: Any] = [:]
+        result["id"] = id
+        result["exists"] = false
+        
+        // First try a direct query for the ID
+        do {
+            let labAdmins = try await supabase.select(
+                from: "lab_admins",
+                where: "id",
+                equals: id
+            )
+            
+            if labAdmins.isEmpty {
+                print("VERIFY LAB ADMIN: No lab admin found with ID \(id)")
+                result["exists"] = false
+                result["message"] = "Lab admin not found"
+            } else {
+                print("VERIFY LAB ADMIN: Found lab admin with ID \(id)")
+                // Include basic info about the lab admin
+                if let data = labAdmins.first {
+                    result["exists"] = true
+                    result["name"] = data["name"] as? String ?? "Unknown"
+                    result["email"] = data["email"] as? String ?? "Unknown"
+                    result["message"] = "Lab admin exists in database"
+                }
+            }
+        } catch {
+            print("VERIFY LAB ADMIN ERROR: Failed to query database: \(error.localizedDescription)")
+            result["error"] = error.localizedDescription
+            result["message"] = "Failed to verify lab admin: \(error.localizedDescription)"
+            throw error
+        }
+        
+        return result
+    }
+    
+    /// Check for constraints that might prevent deletion
+    func checkLabAdminDeletionConstraints(id: String) async throws -> [String: Any] {
+        print("CHECK CONSTRAINTS: Checking constraints for lab admin with ID \(id)")
+        
+        var result: [String: Any] = [:]
+        result["id"] = id
+        result["canDelete"] = false
+        
+        // First check if it exists
+        do {
+            let verifyResult = try await verifyLabAdminExists(id: id)
+            if !(verifyResult["exists"] as? Bool ?? false) {
+                result["canDelete"] = false
+                result["message"] = "Lab admin does not exist"
+                return result
+            }
+        } catch {
+            result["error"] = error.localizedDescription
+            result["message"] = "Failed to verify lab admin: \(error.localizedDescription)"
+            return result
+        }
+        
+        // Check for foreign key constraints in other tables
+        // This would depend on your database schema - add checks for each table that might reference lab_admins
+        // For example:
+        
+        /*
+        // Example: Check if lab admin has reports
+        do {
+            let reports = try await supabase.select(
+                from: "reports",
+                where: "lab_admin_id",
+                equals: id
+            )
+            
+            if !reports.isEmpty {
+                result["canDelete"] = false
+                result["message"] = "Cannot delete lab admin: Has \(reports.count) reports"
+                return result
+            }
+        } catch {
+            // Log but don't fail the entire check
+            print("CHECK CONSTRAINTS WARNING: Failed to check reports: \(error.localizedDescription)")
+        }
+        */
+        
+        // If we get here, assume it can be deleted
+        result["canDelete"] = true
+        result["message"] = "Lab admin can be safely deleted"
+        
+        return result
+    }
 }
 
 // MARK: - Admin Errors
@@ -1172,8 +1786,13 @@ enum AdminError: Error, LocalizedError {
     case invalidLabAdminData
     case invalidActivityData
     case hospitalNotFound
-    case invalidData
+    case invalidData(String)
     case doctorDeleteFailed
+    case invalidContactNumber(String)
+    case invalidFormat(String)
+    case invalidPassword(message: String)
+    case emailAlreadyExists(String)
+    case customError(String)
     
     var errorDescription: String? {
         switch self {
@@ -1195,10 +1814,20 @@ enum AdminError: Error, LocalizedError {
             return "Invalid activity data"
         case .hospitalNotFound:
             return "Hospital not found"
-        case .invalidData:
-            return "Invalid data"
+        case .invalidData(let message):
+            return "Invalid data: \(message)"
         case .doctorDeleteFailed:
             return "Failed to delete doctor"
+        case .invalidContactNumber(let message):
+            return "Invalid contact number: \(message)"
+        case .invalidFormat(let message):
+            return "Invalid format: \(message)"
+        case .invalidPassword(let message):
+            return "Invalid password: \(message)"
+        case .emailAlreadyExists(let message):
+            return "Email already exists: \(message)"
+        case .customError(let message):
+            return message
         }
     }
 } 
