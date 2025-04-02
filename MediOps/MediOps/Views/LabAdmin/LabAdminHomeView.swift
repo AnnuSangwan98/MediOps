@@ -7,56 +7,45 @@ struct LabAdminHomeView: View {
     @State private var labAdmin: LabAdmin?
     @State private var showProfileDetails = false
     
-    // App theme colors
-    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
-    let darkTeal = Color(red: 23/255, green: 130/255, blue: 160/255)
-    
     var body: some View {
         Group {
             if let labAdmin = labAdmin {
-                // Only show the Patient Reports View with custom header
-                ZStack {
-                    // Background gradient
-                    LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                                 startPoint: .topLeading,
-                                 endPoint: .bottomTrailing)
-                        .ignoresSafeArea()
-                    
-                    VStack(spacing: 0) {
-                        // Custom header view
-                        headerView(labAdmin: labAdmin)
+                // Only show the Patient Reports View
+                PatientReportsView()
+                    .navigationBarBackButtonHidden(true)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            VStack(alignment: .leading) {
+                                Text("Welcome,")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.gray)
+                                Text(labAdmin.name)
+                                    .font(.system(size: 22, weight: .semibold))
+                            }
+                        }
                         
-                        // Patient Reports View
-                        PatientReportsView()
-                            .navigationBarBackButtonHidden(true)
-                            .navigationBarHidden(true)
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            // Direct access to profile with a tap on the icon
+                            Button(action: {
+                                showProfileDetails = true
+                            }) {
+                                Image(systemName: "person.circle.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(.teal)
+                                    .background(Circle().fill(Color.white).frame(width: 48, height: 48))
+                                    .shadow(color: .gray.opacity(0.3), radius: 3)
+                            }
+                        }
                     }
-                }
-                .sheet(isPresented: $showProfileDetails) {
-                    ProfileDetailsView(labAdmin: labAdmin)
-                }
+                    .sheet(isPresented: $showProfileDetails) {
+                        ProfileDetailsView(labAdmin: labAdmin)
+                    }
             } else {
                 // Show loading view while fetching lab admin details
-                VStack {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .tint(primaryTeal)
-                        .padding(.bottom, 15)
-                    Text("Loading profile...")
-                        .font(.headline)
-                        .foregroundColor(darkTeal)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    // Background gradient
-                    LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                                 startPoint: .topLeading,
-                                 endPoint: .bottomTrailing)
-                        .ignoresSafeArea()
-                )
-                .onAppear {
-                    fetchLabAdminDetails()
-                }
+                ProgressView("Loading profile...")
+                    .onAppear {
+                        fetchLabAdminDetails()
+                    }
             }
         }
         .alert("Logout", isPresented: $showLogoutConfirmation) {
@@ -70,39 +59,6 @@ struct LabAdminHomeView: View {
         .onAppear {
             fetchLabAdminDetails()
         }
-    }
-    
-    // New header view builder
-    @ViewBuilder
-    private func headerView(labAdmin: LabAdmin) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Welcome")
-                    .font(.headline)
-                    .foregroundColor(.gray)
-                Text(labAdmin.name)
-                    .font(.title)
-                    .fontWeight(.bold)
-            }
-            Spacer()
-            
-            HStack(spacing: 20) {
-                Button(action: {
-                    showProfileDetails = true
-                }) {
-                    Image(systemName: "person.circle.fill")
-                        .resizable()
-                        .frame(width: 40, height: 40)
-                        .foregroundColor(primaryTeal)
-                        .background(Circle().fill(Color.white))
-                        .shadow(color: .gray.opacity(0.2), radius: 3)
-                }
-                .padding(.trailing)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.top) // Extra padding for status bar
-        .padding(.bottom, 10)
     }
     
     private func fetchLabAdminDetails() {
@@ -192,10 +148,6 @@ struct ProfileDetailsView: View {
     @State private var showSaveSuccess = false
     let labAdmin: LabAdmin
     
-    // App theme colors
-    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
-    let darkTeal = Color(red: 23/255, green: 130/255, blue: 160/255)
-    
     init(labAdmin: LabAdmin) {
         self.labAdmin = labAdmin
         _editingEmail = State(initialValue: labAdmin.email)
@@ -211,13 +163,12 @@ struct ProfileDetailsView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 120, height: 120)
-                        .foregroundColor(primaryTeal)
+                        .foregroundColor(.teal)
                         .padding(.top, 20)
                     
-                    Text(labAdmin.name)
+                    Text("Lab Admin Profile")
                         .font(.largeTitle)
                         .fontWeight(.bold)
-                        .foregroundColor(darkTeal)
                         .padding(.bottom, 20)
                     
                     // Personal Information
@@ -228,7 +179,10 @@ struct ProfileDetailsView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     ) {
                         VStack(spacing: 0) {
-                                                       
+                            // Read-only field
+                            LabProfileInfoRow(title: "Name", value: labAdmin.name)
+                            Divider()
+                            
                             // Editable Email field
                             if isEditing {
                                 HStack {
@@ -240,7 +194,7 @@ struct ProfileDetailsView: View {
                                         .keyboardType(.emailAddress)
                                         .autocapitalization(.none)
                                         .disableAutocorrection(true)
-                                        .foregroundColor(primaryTeal)
+                                        .foregroundColor(.blue)
                                 }
                                 .padding(.vertical, 10)
                                 .padding(.horizontal, 5)
@@ -258,7 +212,7 @@ struct ProfileDetailsView: View {
                                     TextField("Contact", text: $editingContact)
                                         .multilineTextAlignment(.trailing)
                                         .keyboardType(.phonePad)
-                                        .foregroundColor(primaryTeal)
+                                        .foregroundColor(.blue)
                                         .onChange(of: editingContact) { newValue in
                                             // Filter non-digit characters
                                             let filtered = newValue.filter { "0123456789".contains($0) }
@@ -283,7 +237,6 @@ struct ProfileDetailsView: View {
                         }
                         .padding(.vertical, 5)
                     }
-                    .groupBoxStyle(WhiteGroupBoxStyle())
                     .padding(.horizontal)
                     
                     // Work Information
@@ -306,7 +259,6 @@ struct ProfileDetailsView: View {
                         }
                         .padding(.vertical, 5)
                     }
-                    .groupBoxStyle(WhiteGroupBoxStyle())
                     .padding(.horizontal)
                     
                     // Security Section
@@ -321,17 +273,16 @@ struct ProfileDetailsView: View {
                         }) {
                             HStack {
                                 Text("Reset Password")
-                                    .foregroundColor(primaryTeal)
+                                    .foregroundColor(.blue)
                                     .font(.system(size: 17))
                                 Spacer()
                                 Image(systemName: "key.fill")
-                                    .foregroundColor(primaryTeal)
+                                    .foregroundColor(.blue)
                             }
                             .contentShape(Rectangle())
                             .padding(.vertical, 10)
                         }
                     }
-                    .groupBoxStyle(WhiteGroupBoxStyle())
                     .padding(.horizontal)
                     
                     // Logout Button
@@ -340,12 +291,12 @@ struct ProfileDetailsView: View {
                     }) {
                         Text("Logout")
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundColor(.red)
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color.red)
+                                    .stroke(Color.red, lineWidth: 1)
                             )
                     }
                     .padding(.horizontal)
@@ -354,13 +305,6 @@ struct ProfileDetailsView: View {
                     Spacer()
                 }
             }
-            .background(
-                // Background gradient
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                             startPoint: .topLeading,
-                             endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
-            )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -368,12 +312,10 @@ struct ProfileDetailsView: View {
                         Button("Save") {
                             saveChanges()
                         }
-                        .foregroundColor(primaryTeal)
                     } else {
                         Button("Edit") {
                             isEditing = true
                         }
-                        .foregroundColor(primaryTeal)
                     }
                 }
                 
@@ -385,12 +327,10 @@ struct ProfileDetailsView: View {
                             editingContact = labAdmin.contactNumber
                             isEditing = false
                         }
-                        .foregroundColor(primaryTeal)
                     } else {
                         Button("Done") {
                             dismiss()
                         }
-                        .foregroundColor(primaryTeal)
                     }
                 }
             }
@@ -685,9 +625,6 @@ struct LabProfileInfoRow: View {
     let title: String
     let value: String
     
-    // App theme colors
-    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
-    
     var body: some View {
         HStack {
             Text(title)
@@ -699,25 +636,6 @@ struct LabProfileInfoRow: View {
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 5)
-    }
-}
-
-// Custom white GroupBox style
-struct WhiteGroupBoxStyle: GroupBoxStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        VStack {
-            configuration.label
-            VStack {
-                configuration.content
-            }
-            .padding(.top, 6)
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.white)
-                .shadow(color: Color.gray.opacity(0.2), radius: 3)
-        )
     }
 }
 

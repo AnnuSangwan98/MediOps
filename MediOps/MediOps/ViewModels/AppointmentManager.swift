@@ -227,10 +227,84 @@ class AppointmentManager: ObservableObject {
             for appointmentData in appointmentResults {
                 if let appointmentId = appointmentData["id"] as? String,
                    let doctorId = appointmentData["doctor_id"] as? String,
-                   let statusString = appointmentData["status"] as? String {
+                   let statusString = appointmentData["status"] as? String,
+                   let appointmentDateString = appointmentData["appointment_date"] as? String {
                     
                     print("🔍 Processing appointment: \(appointmentId)")
                     print("   Raw status from DB: \(statusString)")
+                    
+                    // Parse the appointment date
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "yyyy-MM-dd"
+                    
+                    guard let appointmentDate = dateFormatter.date(from: appointmentDateString) else {
+                        print("⚠️ Could not parse appointment date: \(appointmentDateString)")
+                        continue
+                    }
+                    
+                    // Get appointment time information
+                    var rawStartTime: String?
+                    var rawEndTime: String?
+                    
+                    // First try to get from slot_start_time
+                    if let startTime = appointmentData["slot_start_time"] as? String {
+                        rawStartTime = startTime
+                        print("📌 Found slot_start_time: \(startTime)")
+                    }
+                    
+                    if let endTime = appointmentData["slot_end_time"] as? String {
+                        rawEndTime = endTime
+                        print("📌 Found slot_end_time: \(endTime)")
+                    }
+                    
+                    // If not found, try extracting from slot JSON
+                    if (rawStartTime == nil || rawEndTime == nil),
+                       let slotJson = appointmentData["slot"] as? String,
+                       let slotData = slotJson.data(using: .utf8) {
+                        do {
+                            if let slot = try JSONSerialization.jsonObject(with: slotData) as? [String: Any] {
+                                if rawStartTime == nil, let slotStartTime = slot["start_time"] as? String {
+                                    rawStartTime = slotStartTime
+                                    print("📌 Found start time in slot JSON: \(slotStartTime)")
+                                }
+                                
+                                if rawEndTime == nil, let slotEndTime = slot["end_time"] as? String {
+                                    rawEndTime = slotEndTime
+                                    print("📌 Found end time in slot JSON: \(slotEndTime)")
+                                }
+                            }
+                        } catch {
+                            print("⚠️ Error parsing slot JSON: \(error.localizedDescription)")
+                        }
+                    }
+                    
+                    // Use defaults if still not found
+                    let finalRawStartTime = rawStartTime ?? "12:00:00"
+                    let finalRawEndTime = rawEndTime ?? "13:00:00"
+                    
+                    // Format for display using our consistent helper
+                    let displayStartTime = HospitalViewModel.shared.formatSlotTime(finalRawStartTime)
+                    let displayEndTime = HospitalViewModel.shared.formatSlotTime(finalRawEndTime)
+                    
+                    print("🕒 Appointment times: Raw=(\(finalRawStartTime)-\(finalRawEndTime)) Display=(\(displayStartTime)-\(displayEndTime))")
+                    
+                    // Create time Date object for sorting
+                    let timeFormatter = DateFormatter()
+                    timeFormatter.dateFormat = "HH:mm:ss"
+                    
+                    var appointmentTime: Date
+                    if let parsedTime = timeFormatter.date(from: finalRawStartTime) {
+                        appointmentTime = parsedTime
+                    } else if finalRawStartTime.count == 5 {
+                        // Try adding seconds component
+                        if let parsedTime = timeFormatter.date(from: finalRawStartTime + ":00") {
+                            appointmentTime = parsedTime
+                        } else {
+                            appointmentTime = Date()
+                        }
+                    } else {
+                        appointmentTime = Date()
+                    }
                     
                     // Fetch doctor details
                     let doctorResults = try await supabase.select(
@@ -249,12 +323,6 @@ class AppointmentManager: ObservableObject {
                             specialization: specialization
                         )
                         
-                        // Parse the appointment date
-                        let dateString = appointmentData["appointment_date"] as? String ?? ""
-                        let dateFormatter = DateFormatter()
-                        dateFormatter.dateFormat = "yyyy-MM-dd"
-                        let date = dateFormatter.date(from: dateString) ?? Date()
-                        
                         // Map the status string to AppointmentStatus
                         let status: AppointmentStatus
                         switch statusString.lowercased() {
@@ -271,11 +339,12 @@ class AppointmentManager: ObservableObject {
                         let appointment = Appointment(
                             id: appointmentId,
                             doctor: doctor,
-                            date: date,
-                            time: date,
+                            date: appointmentDate,
+                            time: appointmentTime,
                             status: status,
-                            startTime: appointmentData["slot_time"] as? String,
-                            endTime: appointmentData["slot_end_time"] as? String
+                            startTime: displayStartTime,
+                            endTime: displayEndTime,
+                            isPremium: appointmentData["is_premium"] as? Bool
                         )
                         
                         newAppointments.append(appointment)

@@ -229,22 +229,4 @@ struct EditLabAdminView: View {
         let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
         return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email)
     }
-}
-
-#Preview {
-    EditLabAdminView(
-        labAdmin: UILabAdmin(
-            id: UUID(),
-            fullName: "John Doe",
-            email: "john@example.com",
-            phone: "+911234567890",
-            gender: .male,
-            dateOfBirth: Date(),
-            experience: 5,
-            qualification: "MBBS",
-            address: "123 Main St"
-        )
-    ) { updatedLabAdmin in
-        print("Lab admin updated: \(updatedLabAdmin.fullName)")
-    }
 } 

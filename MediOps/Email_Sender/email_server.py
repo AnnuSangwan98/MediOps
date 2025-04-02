@@ -136,7 +136,7 @@ def handle_send_email():
                 return jsonify({"status": "success", "message": "Email already sent recently"}), 200
 
         # Load OTP template
-        template_path = os.path.join(os.path.dirname(__file__), 'templates/email_template.html')
+        template_path = os.path.join(os.path.dirname(__file__), '../templates/email_template.html')
         print(f"Loading template from {os.path.abspath(template_path)}")
         with open(template_path, 'r') as file:
             html_content = file.read()

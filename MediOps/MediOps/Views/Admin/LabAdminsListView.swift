@@ -39,14 +39,12 @@ struct LabAdminsListView: View {
                     Button(action: {
                         dismiss()
                     }) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "chevron.left")
-                                .foregroundColor(.blue)
-                                .fontWeight(.semibold)
-                            Text("Back")
-                                .foregroundColor(.blue)
-                                .fontWeight(.regular)
-                        }
+                        Image(systemName: "chevron.left")
+                            .foregroundColor(.teal)
+                            .font(.system(size: 16, weight: .semibold))
+                            .padding(10)
+                            .background(Circle().fill(Color.white))
+                            .shadow(color: .gray.opacity(0.2), radius: 3)
                     }
                     
                     Spacer()
@@ -56,9 +54,35 @@ struct LabAdminsListView: View {
                         .fontWeight(.bold)
                     
                     Spacer()
+                    
+                    // Refresh button
+                    Button(action: { 
+                        Task {
+                            await fetchLabAdmins()
+                        }
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(.teal)
+                            .padding(8)
+                            .background(Color.white.opacity(0.8))
+                            .clipShape(Circle())
+                            .shadow(color: .gray.opacity(0.2), radius: 2)
+                    }
                 }
                 .padding()
                 .background(Color.white.opacity(0.9))
+                
+                // Status bar
+                if !labAdmins.isEmpty {
+                    HStack {
+                        Text("\(labAdmins.count) lab admin\(labAdmins.count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
                 
                 // Lab Admins List
                 ScrollView {
@@ -294,6 +318,12 @@ struct LabAdminsListView: View {
                     )
                 }
                 isLoading = false
+                
+                // Show success message if needed
+                if !labAdmins.isEmpty {
+                    successMessage = "Successfully retrieved \(labAdmins.count) lab admins"
+                    showSuccessMessage = true
+                }
             }
         } catch {
             await MainActor.run {
@@ -433,44 +463,112 @@ struct LabAdminsListView: View {
     
     // Main method for handling lab admin deletion with confirmation and feedback
     private func confirmDeleteLabAdmin(_ labAdmin: UILabAdmin) {
+        print("DELETE LAB ADMIN: Starting deletion process for lab admin with UUID: \(labAdmin.id)")
+        print("DELETE LAB ADMIN: Original ID (from Supabase): \(labAdmin.originalId ?? "nil")")
+        print("DELETE LAB ADMIN: Full Name: \(labAdmin.fullName)")
+        
+        // First check if the lab admin ID is valid
+        guard let originalId = labAdmin.originalId, !originalId.isEmpty else {
+            errorMessage = "Cannot delete: Invalid lab admin ID (originalId is nil or empty)"
+            showError = true
+            return
+        }
+        
+        // Verify the lab admin in the database first
         Task {
+            isLoading = true
             do {
-                isLoading = true
+                // Check if lab admin exists in database before attempting deletion
+                let verifyResult = try await adminController.verifyLabAdminExists(id: originalId)
+                let exists = verifyResult["exists"] as? Bool ?? false
                 
-                // Get hospital ID from UserDefaults
-                guard let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") else {
-                    errorMessage = "Failed to delete lab admin: Hospital ID not found"
-                    showError = true
-                    isLoading = false
-                    return
-                }
-                
-                // Verify the lab admin ID exists
-                guard let originalId = labAdmin.originalId else {
-                    errorMessage = "Cannot delete: Invalid lab admin ID"
-                    showError = true
-                    isLoading = false
-                    return
-                }
-                
-                // Delete from Supabase
-                try await adminController.deleteLabAdmin(id: originalId)
-                
-                // If successful, remove from local array
-                await MainActor.run {
-                    if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
-                        labAdmins.remove(at: index)
+                if !exists {
+                    // Lab admin doesn't exist in the database, but still in the UI
+                    // This is a sync issue - remove from UI list
+                    await MainActor.run {
+                        withAnimation {
+                            if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
+                                labAdmins.remove(at: index)
+                                successMessage = "Lab admin was already deleted from the database. UI has been updated."
+                                showSuccessMessage = true
+                                clearLabAdminToDelete()
+                } else {
+                                errorMessage = "Could not find lab admin in the list."
+                                showError = true
+                                clearLabAdminToDelete()
+                            }
+                        }
                     }
-                    isLoading = false
+                    return
                 }
                 
+                // Now that we confirmed the lab admin exists, attempt deletion
+                isLoading = true
+                labAdminToDelete = labAdmin
+                
+                print("DELETE LAB ADMIN: Calling adminController.deleteLabAdmin with ID: \(originalId)")
+                
+                // Call the AdminController to delete the lab admin from Supabase
+                try await adminController.deleteLabAdmin(id: originalId)
+                print("DELETE LAB ADMIN: Successfully deleted lab admin from database")
+                
+                await MainActor.run {
+                    // Remove from UI list with animation
+                    print("DELETE LAB ADMIN: Removing lab admin from UI list")
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
+                            labAdmins.remove(at: index)
+                            print("DELETE LAB ADMIN: Removed lab admin at index \(index)")
+                        } else {
+                            print("DELETE LAB ADMIN WARNING: Could not find lab admin in UI list with UUID: \(labAdmin.id)")
+                        }
+                    }
+                    
+                    // Show success message
+                    successMessage = "Lab admin \(labAdmin.fullName) successfully removed from the system"
+                    showSuccessMessage = true
+                    clearLabAdminToDelete()
+                }
+            } catch let error as AdminError {
+                await MainActor.run {
+                    print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
+                    
+                    // Provide specific error messages based on error type
+                    switch error {
+                    case .labAdminNotFound:
+                        errorMessage = "The lab admin could not be found in the database. It may have been already deleted."
+                    case .invalidData(let message):
+                        errorMessage = "Invalid data: \(message)"
+                    case .customError(let message):
+                        errorMessage = message
+                    default:
+                        errorMessage = "Failed to delete lab admin: \(error.errorDescription ?? "Unknown error")"
+                    }
+                    
+                    showError = true
+                    clearLabAdminToDelete()
+                }
             } catch {
                 await MainActor.run {
+                    print("DELETE LAB ADMIN ERROR: \(error.localizedDescription)")
+                    print("DELETE LAB ADMIN ERROR DETAILS: \(String(describing: error))")
                     errorMessage = "Failed to delete lab admin: \(error.localizedDescription)"
                     showError = true
-                    isLoading = false
+                    clearLabAdminToDelete()
                 }
             }
+        }
+    }
+    
+    // Helper method to clear the labAdminToDelete and set isLoading to false
+    private func clearLabAdminToDelete() {
+        print("DELETE LAB ADMIN: Clearing labAdminToDelete reference and setting isLoading to false")
+        isLoading = false
+        // We keep the reference in labAdminToDelete for a short time to show in the loading overlay
+        // But clear it after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.labAdminToDelete = nil
+            print("DELETE LAB ADMIN: Cleared labAdminToDelete reference after delay")
         }
     }
     
@@ -585,75 +683,116 @@ struct LabAdminCard: View {
     let labAdmin: UILabAdmin
     var onEdit: () -> Void
     var onDelete: () -> Void
-    @State private var showOptions = false
-    @State private var showDeleteConfirmation = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Lab admin header with name and menu
-            HStack {
-                Text(labAdmin.fullName)
-                    .font(.title3)
-                    .fontWeight(.semibold)
+            // Lab admin header with avatar
+            HStack(spacing: 12) {
+                // Avatar/Icon
+                ZStack {
+                    Circle()
+                        .fill(Color.teal.opacity(0.1))
+                        .frame(width: 50, height: 50)
+                    
+                    Image(systemName: "flask.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.teal)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(labAdmin.fullName)
+                        .font(.headline)
+                        .foregroundColor(.black)
+                    
+                    Text(labAdmin.qualification)
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
                 
                 Spacer()
                 
-                // Three dots menu
-                Menu {
+                // Action buttons with clear icons
+                HStack(spacing: 12) {
+                    // Edit button
                     Button(action: onEdit) {
-                        Label("Edit", systemImage: "pencil")
+                        Image(systemName: "pencil")
+                            .foregroundColor(.blue)
+                            .padding(8)
+                            .background(Color.blue.opacity(0.1))
+                            .clipShape(Circle())
                     }
-                    Button(role: .destructive) {
-                        showDeleteConfirmation = true
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+                    .accessibilityLabel("Edit \(labAdmin.fullName)")
+                    
+                    // Delete button
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                            .padding(8)
+                            .background(Color.red.opacity(0.1))
+                            .clipShape(Circle())
                     }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .foregroundColor(.gray)
-                        .padding(8)
+                    .accessibilityLabel("Delete \(labAdmin.fullName)")
                 }
             }
             
-            Text(labAdmin.qualification)
-                .font(.subheadline)
-                .foregroundColor(.gray)
+            Divider()
             
-            // Contact info
-            HStack(spacing: 20) {
-                Label {
-                    Text(labAdmin.phone)
-                        .font(.subheadline)
-                } icon: {
-                    Image(systemName: "phone.fill")
+            // Contact information
+            VStack(spacing: 8) {
+                HStack {
+                    Label {
+                        Text(labAdmin.email)
+                            .font(.footnote)
+                            .foregroundColor(.gray)
+                    } icon: {
+                        Image(systemName: "envelope.fill")
+                            .foregroundColor(.teal)
+                            .font(.system(size: 12))
+                    }
+                    Spacer()
                 }
                 
-                Label {
-                    Text(labAdmin.email)
-                        .font(.subheadline)
-                } icon: {
-                    Image(systemName: "envelope.fill")
+                HStack {
+                    Label {
+                        Text(labAdmin.phone.isEmpty ? "No phone" : labAdmin.phone)
+                            .font(.footnote)
+                            .foregroundColor(.gray)
+                    } icon: {
+                        Image(systemName: "phone.fill")
+                            .foregroundColor(.teal)
+                            .font(.system(size: 12))
+                    }
+                    Spacer()
+                }
+                
+                if !labAdmin.address.isEmpty {
+                    HStack {
+                        Label {
+                            Text(labAdmin.address)
+                                .font(.footnote)
+                        .foregroundColor(.gray)
+                        } icon: {
+                            Image(systemName: "location.fill")
+                                .foregroundColor(.teal)
+                                .font(.system(size: 12))
+                        }
+                        Spacer()
+                    }
                 }
             }
-            .foregroundColor(.gray)
             
-            // License info
-            Text("License: \(labAdmin.originalId ?? "Unknown")")
-                .font(.caption)
-                .foregroundColor(.gray)
+            // ID display (for debugging purposes)
+            HStack {
+                Spacer()
+                Text("ID: \(labAdmin.originalId ?? "Unknown")")
+                    .font(.caption2)
+                    .foregroundColor(.gray.opacity(0.6))
+            }
         }
         .padding()
         .background(Color.white)
-        .cornerRadius(15)
+        .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5, x: 0, y: 2)
-        .alert("Delete Lab Admin", isPresented: $showDeleteConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) {
-                onDelete()
-            }
-        } message: {
-            Text("Are you sure you want to delete \(labAdmin.fullName)? This action cannot be undone.")
-        }
     }
 }
 

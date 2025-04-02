@@ -4,7 +4,7 @@ class AppointmentController: ObservableObject {
     private let supabase = SupabaseController.shared
     
     @Published var appointments: [AppointmentModels.Appointment] = []
-    @Published var availableSlots: [AppointmentModels.DoctorAvailabilitySlot] = []
+    @Published var availableSlots: [AppointmentModels.DoctorAvailability] = []
     
     // Create a new appointment
     func createAppointment(patientId: String, doctorId: String, hospitalId: String,
@@ -149,7 +149,7 @@ class AppointmentController: ObservableObject {
                 equals: doctorId
             )
             
-            let slots = try results.map { data -> AppointmentModels.DoctorAvailabilitySlot in
+            let slots = try results.map { data -> AppointmentModels.DoctorAvailability in
                 guard
                     let id = data["id"] as? Int,
                     let startTime = data["slot_time"] as? String,
@@ -158,7 +158,7 @@ class AppointmentController: ObservableObject {
                     throw NSError(domain: "AvailabilityError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid availability data"])
                 }
                 
-                return AppointmentModels.DoctorAvailabilitySlot(
+                return AppointmentModels.DoctorAvailability(
                     id: id,
                     doctorId: doctorId,
                     date: date,

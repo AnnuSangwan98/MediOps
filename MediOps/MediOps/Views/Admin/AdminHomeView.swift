@@ -100,12 +100,6 @@ struct AdminHomeView: View {
     @State private var recentActivities: [UIActivity] = []
     @State private var doctors: [UIDoctor] = []
     @State private var labAdmins: [UILabAdmin] = []
-    @State private var isLoggedIn = false
-    @State private var isLoading = false
-    @State private var showError = false
-    @State private var errorMessage = ""
-    
-    private let adminController = AdminController.shared
     
     private var doctorCount: Int {
         doctors.count
@@ -140,27 +134,27 @@ struct AdminHomeView: View {
                     .padding(.horizontal)
                     .padding(.top)
                     
-                    if isLoggedIn {
-                        // Quick action
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 15) {
-                            AdminStatCard(
-                                title: "Doctors",
-                                value: "\(doctorCount)",
-                                icon: "stethoscope",
-                                doctors: $doctors
-                            )
-                            AdminStatCard(
-                                title: "Lab Admins",
-                                value: "\(labAdminCount)",
-                                icon: "flask.fill",
-                                labAdmins: $labAdmins
-                            )
-                        }
-                        .padding(.horizontal)
+                    // Quick action
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 15) {
+                        AdminStatCard(
+                            title: "Doctors",
+                            value: "\(doctorCount)",
+                            icon: "stethoscope",
+                            doctors: $doctors
+                        )
+                        AdminStatCard(
+                            title: "Lab Admins",
+                            value: "\(labAdminCount)",
+                            icon: "flask.fill",
+                            labAdmins: $labAdmins
+                        )
                     }
+                    .padding(.horizontal)
+                    
+                    
                     
                     // Recent Activity
                     VStack(alignment: .leading, spacing: 15) {
@@ -196,23 +190,6 @@ struct AdminHomeView: View {
             }
             .navigationBarBackButtonHidden(true)
             .navigationBarHidden(true)
-            .task {
-                await checkLoginAndFetchData()
-            }
-            .overlay {
-                if isLoading {
-                    ProgressView("Loading...")
-                        .padding()
-                        .background(Color.white)
-                        .cornerRadius(10)
-                        .shadow(radius: 5)
-                }
-            }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(errorMessage)
-            }
             .sheet(isPresented: $showAddDoctor) {
                 AddDoctorView { activity in
                     recentActivities.insert(activity, at: 0)
@@ -232,57 +209,6 @@ struct AdminHomeView: View {
             .sheet(isPresented: $showProfile) {
                 HospitalAdminProfileView()
             }
-        }
-    }
-    
-    private func checkLoginAndFetchData() async {
-        isLoading = true
-        defer { isLoading = false }
-        
-        // Check if user is logged in by verifying hospital_id in UserDefaults
-        if let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") {
-            isLoggedIn = true
-            
-            do {
-                // Fetch doctors
-                let fetchedDoctors = try await adminController.getDoctorsByHospitalAdmin(hospitalAdminId: hospitalId)
-                doctors = fetchedDoctors.map { doctor in
-                    UIDoctor(
-                        id: doctor.id,
-                        fullName: doctor.name,
-                        specialization: doctor.specialization,
-                        email: doctor.email,
-                        phone: doctor.contactNumber ?? "",
-                        gender: .male, // Default value
-                        dateOfBirth: Date(), // Default value
-                        experience: doctor.experience,
-                        qualification: doctor.qualifications.joined(separator: ", "),
-                        license: doctor.licenseNo,
-                        address: doctor.addressLine
-                    )
-                }
-                
-                // Fetch lab admins
-                let fetchedLabAdmins = try await adminController.getLabAdmins(hospitalAdminId: hospitalId)
-                labAdmins = fetchedLabAdmins.map { labAdmin in
-                    UILabAdmin(
-                        originalId: labAdmin.id,
-                        fullName: labAdmin.name,
-                        email: labAdmin.email,
-                        phone: labAdmin.contactNumber ?? "",
-                        gender: .male, // Default value
-                        dateOfBirth: Date(), // Default value
-                        experience: 0, // Default value
-                        qualification: labAdmin.department,
-                        address: labAdmin.address
-                    )
-                }
-            } catch {
-                errorMessage = "Failed to fetch data: \(error.localizedDescription)"
-                showError = true
-            }
-        } else {
-            isLoggedIn = false
         }
     }
 }

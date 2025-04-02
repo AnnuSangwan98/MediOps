@@ -271,8 +271,8 @@ class AdminController {
         
         // First try to find the admin in the hospital_admins table
         let admins = try await supabase.select(
-            from: "hospital_admins",
-            where: "user_id",
+            from: "hospital_admins", 
+            where: "user_id", 
             equals: userId
         )
         
@@ -538,52 +538,9 @@ class AdminController {
     func deleteDoctor(id: String) async throws {
         print("DELETE DOCTOR: Attempting to delete doctor with ID: \(id)")
         
-        // First, attempt to delete any related records that might cause foreign key constraint issues
+        // First try direct deletion (most reliable)
         do {
-            // Delete from doctor_availability_efficient table
-            print("DELETE DOCTOR: Removing doctor availability records")
-            try await supabase.delete(
-                from: "doctor_availability_efficient",
-                where: "doctor_id",
-                equals: id
-            )
-            print("DELETE DOCTOR: Successfully removed availability records")
-        } catch {
-            print("DELETE DOCTOR: No availability records found or error removing them: \(error.localizedDescription)")
-            // Continue with deletion even if this fails
-        }
-        
-        do {
-            // Delete from doctor_slots table if it exists
-            print("DELETE DOCTOR: Removing doctor slots records")
-            try await supabase.delete(
-                from: "doctor_slots",
-                where: "doctor_id",
-                equals: id
-            )
-            print("DELETE DOCTOR: Successfully removed slot records")
-        } catch {
-            print("DELETE DOCTOR: No slot records found or error removing them: \(error.localizedDescription)")
-            // Continue with deletion even if this fails
-        }
-        
-        do {
-            // Delete from appointments table if it exists
-            print("DELETE DOCTOR: Removing appointment records")
-            try await supabase.delete(
-                from: "appointments",
-                where: "doctor_id",
-                equals: id
-            )
-            print("DELETE DOCTOR: Successfully removed appointment records")
-        } catch {
-            print("DELETE DOCTOR: No appointment records found or error removing them: \(error.localizedDescription)")
-            // Continue with deletion even if this fails
-        }
-        
-        // Now try to delete the doctor record
-        do {
-            print("DELETE DOCTOR: Attempting to delete doctor record")
+            print("DELETE DOCTOR: Attempting full deletion first")
             try await supabase.delete(
                 from: "doctors",
                 where: "id",
@@ -592,67 +549,44 @@ class AdminController {
             print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id)")
             return // Exit if deletion was successful
         } catch {
-            print("DELETE DOCTOR ERROR on deletion: \(error.localizedDescription)")
-            
-            // Try with a direct URL request instead of executeSql
-            do {
-                print("DELETE DOCTOR: Attempting direct API delete")
-                
-                let url = URL(string: "\(supabase.supabaseURL)/rest/v1/doctors?id=eq.\(id)")!
-                var request = URLRequest(url: url)
-                request.httpMethod = "DELETE"
-                request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
-                request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-                
-                let (_, response) = try await URLSession.shared.data(for: request)
-                
-                if let httpResponse = response as? HTTPURLResponse, 
-                   httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
-                    print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id) via direct API")
-                    return
-                } else {
-                    print("DELETE DOCTOR: Direct API deletion failed")
-                }
-            } catch {
-                print("DELETE DOCTOR ERROR on direct API deletion: \(error.localizedDescription)")
-            }
-            
-            // As a last resort, try to update status (but we prefer actual deletion)
-            struct DoctorStatusUpdate: Encodable {
-                let doctor_status: String
-                let updated_at: String
-            }
-            
-            // Try various possible status values that might be allowed by the check constraint
-            let possibleStatuses = ["inactive", "suspended", "terminated"]
-            
-            for status in possibleStatuses {
-                do {
-                    print("DELETE DOCTOR: Deletion failed, trying status update to '\(status)'")
-                    let doctorData = DoctorStatusUpdate(
-                        doctor_status: status,
-                        updated_at: ISO8601DateFormatter().string(from: Date())
-                    )
-                    
-                    try await supabase.update(
-                        table: "doctors",
-                        data: doctorData,
-                        where: "id",
-                        equals: id
-                    )
-                    
-                    print("DELETE DOCTOR: Successfully performed soft delete with status: \(status)")
-                    return
-                } catch {
-                    print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
-                    // Continue trying other statuses
-                }
-            }
-            
-            // If we reach here, none of our approaches worked
-            throw AdminError.doctorDeleteFailed
+            print("DELETE DOCTOR ERROR on full deletion: \(error.localizedDescription)")
+            // If direct deletion fails, try status updates
         }
+        
+        // Create an Encodable struct for the status update
+        struct DoctorStatusUpdate: Encodable {
+            let doctor_status: String
+            let updated_at: String
+        }
+        
+        // Try various possible status values that might be allowed by the check constraint
+        let possibleStatuses = ["inactive", "deleted", "disabled", "removed", "deactivated", "closed"]
+        
+        for status in possibleStatuses {
+            do {
+                print("DELETE DOCTOR: Trying status update to '\(status)'")
+                let doctorData = DoctorStatusUpdate(
+                    doctor_status: status,
+                    updated_at: ISO8601DateFormatter().string(from: Date())
+                )
+                
+                try await supabase.update(
+                    table: "doctors",
+                    data: doctorData,
+                    where: "id",
+                    equals: id
+                )
+                
+                print("DELETE DOCTOR: Successfully updated doctor status to '\(status)' with ID: \(id)")
+                return // Exit the function if this status update works
+            } catch {
+                print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
+                // Continue trying other statuses
+            }
+        }
+        
+        // If we reach here, none of our approaches worked
+        throw AdminError.doctorDeleteFailed
     }
     
     // MARK: - Lab Admin Management
@@ -1323,7 +1257,7 @@ class AdminController {
             let isoFormatter = ISO8601DateFormatter()
             if let parsedDate = isoFormatter.date(from: createdAtString) {
                 createdAt = parsedDate
-            } else {
+        } else {
                 // Try other formats
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
@@ -1348,7 +1282,7 @@ class AdminController {
             let isoFormatter = ISO8601DateFormatter()
             if let parsedDate = isoFormatter.date(from: updatedAtString) {
                 updatedAt = parsedDate
-            } else {
+        } else {
                 // Try other formats
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
@@ -1838,134 +1772,6 @@ class AdminController {
         result["message"] = "Lab admin can be safely deleted"
         
         return result
-    }
-    
-    /// Create doctor availability
-    func createDoctorAvailability(
-        doctorId: String,
-        hospitalId: String,
-        weeklySchedule: [String: [String: Bool]],
-        maxNormalPatients: Int = 5,
-        maxPremiumPatients: Int = 2
-    ) async throws {
-        let now = Date()
-        let dateFormatter = ISO8601DateFormatter()
-        let createdAt = dateFormatter.string(from: now)
-        
-        // Create a struct for the availability data
-        struct DoctorAvailabilityData: Encodable {
-            let doctor_id: String
-            let hospital_id: String
-            let weekly_schedule: [String: [String: Bool]]
-            let effective_from: String
-            let max_normal_patients: Int
-            let max_premium_patients: Int
-            let created_at: String
-            let updated_at: String
-        }
-        
-        // Create availability data using the struct
-        let availabilityData = DoctorAvailabilityData(
-            doctor_id: doctorId,
-            hospital_id: hospitalId,
-            weekly_schedule: weeklySchedule,
-            effective_from: dateFormatter.string(from: now),
-            max_normal_patients: maxNormalPatients,
-            max_premium_patients: maxPremiumPatients,
-            created_at: createdAt,
-            updated_at: createdAt
-        )
-        
-        // Insert into doctor_availability_efficient table
-        try await supabase.insert(
-            into: "doctor_availability_efficient",
-            data: availabilityData
-        )
-    }
-    
-    // MARK: - Doctor Availability Methods
-    
-    /// Get doctor's availability schedule and patient limits
-    func getDoctorAvailability(doctorId: String) async throws -> DoctorAvailability? {
-        let availabilityData = try await supabase.select(
-            from: "doctor_availability_efficient",
-            where: "doctor_id",
-            equals: doctorId
-        )
-        
-        guard let data = availabilityData.first,
-              let weeklySchedule = data["weekly_schedule"] as? [String: [String: Bool]],
-              let maxNormalPatients = data["max_normal_patients"] as? Int,
-              let maxPremiumPatients = data["max_premium_patients"] as? Int else {
-            return nil
-        }
-        
-        return DoctorAvailability(
-            doctorId: doctorId,
-            weeklySchedule: weeklySchedule,
-            maxNormalPatients: maxNormalPatients,
-            maxPremiumPatients: maxPremiumPatients
-        )
-    }
-    
-    /// Update doctor's availability schedule and patient limits
-    func updateDoctorAvailability(
-        doctorId: String,
-        weeklySchedule: [String: [String: Bool]],
-        maxNormalPatients: Int,
-        maxPremiumPatients: Int
-    ) async throws {
-        struct AvailabilityData: Encodable {
-            let weekly_schedule: [String: [String: Bool]]
-            let max_normal_patients: Int
-            let max_premium_patients: Int
-            let updated_at: String
-        }
-        
-        let updateData = AvailabilityData(
-            weekly_schedule: weeklySchedule,
-            max_normal_patients: maxNormalPatients,
-            max_premium_patients: maxPremiumPatients,
-            updated_at: ISO8601DateFormatter().string(from: Date())
-        )
-        
-        // Check if record exists
-        let existingData = try await supabase.select(
-            from: "doctor_availability_efficient",
-            where: "doctor_id",
-            equals: doctorId
-        )
-        
-        if existingData.isEmpty {
-            // Insert new record
-            struct InsertData: Encodable {
-                let doctor_id: String
-                let weekly_schedule: [String: [String: Bool]]
-                let max_normal_patients: Int
-                let max_premium_patients: Int
-                let created_at: String
-                let updated_at: String
-            }
-            
-            let insertData = InsertData(
-                doctor_id: doctorId,
-                weekly_schedule: weeklySchedule,
-                max_normal_patients: maxNormalPatients,
-                max_premium_patients: maxPremiumPatients,
-                created_at: ISO8601DateFormatter().string(from: Date()),
-                updated_at: ISO8601DateFormatter().string(from: Date())
-            )
-            
-            try await supabase.insert(into: "doctor_availability_efficient", data: insertData)
-        } else {
-            // Update existing record
-            try await supabase.update(
-                table: "doctor_availability_efficient",
-                data: updateData,
-                where: "doctor_id",
-                equals: doctorId
-            )
-        }
     }
 }
 
