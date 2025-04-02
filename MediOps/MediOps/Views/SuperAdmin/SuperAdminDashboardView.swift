@@ -56,11 +56,12 @@ struct SuperAdminDashboardView: View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Welcome")
+                    .font(.headline)
+                    .foregroundColor(.gray)
+                Text("Super Admin")
                     .font(.title)
                     .fontWeight(.bold)
-                Text("Super Admin")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
+               
             }
             Spacer()
             

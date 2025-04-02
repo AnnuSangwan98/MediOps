@@ -26,36 +26,38 @@ struct DoctorListView: View {
                 .cornerRadius(10)
                 .shadow(color: .gray.opacity(0.1), radius: 5)
                 
-                // Speciality filter
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(["All"] + specialities, id: \.self) { speciality in
-                            Button(action: {
-                                if speciality == "All" {
-                                    selectedSpeciality = nil
-                                } else {
-                                    selectedSpeciality = speciality
+                // Only show speciality filter if we have doctors
+                if !viewModel.doctors.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(["All"] + specialities, id: \.self) { speciality in
+                                Button(action: {
+                                    if speciality == "All" {
+                                        selectedSpeciality = nil
+                                    } else {
+                                        selectedSpeciality = speciality
+                                    }
+                                }) {
+                                    Text(speciality)
+                                        .font(.subheadline)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            (selectedSpeciality == speciality || 
+                                             (speciality == "All" && selectedSpeciality == nil)) ?
+                                                Color.teal : Color.gray.opacity(0.1)
+                                        )
+                                        .foregroundColor(
+                                            (selectedSpeciality == speciality || 
+                                             (speciality == "All" && selectedSpeciality == nil)) ?
+                                                .white : .black
+                                        )
+                                        .cornerRadius(20)
                                 }
-                            }) {
-                                Text(speciality)
-                                    .font(.subheadline)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        (selectedSpeciality == speciality || 
-                                         (speciality == "All" && selectedSpeciality == nil)) ?
-                                            Color.teal : Color.gray.opacity(0.1)
-                                    )
-                                    .foregroundColor(
-                                        (selectedSpeciality == speciality || 
-                                         (speciality == "All" && selectedSpeciality == nil)) ?
-                                            .white : .black
-                                    )
-                                    .cornerRadius(20)
                             }
                         }
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
                 }
             }
             .padding(.horizontal)
@@ -71,16 +73,73 @@ struct DoctorListView: View {
                     .progressViewStyle(CircularProgressViewStyle())
                     .scaleEffect(1.5)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.vertical, 100)
+            } else if let error = viewModel.error {
+                VStack(spacing: 15) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 50))
+                        .foregroundColor(.orange)
+                    
+                    Text("Error Loading Doctors")
+                        .font(.headline)
+                        .foregroundColor(.red)
+                    
+                    Text(error.localizedDescription)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    
+                    Button(action: {
+                        Task {
+                            await viewModel.loadDoctors(for: hospital)
+                        }
+                    }) {
+                        Text("Try Again")
+                            .foregroundColor(.white)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 20)
+                            .background(Color.teal)
+                            .cornerRadius(8)
+                    }
+                    .padding(.top, 10)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if viewModel.doctors.isEmpty {
-                VStack(spacing: 10) {
+                VStack(spacing: 15) {
                     Image(systemName: "person.fill.questionmark")
                         .font(.system(size: 50))
                         .foregroundColor(.gray)
-                    Text("No doctors found")
+                    
+                    Text("No Active Doctors Found")
                         .font(.headline)
                         .foregroundColor(.gray)
+                    
+                    Text("There are currently no active doctors at \(hospital.hospitalName).")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 100)
+                .frame(maxWidth: .infinity)
+            } else if filteredDoctors.isEmpty {
+                VStack(spacing: 15) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 50))
+                        .foregroundColor(.gray)
+                    
+                    Text("No Matching Doctors")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                    
+                    Text("Try adjusting your search or filters.")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                .padding(.vertical, 100)
+                .frame(maxWidth: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 15) {
@@ -176,6 +235,11 @@ struct DoctorCard: View {
                 }
             }
             
+            NavigationLink(destination: AppointmentView(doctor: doctor), isActive: $showAppointment) {
+                EmptyView()
+            }
+            .hidden()
+            
             Button(action: {
                 showAppointment.toggle()
             }) {
@@ -192,8 +256,5 @@ struct DoctorCard: View {
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
-        .sheet(isPresented: $showAppointment) {
-            AppointmentView(doctor: doctor)
-        }
     }
 }

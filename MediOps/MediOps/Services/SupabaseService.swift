@@ -22,7 +22,7 @@ class SupabaseController {
     public let supabaseURL = URL(string: "https://cwahmqodmutorxkoxtyz.supabase.co")!
     public let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YWhtcW9kbXV0b3J4a294dHl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MzA5MjEsImV4cCI6MjA1ODEwNjkyMX0.06VZB95gPWVIySV2dk8dFCZAXjwrFis1v7wIfGj3hmk"
     
-    private let client: SupabaseClient
+     let client: SupabaseClient
     private let session: URLSession
     
     private init() {
@@ -379,8 +379,25 @@ class SupabaseController {
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let formattedDate = dateFormatter.string(from: date)
         
+        // First, get the slot time information
+        var slotStartTime: String? = nil
+        var slotEndTime: String? = nil
+        
+        print("🔍 APPOINTMENT: Looking up availability slot with ID: \(slotId)")
+        let slotResults = try await select(from: "availability_slots", where: "id", equals: String(slotId))
+        
+        if let slotData = slotResults.first {
+            print("✅ APPOINTMENT: Found slot data")
+            slotStartTime = slotData["slot_time"] as? String
+            slotEndTime = slotData["slot_end_time"] as? String
+            
+            print("⏰ APPOINTMENT: Slot times - Start: \(slotStartTime ?? "Not found"), End: \(slotEndTime ?? "Not found")")
+        } else {
+            print("⚠️ APPOINTMENT: No slot data found for ID: \(slotId)")
+        }
+        
         // Create appointment data conforming to the table schema exactly as defined
-        let appointmentData: [String: Any] = [
+        var appointmentData: [String: Any] = [
             "id": id,
             "patient_id": patientId,
             "doctor_id": doctorId,
@@ -393,6 +410,15 @@ class SupabaseController {
             "is_premium": false
             // booking_time, created_at, and updated_at will use the DEFAULT CURRENT_TIMESTAMP
         ]
+        
+        // Add slot times to appointment data if available
+        if let startTime = slotStartTime {
+            appointmentData["slot_time"] = startTime
+        }
+        
+        if let endTime = slotEndTime {
+            appointmentData["slot_end_time"] = endTime
+        }
         
         // Log the data being sent
         print("📋 APPOINTMENT DATA:")
@@ -614,6 +640,10 @@ class SupabaseController {
                     // Escape values for SQL
                     let escapedReason = reason.replacingOccurrences(of: "'", with: "''")
                     
+                    // Format slot times for SQL
+                    let slotTimeSQL = slotStartTime != nil ? "'\(slotStartTime!)'" : "NULL"
+                    let slotEndTimeSQL = slotEndTime != nil ? "'\(slotEndTime!)'" : "NULL"
+                    
                     // Create SQL that will ensure the patient exists first, then insert the appointment
                     let sql = """
                     BEGIN;
@@ -628,12 +658,12 @@ class SupabaseController {
                     INSERT INTO appointments (
                         id, patient_id, doctor_id, hospital_id, 
                         availability_slot_id, appointment_date, status, 
-                        reason, isdone, is_premium
+                        reason, isdone, is_premium, slot_time, slot_end_time
                     ) VALUES (
                         '\(id)', '\(patientId)', '\(doctorId)', '\(hospitalId)', 
                         \(slotId), '\(formattedDate)', 'upcoming', 
                         '\(escapedReason.isEmpty ? "Medical consultation" : escapedReason)', 
-                        false, false
+                        false, false, \(slotTimeSQL), \(slotEndTimeSQL)
                     );
                     
                     COMMIT;
@@ -943,6 +973,97 @@ class SupabaseController {
                          [NSLocalizedDescriptionKey: "SQL execution failed: \(responseString)"])
         }
     }
+    
+    // MARK: - Appointment Time Functions
+    
+    /// Fetch time slot information for a specific slot ID
+    func fetchSlotTimeInfo(slotId: Int) async throws -> (start: String, end: String)? {
+        print("⏰ TIMEFIX: Fetching time slot info for ID \(slotId)")
+        
+        do {
+            // First try the availability_slots table
+            let slotResults = try await select(
+                from: "availability_slots",
+                where: "id",
+                equals: String(slotId)
+            )
+            
+            if let slotData = slotResults.first,
+               let startTime = slotData["slot_time"] as? String,
+               let endTime = slotData["slot_end_time"] as? String,
+               !startTime.isEmpty, !endTime.isEmpty {
+                print("⏰ TIMEFIX: Found time slot in availability_slots - \(startTime) to \(endTime)")
+                return (startTime, endTime)
+            }
+            
+            // If not found, try doctor_availability table
+            let availResults = try await select(
+                from: "doctor_availability",
+                where: "id",
+                equals: String(slotId)
+            )
+            
+            if let availData = availResults.first,
+               let startTime = availData["slot_time"] as? String,
+               let endTime = availData["slot_end_time"] as? String,
+               !startTime.isEmpty, !endTime.isEmpty {
+                print("⏰ TIMEFIX: Found time slot in doctor_availability - \(startTime) to \(endTime)")
+                return (startTime, endTime)
+            }
+            
+            // As a fallback, get general slot times from the database
+            let timeResults = try await executeSQL(sql: """
+                SELECT id, slot_time, slot_end_time 
+                FROM doctor_availability 
+                LIMIT 5
+            """)
+            
+            print("⏰ TIMEFIX: Sample slot times in database: \(timeResults)")
+            
+            // If no specific time is found, use default slot times based on ID
+            // Typically slots are hourly starting from 9 AM
+            let baseHour = 9 + (slotId % 8) // This gives hours between 9 and 16 (9 AM to 4 PM)
+            let startTime = String(format: "%02d:00", baseHour)
+            let endTime = String(format: "%02d:00", baseHour + 1)
+            
+            print("⏰ TIMEFIX: Using generated time slot - \(startTime) to \(endTime)")
+            return (startTime, endTime)
+            
+        } catch {
+            print("❌ TIMEFIX: Error fetching slot time info: \(error.localizedDescription)")
+            return nil
+        }
+    }
+    
+    /// Update appointment with correct time slot information
+    func fixAppointmentTimes(appointmentId: String, slotId: Int) async throws -> Bool {
+        print("⏰ TIMEFIX: Fixing appointment times for appointment \(appointmentId), slot \(slotId)")
+        
+        do {
+            // Get the slot time data
+            guard let timeInfo = try await fetchSlotTimeInfo(slotId: slotId) else {
+                print("❌ TIMEFIX: Could not get time info for slot \(slotId)")
+                return false
+            }
+            
+            // Update the appointment with the slot times
+            let updateResult = try await update(
+                table: "appointments",
+                id: appointmentId,
+                data: [
+                    "slot_time": timeInfo.start,
+                    "slot_end_time": timeInfo.end
+                ]
+            )
+            
+            print("✅ TIMEFIX: Successfully updated appointment times: \(updateResult)")
+            return true
+            
+        } catch {
+            print("❌ TIMEFIX: Error fixing appointment times: \(error.localizedDescription)")
+            return false
+        }
+    }
 }
 
 // Simple SHA256 implementation
@@ -1005,12 +1126,22 @@ extension SupabaseController {
             CREATE TABLE IF NOT EXISTS public.pat_reports (
               id uuid not null default gen_random_uuid(),
               patient_name text not null,
-              patient_id text not null,
+              patient_id character varying(10) not null,
               summary text null,
               file_url text not null,
               uploaded_at timestamp with time zone not null default timezone('utc'::text, now()),
-              constraint pat_reports_pkey primary key (id)
+              lab_id character varying(255) null,
+              constraint pat_reports_pkey primary key (id),
+              constraint fk_lab_id foreign KEY (lab_id) references lab_admins (id) on delete CASCADE,
+              constraint fk_patient_id foreign KEY (patient_id) references patients (patient_id) on delete CASCADE
             ) TABLESPACE pg_default;
+            
+            CREATE INDEX IF NOT EXISTS idx_pat_reports_lab_id ON public.pat_reports USING btree (lab_id) TABLESPACE pg_default;
+            
+            CREATE INDEX IF NOT EXISTS idx_pat_reports_patient_id ON public.pat_reports USING btree (patient_id) TABLESPACE pg_default;
+            
+            CREATE TRIGGER set_patient_name BEFORE INSERT ON pat_reports FOR EACH ROW
+            EXECUTE FUNCTION fetch_patient_name();
             """
             
             // Execute the SQL through Supabase
@@ -1033,7 +1164,7 @@ extension SupabaseController {
                 throw SupabaseError.requestFailed("Failed to create pat_reports table")
             }
             
-            print("Successfully created pat_reports table")
+            print("Successfully created pat_reports table with lab_id field and constraints")
         }
     }
     

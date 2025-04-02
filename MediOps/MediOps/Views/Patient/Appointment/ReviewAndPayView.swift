@@ -15,181 +15,186 @@ struct ReviewAndPayView: View {
     @State private var otherPatientAge = ""
     @State private var otherPatientGender = "Male"
     @State private var healthConcerns = ""
+    @State private var isPremium = false
+    @State private var showPremiumAlert = false
     
     private let bookingFee = 10.0
-    private let consultationFee = 500.0 // Default consultation fee
+    private let consultationFee = 500.0
+    private let premiumFee = 200.0
     private let genderOptions = ["Male", "Female", "Other"]
     
+    var totalAmount: Double {
+        let baseAmount = consultationFee + bookingFee
+        return isPremium ? baseAmount + premiumFee : baseAmount
+    }
+    
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Doctor info
-                    HStack(spacing: 15) {
-                        Circle()
-                            .fill(Color.teal)
-                            .frame(width: 60, height: 60)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .foregroundColor(.white)
-                            )
-                        
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(doctor.name)
-                                .font(.title3)
-                            Text(doctor.specialization)
-                                .foregroundColor(.gray)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Doctor info
+                HStack(spacing: 15) {
+                    Circle()
+                        .fill(Color.teal)
+                        .frame(width: 60, height: 60)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.white)
+                        )
+                    
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(doctor.name)
+                            .font(.title3)
+                        Text(doctor.specialization)
+                            .foregroundColor(.gray)
+                    }
+                }
+                .padding()
+                
+                // Appointment details
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Appointment")
+                        .font(.headline)
+                    
+                    HStack {
+                        Image(systemName: "calendar")
+                        Text(appointmentDate.formatted(date: .long, time: .omitted))
+                    }
+                    
+                    HStack {
+                        Image(systemName: "clock")
+                        let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: appointmentTime)!
+                        Text("\(appointmentTime.formatted(date: .omitted, time: .shortened)) to \(endTime.formatted(date: .omitted, time: .shortened))")
+                    }
+                }
+                .padding()
+                
+                // Patient info
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Patient info")
+                        .font(.headline)
+                    
+                    Text("Note: You can describe your health concerns or any relevant details in the text field below.")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    
+                    TextField("Enter your health concerns...", text: $healthConcerns)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                }
+                .padding()
+                
+                // Premium Switch
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(isOn: $isPremium) {
+                        HStack {
+                            Image(systemName: "star.fill")
+                                .foregroundColor(.yellow)
+                            Text("Premium Appointment")
+                                .fontWeight(.medium)
                         }
                     }
-                    .padding()
-                    
-                    // Appointment details
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Appointment")
-                            .font(.headline)
-                        
-                        HStack {
-                            Image(systemName: "calendar")
-                            Text(appointmentDate.formatted(date: .long, time: .omitted))
-                        }
-                        
-                        HStack {
-                            Image(systemName: "clock")
-                            let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: appointmentTime)!
-                            Text("\(appointmentTime.formatted(date: .omitted, time: .shortened)) to \(endTime.formatted(date: .omitted, time: .shortened))")
+                    .tint(.teal)
+                    .onChange(of: isPremium) { newValue in
+                        if newValue {
+                            showPremiumAlert = true
                         }
                     }
-                    .padding()
                     
-                    // Patient info
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Patient info")
-                            .font(.headline)
-                        
-                        Button(action: { showPatientSelector.toggle() }) {
-                            HStack {
-                                Circle()
-                                    .fill(Color.gray.opacity(0.2))
-                                    .frame(width: 40, height: 40)
-                                    .overlay(
-                                        Image(systemName: "person.fill")
-                                            .foregroundColor(.gray)
-                                    )
-                                
-                                Text(selectedPatient)
-                                    .fontWeight(.medium)
-                                
-                                Spacer()
-                                
-                                Image(systemName: "chevron.down")
-                                    .foregroundColor(.gray)
-                            }
-                        }
-                        .actionSheet(isPresented: $showPatientSelector) {
-                            ActionSheet(
-                                title: Text("Select Patient"),
-                                buttons: [
-                                    .default(Text("Myself")) { selectedPatient = "Myself" },
-                                    .default(Text("Other")) { selectedPatient = "Other" },
-                                    .cancel()
-                                ]
-                            )
-                        }
-                        
-                        if selectedPatient == "Other" {
-                            VStack(spacing: 15) {
-                                TextField("Patient Name", text: $otherPatientName)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                
-                                TextField("Age", text: $otherPatientAge)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .keyboardType(.numberPad)
-                                
-                                Picker("Gender", selection: $otherPatientGender) {
-                                    ForEach(genderOptions, id: \.self) { gender in
-                                        Text(gender).tag(gender)
-                                    }
-                                }
-                                .pickerStyle(SegmentedPickerStyle())
-                            }
-                        }
-                        
-                        Text("Note: You can describe your health concerns or any relevant details in the text field below.")
+                    if isPremium {
+                        Text("Priority access for appointments and lab reports")
                             .font(.caption)
                             .foregroundColor(.gray)
-                        
-                        TextField("Enter your health concerns...", text: $healthConcerns)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
                     }
-                    .padding()
+                }
+                .padding()
+                .background(Color.white)
+                .cornerRadius(12)
+                .shadow(color: .gray.opacity(0.1), radius: 5)
+                
+                // Payment details
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Payment Details")
+                        .font(.headline)
                     
-                    // Payment details
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Payment Details")
-                            .font(.headline)
+                    VStack(spacing: 10) {
+                        HStack {
+                            Text("Consultation fees:")
+                            Spacer()
+                            Text("Rs.\(Int(consultationFee))")
+                        }
                         
-                        VStack(spacing: 10) {
+                        HStack {
+                            Text("Booking fee")
+                            Spacer()
+                            Text("Rs.\(Int(bookingFee))")
+                        }
+                        
+                        if isPremium {
                             HStack {
-                                Text("Consultation fees:")
+                                Text("Premium fee")
                                 Spacer()
-                                Text("Rs.\(Int(consultationFee))")
+                                Text("Rs.\(Int(premiumFee))")
                             }
-                            
-                            HStack {
-                                Text("Booking fee")
-                                Spacer()
-                                Text("Rs.\(Int(bookingFee))")
-                            }
-                            
-                            Divider()
-                            
-                            HStack {
-                                Text("Total Pay")
-                                    .fontWeight(.bold)
-                                Spacer()
-                                Text("Rs.\(Int(consultationFee + bookingFee))")
-                                    .fontWeight(.bold)
-                            }
+                            .foregroundColor(.teal)
+                        }
+                        
+                        Divider()
+                        
+                        HStack {
+                            Text("Total Pay")
+                                .fontWeight(.bold)
+                            Spacer()
+                            Text("Rs.\(Int(totalAmount))")
+                                .fontWeight(.bold)
                         }
                     }
-                    .padding()
                 }
-            }
-            .navigationTitle("Review & Pay")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
-            
-            // Pay button
-            Button(action: {
-                // Validate other patient details if needed
-                if selectedPatient == "Other" {
-                    if otherPatientName.isEmpty || otherPatientAge.isEmpty {
-                        return // Add proper validation alert here
-                    }
-                }
-                showConfirmation.toggle()
-            }) {
-                HStack {
-                    Text("Pay")
-                    Text("Rs.\(Int(consultationFee + bookingFee))")
-                        .padding(.horizontal, 8)
-                        .background(Color.teal.opacity(0.2))
-                        .cornerRadius(4)
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.teal)
-                .cornerRadius(10)
             }
+        }
+        .navigationTitle("Review & Pay")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Premium Appointment", isPresented: $showPremiumAlert) {
+            Button("Continue", role: .none) {
+                // Keep premium enabled
+            }
+            Button("Cancel", role: .cancel) {
+                isPremium = false
+            }
+        } message: {
+            Text("By enabling it you will get the priority in appointment and lab reports")
+        }
+        
+        // Pay button
+        Button(action: {
+            // Validate other patient details if needed
+            if selectedPatient == "Other" {
+                if otherPatientName.isEmpty || otherPatientAge.isEmpty {
+                    return // Add proper validation alert here
+                }
+            }
+            showConfirmation = true
+        }) {
+            HStack {
+                Text("Pay")
+                Text("Rs.\(Int(totalAmount))")
+                    .padding(.horizontal, 8)
+                    .background(Color.teal.opacity(0.2))
+                    .cornerRadius(4)
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
             .padding()
-            .sheet(isPresented: $showConfirmation) {
-                PaymentFinalView(doctor: doctor, appointmentDate: appointmentDate, appointmentTime: appointmentTime)
-            }
+            .background(Color.teal)
+            .cornerRadius(10)
+        }
+        .padding()
+        .sheet(isPresented: $showConfirmation) {
+            PaymentFinalView(
+                doctor: doctor,
+                appointmentDate: appointmentDate,
+                appointmentTime: appointmentTime,
+                isPremium: isPremium
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DismissAllModals"))) { _ in
             dismiss()

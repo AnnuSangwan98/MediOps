@@ -157,6 +157,7 @@ struct PatientReport: Identifiable {
     let summary: String?
     let fileUrl: String
     let uploadedAt: Date
+    let labId: String?
     
     init(from data: [String: Any]) {
         // Extract id as UUID
@@ -176,6 +177,9 @@ struct PatientReport: Identifiable {
         
         // Extract required file URL
         self.fileUrl = data["file_url"] as? String ?? ""
+        
+        // Get the lab_id (optional)
+        self.labId = data["lab_id"] as? String
         
         // Parse uploaded_at timestamp
         if let dateString = data["uploaded_at"] as? String {
@@ -408,16 +412,48 @@ struct PDFPreview: UIViewRepresentable {
     let data: Data
     
     func makeUIView(context: Context) -> PDFView {
+        print("Creating new PDFView")
         let pdfView = PDFView()
+        pdfView.backgroundColor = .white
         pdfView.displayMode = .singlePage
         pdfView.autoScales = true
         pdfView.displayDirection = .vertical
+        pdfView.usePageViewController(true)
+        
+        // Try to create a PDFDocument right away
+        if let document = PDFDocument(data: data) {
+            print("Document created in makeUIView with \(document.pageCount) pages")
+            pdfView.document = document
+            // Force layout
+            pdfView.layoutDocumentView()
+            pdfView.goToFirstPage(nil)
+        } else {
+            print("Failed to create document in makeUIView")
+        }
+        
         return pdfView
     }
     
-    func updateUIView(_ uiView: PDFView, context: Context) {
+    func updateUIView(_ pdfView: PDFView, context: Context) {
+        print("Updating PDFView")
+        
+        // Recreate document and set it to the view
         if let document = PDFDocument(data: data) {
-            uiView.document = document
+            print("Document created in updateUIView with \(document.pageCount) pages")
+            // Set document on main thread
+            DispatchQueue.main.async {
+                pdfView.document = document
+                // Force layout and go to first page
+                pdfView.layoutDocumentView()
+                pdfView.goToFirstPage(nil)
+                pdfView.scaleFactor = pdfView.scaleFactorForSizeToFit
+                
+                // Set minScaleFactor and maxScaleFactor
+                pdfView.minScaleFactor = pdfView.scaleFactorForSizeToFit * 0.8
+                pdfView.maxScaleFactor = pdfView.scaleFactorForSizeToFit * 4.0
+            }
+        } else {
+            print("Failed to create document in updateUIView")
         }
     }
 }
@@ -430,60 +466,129 @@ struct PatientReportDetailView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var pdfData: Data?
+    @State private var pdfLoadAttempts = 0
+    @State private var attemptingAlternateGeneration = false
+    
+    // App theme colors
+    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
+    let darkTeal = Color(red: 23/255, green: 130/255, blue: 160/255)
     
     var body: some View {
         NavigationStack {
-            VStack {
-                if isLoadingPdf {
-                    ProgressView("Generating report...")
-                } else if let pdfData = pdfData {
-                    PDFPreview(data: pdfData)
-                        .edgesIgnoringSafeArea(.bottom)
-                } else {
-                    VStack(spacing: 20) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 40))
-                            .foregroundColor(.orange)
-                        Text("Failed to generate report")
-                            .font(.headline)
-                        Text("Please try again later")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                    .padding()
-                }
-            }
-            .navigationTitle("Lab Report")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Back") {
-                        dismiss()
-                    }
-                }
+            ZStack {
+                // Background color
+                Color.white
+                    .ignoresSafeArea()
                 
-                if pdfData != nil {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: sharePDF) {
-                            Image(systemName: "square.and.arrow.up")
+                VStack {
+                    if isLoadingPdf {
+                        VStack(spacing: 20) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                                .tint(primaryTeal)
+                            Text(attemptingAlternateGeneration ? "Trying alternative method..." : "Generating report...")
+                                .font(.headline)
+                                .foregroundColor(darkTeal)
+                        }
+                    } else if let pdfData = pdfData {
+                        // First wrap PDFPreview in a GeometryReader to ensure it fills the available space
+                        GeometryReader { geometry in
+                            PDFPreview(data: pdfData)
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                        }
+                        .edgesIgnoringSafeArea(.bottom)
+                    } else {
+                        VStack(spacing: 20) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 40))
+                                .foregroundColor(.orange)
+                            Text("Failed to generate report")
+                                .font(.headline)
+                                .foregroundColor(darkTeal)
+                            Text("Please try again")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            Button("Retry") {
+                                pdfLoadAttempts = 0
+                                attemptingAlternateGeneration = false
+                                loadReport()
+                            }
+                            .padding()
+                            .foregroundColor(.white)
+                            .background(primaryTeal)
+                            .cornerRadius(8)
+                            .padding(.top, 10)
+                        }
+                        .padding()
+                    }
+                }
+                .navigationTitle("Lab Report")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(primaryTeal, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Back") {
+                            dismiss()
+                        }
+                        .foregroundColor(.white)
+                    }
+                    
+                    if pdfData != nil {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button(action: sharePDF) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .foregroundColor(.white)
+                            }
                         }
                     }
                 }
+                .alert("Error", isPresented: $showError) {
+                    Button("OK", role: .cancel) {}
+                    Button("Retry", role: .none) {
+                        loadReport()
+                    }
+                } message: {
+                    Text(errorMessage)
+                }
             }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(errorMessage)
-            }
-            .onAppear {
+        }
+        .onAppear {
+            // Always reset state when view appears to prevent black screen
+            reset()
+            
+            // Load the report with a slight delay to ensure view is initialized
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 loadReport()
             }
         }
     }
     
+    private func reset() {
+        isLoadingPdf = true
+        pdfData = nil
+        pdfLoadAttempts = 0
+        attemptingAlternateGeneration = false
+    }
+    
     private func loadReport() {
-        // If the report's fileUrl starts with "generated_pdf", we'll generate a PDF
-        // Otherwise, we'll try to load the PDF from the URL
+        // Reset loading state
+        isLoadingPdf = true
+        pdfLoadAttempts += 1
+        
+        print("Attempting to load report: Attempt \(pdfLoadAttempts)")
+        
+        // If we've already tried 3 times, try alternate generation
+        if pdfLoadAttempts >= 3 && !attemptingAlternateGeneration {
+            print("Multiple attempts failed, trying alternate generation method")
+            attemptingAlternateGeneration = true
+            generatePDFAlternate()
+            return
+        }
+        
+        // If the report's fileUrl starts with "generated_pdf", generate a PDF
         if report.fileUrl.starts(with: "generated_pdf") {
             generatePDF()
         } else {
@@ -493,14 +598,96 @@ struct PatientReportDetailView: View {
     }
     
     private func generatePDF() {
-        // Generate a PDF from the report data
+        print("Generating PDF for report: \(report.id)")
+        // Generate a PDF from the report data with better error handling
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            if let generatedPDF = PDFGenerator.generateLabReportPDF(report: report) {
-                pdfData = generatedPDF
+            do {
+                // Try to generate PDF
+                if let generatedPDF = PDFGenerator.generateLabReportPDF(report: report) {
+                    let pdfDocument = PDFDocument(data: generatedPDF)
+                    if pdfDocument != nil {
+                        print("PDF generation successful: \(generatedPDF.count) bytes")
+                        pdfData = generatedPDF
+                        isLoadingPdf = false
+                    } else {
+                        throw NSError(domain: "PDFGenerationError", code: 2, 
+                                     userInfo: [NSLocalizedDescriptionKey: "Generated invalid PDF document"])
+                    }
+                } else {
+                    throw NSError(domain: "PDFGenerationError", code: 1, 
+                                 userInfo: [NSLocalizedDescriptionKey: "Failed to generate PDF data"])
+                }
+            } catch {
+                print("PDF generation error: \(error.localizedDescription)")
+                
+                // Try alternate if this fails
+                if !attemptingAlternateGeneration {
+                    attemptingAlternateGeneration = true
+                    generatePDFAlternate()
+                } else {
+                    isLoadingPdf = false
+                    errorMessage = "Failed to generate PDF report: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
+    }
+    
+    // Alternate PDF generation method using a simpler approach
+    private func generatePDFAlternate() {
+        print("Using alternate PDF generation method")
+        attemptingAlternateGeneration = true
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // Create a very simple PDF with minimal content
+            let pageWidth: CGFloat = 595.2
+            let pageHeight: CGFloat = 841.8
+            let pageRect = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
+            
+            let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+            
+            let data = renderer.pdfData { context in
+                context.beginPage()
+                
+                let titleAttributes = [
+                    NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 24)
+                ]
+                let contentAttributes = [
+                    NSAttributedString.Key.font: UIFont.systemFont(ofSize: 16)
+                ]
+                
+                // Draw simple title
+                let title = "Lab Report: \(report.patientName)"
+                title.draw(at: CGPoint(x: 50, y: 50), withAttributes: titleAttributes)
+                
+                // Draw ID
+                let idText = "Patient ID: \(report.patientId)"
+                idText.draw(at: CGPoint(x: 50, y: 100), withAttributes: contentAttributes)
+                
+                // Draw date
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateStyle = .long
+                let dateText = "Date: \(dateFormatter.string(from: report.uploadedAt))"
+                dateText.draw(at: CGPoint(x: 50, y: 130), withAttributes: contentAttributes)
+                
+                // Draw summary if available
+                let summaryTitle = "Summary:"
+                summaryTitle.draw(at: CGPoint(x: 50, y: 180), withAttributes: contentAttributes)
+                
+                let summaryText = report.summary ?? "No summary available"
+                summaryText.draw(in: CGRect(x: 50, y: 210, width: pageWidth - 100, height: 200), 
+                               withAttributes: contentAttributes)
+            }
+            
+            // Check if PDF was created successfully
+            if let pdfDocument = PDFDocument(data: data) {
+                print("Alternate PDF generation successful: \(data.count) bytes, \(pdfDocument.pageCount) pages")
+                pdfData = data
                 isLoadingPdf = false
             } else {
+                print("Alternate PDF generation failed")
                 isLoadingPdf = false
-                errorMessage = "Failed to generate PDF report"
+                errorMessage = "Failed to generate PDF report using both methods."
                 showError = true
             }
         }
@@ -514,30 +701,54 @@ struct PatientReportDetailView: View {
             return
         }
         
+        print("Loading PDF from URL: \(url)")
         // Use URLSession to download the PDF
         URLSession.shared.dataTask(with: url) { data, response, error in
             DispatchQueue.main.async {
-                isLoadingPdf = false
-                
                 if let error = error {
-                    errorMessage = "Failed to load PDF: \(error.localizedDescription)"
-                    showError = true
+                    print("PDF download error: \(error.localizedDescription)")
+                    
+                    // Try to generate instead if download fails
+                    if !attemptingAlternateGeneration {
+                        attemptingAlternateGeneration = true
+                        generatePDFAlternate()
+                    } else {
+                        isLoadingPdf = false
+                        errorMessage = "Failed to load PDF: \(error.localizedDescription)"
+                        showError = true
+                    }
                     return
                 }
                 
                 guard let data = data, let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                    errorMessage = "Failed to load PDF from server"
-                    showError = true
+                    print("Invalid response or data from server")
+                    
+                    // Try to generate instead if response is invalid
+                    if !attemptingAlternateGeneration {
+                        attemptingAlternateGeneration = true
+                        generatePDFAlternate()
+                    } else {
+                        isLoadingPdf = false
+                        errorMessage = "Failed to load PDF from server"
+                        showError = true
+                    }
                     return
                 }
                 
                 // Check if the data is a valid PDF
-                if PDFDocument(data: data) != nil {
+                if let pdfDocument = PDFDocument(data: data) {
+                    print("PDF loaded successfully: \(pdfDocument.pageCount) pages, \(data.count) bytes")
                     pdfData = data
+                    isLoadingPdf = false
                 } else {
-                    // If not a valid PDF, generate one instead
-                    pdfData = PDFGenerator.generateLabReportPDF(report: report)
-                    if pdfData == nil {
+                    print("Invalid PDF format, generating fallback")
+                    
+                    // Try alternate method
+                    if !attemptingAlternateGeneration {
+                        attemptingAlternateGeneration = true
+                        generatePDFAlternate()
+                    } else {
+                        isLoadingPdf = false
                         errorMessage = "Invalid PDF format"
                         showError = true
                     }
@@ -597,6 +808,12 @@ struct AddReportView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var isValidatingPatient = false
+    @State private var patientValidated = false
+    
+    // App theme colors
+    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
+    let darkTeal = Color(red: 23/255, green: 130/255, blue: 160/255)
     
     private let supabase = SupabaseController.shared
     
@@ -604,42 +821,177 @@ struct AddReportView: View {
     
     var body: some View {
         NavigationStack {
-            Form {
-                Section(header: Text("Patient Information")) {
-                    TextField("Patient Name", text: $patientName)
-                    TextField("Patient ID", text: $patientId)
-                }
+            ZStack {
+                // Background gradient instead of solid white
+                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                             startPoint: .topLeading,
+                             endPoint: .bottomTrailing)
+                    .ignoresSafeArea()
                 
-                Section(header: Text("Report Details")) {
-                    TextField("Report Summary", text: $summary, axis: .vertical)
-                        .lineLimit(5...10)
-                }
-                
-                Section {
-                    Button(action: addReport) {
-                        HStack {
-                            Text("Add Report")
-                            if isLoading {
-                                Spacer()
-                                ProgressView()
+                VStack(spacing: 0) {
+                    // Patient Information Section
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("PATIENT INFORMATION")
+                            .font(.subheadline)
+                            .foregroundColor(primaryTeal)
+                            .padding(.top, 30)
+                            .padding(.bottom, 5)
+                        
+                        // Patient ID Field
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                TextField("PATIENT ID", text: Binding(
+                                    get: { patientId },
+                                    set: { patientId = $0.uppercased() }
+                                ))
+                                .font(.system(size: 18))
+                                .textCase(.uppercase)
+                                .autocapitalization(.allCharacters)
+                                .autocorrectionDisabled(true)
+                                .padding()
+                                .background(Color.white)
+                                .cornerRadius(10)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                )
+                                
+                                if isValidatingPatient {
+                                    ProgressView()
+                                        .tint(primaryTeal)
+                                        .padding(.leading, 4)
+                                } else if !patientId.isEmpty {
+                                    Button("Verify") {
+                                        Task {
+                                            await fetchPatientDetails()
+                                        }
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(Color(red: 220/255, green: 240/255, blue: 240/255))
+                                    .foregroundColor(primaryTeal)
+                                    .cornerRadius(10)
+                                    .disabled(patientId.isEmpty || isValidatingPatient)
+                                }
+                            }
+                            
+                            if !patientName.isEmpty {
+                                Text(patientName)
+                                    .foregroundColor(.gray)
+                                    .padding(.leading, 5)
+                            }
+                            
+                            if patientValidated {
+                                HStack {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                    Text("Patient verified")
+                                        .foregroundColor(.green)
+                                }
+                                .padding(.leading, 5)
                             }
                         }
                     }
-                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty)
-                }
-            }
-            .navigationTitle("Add New Report")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
+                    .padding(.horizontal)
+                    
+                    // Report Details Section
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("REPORT DETAILS")
+                            .font(.subheadline)
+                            .foregroundColor(primaryTeal)
+                            .padding(.top, 25)
+                            .padding(.bottom, 5)
+                        
+                        // Report Summary Field
+                        TextField("Report Summary", text: $summary, axis: .vertical)
+                            .lineLimit(5...10)
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                            )
+                    }
+                    .padding(.horizontal)
+                    
+                    Spacer()
+                    
+                    // Add Report Button at bottom
+                    Button(action: addReport) {
+                        Text("Add Report")
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                    }
+                    .background(patientName.isEmpty || patientId.isEmpty || !patientValidated ? 
+                                Color.gray.opacity(0.4) : 
+                                Color(red: 220/255, green: 220/255, blue: 220/255))
+                    .cornerRadius(10)
+                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty || !patientValidated)
+                    .padding(.horizontal)
+                    .padding(.vertical, 20)
+                    
+                    if isLoading {
+                        ProgressView()
+                            .tint(primaryTeal)
+                            .padding()
                     }
                 }
+                .navigationTitle("Add New Report")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .foregroundColor(primaryTeal)
+                    }
+                }
+                .alert("Error", isPresented: $showError) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(errorMessage)
+                }
             }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(errorMessage)
+        }
+    }
+    
+    private func fetchPatientDetails() async {
+        isValidatingPatient = true
+        patientValidated = false
+        
+        do {
+            let results = try await supabase.select(
+                from: "patients",
+                where: "patient_id",
+                equals: patientId
+            )
+            
+            if let patientData = results.first,
+               let name = patientData["name"] as? String {
+                await MainActor.run {
+                    patientName = name
+                    patientValidated = true
+                    isValidatingPatient = false
+                }
+            } else {
+                await MainActor.run {
+                    patientName = ""
+                    patientValidated = false
+                    isValidatingPatient = false
+                    errorMessage = "Patient not found"
+                    showError = true
+                }
+            }
+        } catch {
+            await MainActor.run {
+                patientName = ""
+                patientValidated = false
+                isValidatingPatient = false
+                errorMessage = "Error fetching patient details: \(error.localizedDescription)"
+                showError = true
             }
         }
     }
@@ -647,15 +999,32 @@ struct AddReportView: View {
     private func addReport() {
         isLoading = true
         
+        // Verify patient one more time before creating report
+        if !patientValidated {
+            errorMessage = "Please verify the patient information first"
+            showError = true
+            isLoading = false
+            return
+        }
+        
         // Generate a placeholder for the file_url, which will be used to identify this is a generated PDF
         let placeholderUrl = "generated_pdf_\(UUID().uuidString)"
+        
+        // Get the lab admin ID from UserDefaults
+        guard let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") else {
+            errorMessage = "Lab admin ID not found. Please log in again."
+            showError = true
+            isLoading = false
+            return
+        }
         
         // Create a new report with the required fields following the table definition
         let newReport: [String: Any] = [
             "patient_name": patientName,
             "patient_id": patientId,
             "summary": summary,
-            "file_url": placeholderUrl // Required field in the database schema
+            "file_url": placeholderUrl, // Required field in the database schema
+            "lab_id": labAdminId // Associate with the lab admin
         ]
         
         Task {
@@ -666,7 +1035,7 @@ struct AddReportView: View {
                 // Insert the new report
                 try await supabase.insert(into: "pat_reports", values: newReport)
                 
-                print("Report successfully added to pat_reports table")
+                print("Report successfully added to pat_reports table for lab admin: \(labAdminId)")
                 
                 await MainActor.run {
                     isLoading = false
@@ -696,6 +1065,12 @@ struct EditReportView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var isValidatingPatient = false
+    @State private var patientValidated = true
+    
+    // App theme colors
+    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
+    let darkTeal = Color(red: 23/255, green: 130/255, blue: 160/255)
     
     private let supabase = SupabaseController.shared
     private let report: PatientReport
@@ -712,42 +1087,154 @@ struct EditReportView: View {
     
     var body: some View {
         NavigationStack {
-            Form {
-                Section(header: Text("Patient Information")) {
-                    TextField("Patient Name", text: $patientName)
-                    TextField("Patient ID", text: $patientId)
-                }
+            ZStack {
+                // White background instead of gradient
+                Color.white
+                    .ignoresSafeArea()
                 
-                Section(header: Text("Report Details")) {
-                    TextField("Report Summary", text: $summary, axis: .vertical)
-                        .lineLimit(5...10)
-                }
-                
-                Section {
-                    Button(action: updateReport) {
+                Form {
+                    Section {
+                        TextField("Patient Name", text: $patientName)
+                        
                         HStack {
-                            Text("Update Report")
-                            if isLoading {
-                                Spacer()
+                            TextField("Patient ID", text: Binding(
+                                get: { patientId },
+                                set: { patientId = $0.uppercased() }
+                            ))
+                            .textCase(.uppercase)
+                            .autocapitalization(.allCharacters)
+                            .autocorrectionDisabled(true)
+                            
+                            if isValidatingPatient {
                                 ProgressView()
+                                    .tint(primaryTeal)
+                                    .padding(.leading, 4)
+                            } else if !patientId.isEmpty {
+                                Button("Verify") {
+                                    verifyPatient()
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(primaryTeal)
+                                .disabled(patientId.isEmpty || isValidatingPatient)
                             }
                         }
+                        
+                        if patientValidated {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Patient verified")
+                                    .foregroundColor(.green)
+                            }
+                        }
+                    } header: {
+                        Text("Patient Information")
+                            .foregroundColor(darkTeal)
                     }
-                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty)
+                    
+                    Section {
+                        TextField("Report Summary", text: $summary, axis: .vertical)
+                            .lineLimit(5...10)
+                    } header: {
+                        Text("Report Details")
+                            .foregroundColor(darkTeal)
+                    }
+                    
+                    Section {
+                        Button(action: updateReport) {
+                            HStack {
+                                Spacer()
+                                Text("Update Report")
+                                    .fontWeight(.semibold)
+                                if isLoading {
+                                    Spacer()
+                                    ProgressView()
+                                        .tint(.white)
+                                }
+                                Spacer()
+                            }
+                            .padding(.vertical, 10)
+                            .background(patientName.isEmpty || patientId.isEmpty || !patientValidated ? Color.gray.opacity(0.3) : primaryTeal)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                        }
+                        .disabled(isLoading || patientName.isEmpty || patientId.isEmpty || !patientValidated)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
+                    }
+                }
+                .scrollContentBackground(.hidden) // Make form background transparent to show white background
+                .navigationTitle("Edit Report")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .foregroundColor(primaryTeal)
+                    }
+                }
+                .alert("Error", isPresented: $showError) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(errorMessage)
+                }
+                .onChange(of: patientId) { _, _ in
+                    patientValidated = false
+                }
+                .onChange(of: patientName) { _, _ in
+                    patientValidated = false
                 }
             }
-            .navigationTitle("Edit Report")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
+        }
+    }
+    
+    private func verifyPatient() {
+        if patientId.isEmpty {
+            errorMessage = "Please enter a patient ID to verify"
+            showError = true
+            return
+        }
+        
+        isValidatingPatient = true
+        
+        Task {
+            do {
+                // Query the patients table to verify the patient exists
+                let patients = try await supabase.select(
+                    from: "patients",
+                    where: "patient_id",
+                    equals: patientId
+                )
+                
+                await MainActor.run {
+                    isValidatingPatient = false
+                    
+                    if patients.isEmpty {
+                        errorMessage = "No patient found with ID: \(patientId)"
+                        showError = true
+                    } else if let patient = patients.first, let patientNameFromDB = patient["name"] as? String {
+                        if patientName.isEmpty {
+                            // If patient name field is empty, auto-fill it
+                            patientName = patientNameFromDB
+                            patientValidated = true
+                        } else if patientName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != patientNameFromDB.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                            // If patient name doesn't match the one in database
+                            errorMessage = "Patient name doesn't match the name in our records for patient ID: \(patientId). The correct name is '\(patientNameFromDB)'."
+                            showError = true
+                        } else {
+                            // Patient verified successfully
+                            patientValidated = true
+                        }
                     }
                 }
-            }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(errorMessage)
+            } catch {
+                print("ERROR verifying patient: \(error.localizedDescription)")
+                
+                await MainActor.run {
+                    isValidatingPatient = false
+                    errorMessage = "Failed to verify patient: \(error.localizedDescription)"
+                    showError = true
+                }
             }
         }
     }
@@ -755,12 +1242,26 @@ struct EditReportView: View {
     private func updateReport() {
         isLoading = true
         
-        // Create updated report with the edited fields
-        let updatedReport: [String: Any] = [
+        // Verify patient one more time before updating report
+        if !patientValidated {
+            errorMessage = "Please verify the patient information first"
+            showError = true
+            isLoading = false
+            return
+        }
+        
+        // Create an updated report object with only the fields we want to update
+        var updatedReport: [String: Any] = [
             "patient_name": patientName,
             "patient_id": patientId,
             "summary": summary
         ]
+        
+        // Get the lab admin ID from UserDefaults
+        // We'll include it in the update to ensure it's preserved or updated if missing
+        if let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") {
+            updatedReport["lab_id"] = labAdminId
+        }
         
         Task {
             do {
@@ -893,90 +1394,103 @@ struct PatientReportsView: View {
     @State private var reportToEdit: PatientReport?
     @State private var showDeleteConfirmation = false
     @State private var reportToDelete: PatientReport?
+    @State private var selectedFilter: String = "All Patients"
+    
+    // App theme colors
+    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
+    let darkTeal = Color(red: 23/255, green: 130/255, blue: 160/255)
     
     private let supabase = SupabaseController.shared
     
+    // Available filters
+    private let filters = ["All Patients", "Recent", "Pending"]
+    
     var filteredReports: [PatientReport] {
-        if searchQuery.isEmpty {
-            return reports
-        } else {
-            return reports.filter { report in
+        var filtered = reports
+        
+        // Filter by search query
+        if !searchQuery.isEmpty {
+            filtered = filtered.filter { report in
                 report.patientName.lowercased().contains(searchQuery.lowercased()) ||
                 report.patientId.lowercased().contains(searchQuery.lowercased()) ||
                 (report.summary?.lowercased().contains(searchQuery.lowercased()) ?? false)
             }
         }
+        
+        // Apply category filter
+        switch selectedFilter {
+        case "Recent":
+            // Filter reports from the last 7 days
+            let oneWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+            filtered = filtered.filter { $0.uploadedAt > oneWeekAgo }
+        case "Pending":
+            // Example filter - in a real app this would filter by a status field
+            // For now, we'll just show the most recent 3 as "pending"
+            if filtered.count > 3 {
+                filtered = Array(filtered.prefix(3))
+            }
+        default:
+            // "All Patients" - no additional filtering
+            break
+        }
+        
+        return filtered
     }
     
     var body: some View {
         ZStack {
-            // Background with a gradient
-            LinearGradient(gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.white]),
+            // Background gradient
+            LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
                          startPoint: .topLeading,
                          endPoint: .bottomTrailing)
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Enhanced header
-                VStack(spacing: 5) {
-                    // Title
-                    HStack {
-                        Text("Lab Reports")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        // Report count badge
-                        Text("\(reports.count) Reports")
-                            .font(.subheadline)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(Color.blue))
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 10)
+                // Search bar (moved to top, replacing header)
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(darkTeal)
                     
-                    // Search bar
-                    HStack {
-                        HStack {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundColor(.gray)
-                                .padding(.leading, 8)
-                            
-                            TextField("Search by patient name or ID", text: $searchQuery)
-                                .padding(.vertical, 10)
-                            
-                            if !searchQuery.isEmpty {
-                                Button(action: {
-                                    searchQuery = ""
-                                }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.gray)
-                                }
-                                .padding(.trailing, 8)
-                            }
+                    TextField("Search reports...", text: $searchQuery)
+                        .padding(.vertical, 10)
+                    
+                    if !searchQuery.isEmpty {
+                        Button(action: {
+                            searchQuery = ""
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(primaryTeal)
                         }
-                        .background(Color.white)
-                        .cornerRadius(10)
-                        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom, 10)
                 }
-                .background(Color.white)
-                .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                .padding(.horizontal)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.white)
+                        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                )
+                .padding(.horizontal)
+                .padding(.top, 20)
+                .padding(.bottom, 15)
                 
-                // Reports List with improved UI
+                // Reports count (directly after search bar, filter buttons removed)
+                HStack {
+                    Text("\(filteredReports.count) Reports Found")
+                        .font(.headline)
+                        .foregroundColor(darkTeal)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 10)
+                
+                // Reports List
                 reportsListView
                     .refreshable {
                         await fetchPatientReports()
                     }
             }
             
-            // Floating Add Button with animation
+            // Floating Add Button
             VStack {
                 Spacer()
                 HStack {
@@ -987,18 +1501,12 @@ struct PatientReportsView: View {
                         Image(systemName: "plus")
                             .font(.system(size: 22, weight: .bold))
                             .foregroundColor(.white)
-                            .frame(width: 60, height: 60)
-                            .background(Circle().fill(
-                                LinearGradient(gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
-                                               startPoint: .topLeading,
-                                               endPoint: .bottomTrailing)
-                            ))
-                            .shadow(color: Color.blue.opacity(0.4), radius: 8, x: 0, y: 4)
+                            .frame(width: 56, height: 56)
+                            .background(Circle().fill(primaryTeal))
+                            .shadow(color: primaryTeal.opacity(0.4), radius: 4, x: 0, y: 2)
                     }
                     .padding(.trailing, 20)
-                    .padding(.bottom, 30)
-                    .scaleEffect(1.0)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isLoading)
+                    .padding(.bottom, 20)
                 }
             }
         }
@@ -1047,260 +1555,182 @@ struct PatientReportsView: View {
         }
     }
     
-    // MARK: - Improved Reports List View
+    // MARK: - Reports List View
     var reportsListView: some View {
         ScrollView {
             VStack(spacing: 15) {
                 if isLoading {
-                    // Enhanced loading view
-                    VStack(spacing: 15) {
+                    // Loading view
+                    VStack {
                         ProgressView()
                             .scaleEffect(1.5)
-                            .padding()
-                        
+                            .tint(primaryTeal)
+                            .padding(.bottom, 15)
                         Text("Loading reports...")
                             .font(.headline)
-                            .foregroundColor(.gray)
+                            .foregroundColor(darkTeal)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 100)
-                } else if reports.isEmpty {
-                    // Enhanced empty state
+                    .padding(.top, 50)
+                } else if filteredReports.isEmpty {
+                    // Empty state
                     VStack(spacing: 20) {
                         Image(systemName: "doc.text")
                             .font(.system(size: 60))
-                            .foregroundColor(.blue.opacity(0.7))
+                            .foregroundColor(primaryTeal.opacity(0.7))
                         
-                        Text("No Reports Found")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Text("Create your first patient report by tapping the + button")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                        
-                        Button(action: {
-                            showAddReport = true
-                        }) {
-                            Text("Add First Report")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding(.vertical, 12)
-                                .padding(.horizontal, 30)
-                                .background(Capsule().fill(Color.blue))
-                                .shadow(color: Color.blue.opacity(0.3), radius: 5, x: 0, y: 3)
-                        }
-                        .padding(.top, 10)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 60)
-                } else if filteredReports.isEmpty {
-                    // Enhanced no search results
-                    VStack(spacing: 15) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 50))
-                            .foregroundColor(.orange.opacity(0.8))
-                        
-                        Text("No Matching Reports")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Text("Try adjusting your search criteria")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .padding(.bottom, 10)
-                        
-                        Button(action: {
-                            searchQuery = ""
-                        }) {
-                            HStack {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Clear Search")
-                            }
-                            .font(.headline)
-                            .foregroundColor(.blue)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 60)
-                } else {
-                    // Section header with report count
-                    HStack {
                         if !searchQuery.isEmpty {
-                            Text("Found \(filteredReports.count) results")
-                                .font(.subheadline)
+                            Text("No matching reports found")
+                                .font(.title3)
                                 .fontWeight(.medium)
-                                .foregroundColor(.gray)
-                        }
-                        Spacer()
-                        
-                        // Sort button (placeholder for now)
-                        Button(action: {
-                            // Sort functionality could be implemented here
-                        }) {
-                            HStack(spacing: 4) {
-                                Text("Recent")
-                                    .font(.subheadline)
-                                Image(systemName: "arrow.up.arrow.down")
-                                    .font(.caption)
+                                .foregroundColor(darkTeal)
+                            
+                            Button(action: {
+                                searchQuery = ""
+                            }) {
+                                Text("Clear Search")
+                                    .foregroundColor(primaryTeal)
                             }
-                            .foregroundColor(.blue)
+                        } else {
+                            Text("No reports found")
+                                .font(.title3)
+                                .fontWeight(.medium)
+                                .foregroundColor(darkTeal)
+                            
+                            Button(action: {
+                                showAddReport = true
+                            }) {
+                                Text("Add First Report")
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(primaryTeal)
+                                    .cornerRadius(8)
+                            }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                    
-                    // Improved report cards
+                    .padding(.top, 60)
+                } else {
+                    // Hospital-card style reports
                     ForEach(filteredReports) { report in
-                        improvedReportCard(report: report)
+                        hospitalStyleReportCard(report: report)
                     }
                     .padding(.horizontal)
-                    .padding(.bottom, 20)
                 }
             }
-            .padding(.vertical)
+            .padding(.bottom, 80) // Extra padding for the FAB
         }
     }
     
-    // MARK: - Improved Report Card
-    private func improvedReportCard(report: PatientReport) -> some View {
+    // MARK: - Hospital Style Report Card
+    private func hospitalStyleReportCard(report: PatientReport) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Patient info section
-            HStack {
+            // Report header with hospital-like layout
+            HStack(alignment: .top, spacing: 15) {
+                
+                
+                // Main report details - matches hospital card format
                 VStack(alignment: .leading, spacing: 4) {
                     Text(report.patientName)
                         .font(.headline)
                         .fontWeight(.bold)
                     
-                    Text("ID: \(report.patientId)")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
+                    HStack {
+                        Text("Patient ID")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        
+                        Text(report.patientId.uppercased())
+                            .font(.subheadline)
+                            .foregroundColor(.black) // Changed from teal to black
+                    }
                 }
                 
                 Spacer()
                 
-                // Date badge
-                VStack(alignment: .trailing, spacing: 2) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar")
-                            .font(.caption2)
-                        Text(formatDate(report.uploadedAt, dateOnly: true))
-                            .font(.caption)
+                // Three dots menu
+                Menu {
+                    Button(action: {
+                        reportToEdit = report
+                        showEditReport = true
+                    }) {
+                        Label("Edit", systemImage: "pencil")
                     }
-                    .foregroundColor(.gray)
                     
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.caption2)
-                        Text(formatDate(report.uploadedAt, timeOnly: true))
-                            .font(.caption)
+                    Button(role: .destructive, action: {
+                        reportToDelete = report
+                        showDeleteConfirmation = true
+                    }) {
+                        Label("Delete", systemImage: "trash")
                     }
-                    .foregroundColor(.gray)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .padding(10)
+                        .foregroundColor(.gray)
                 }
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 15)
             
             // Divider
-            Rectangle()
-                .fill(Color.gray.opacity(0.1))
-                .frame(height: 1)
-                .padding(.horizontal, 15)
+            Divider()
+                .padding(.horizontal)
             
-            // Summary section
-            VStack(alignment: .leading, spacing: 10) {
-                if let summary = report.summary, !summary.isEmpty {
-                    Text(summary)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .padding(.vertical, 8)
-                } else {
-                    Text("No summary available")
-                        .font(.subheadline)
-                        .foregroundColor(.gray.opacity(0.7))
-                        .italic()
-                        .padding(.vertical, 8)
+            // Report details section
+            VStack(alignment: .leading, spacing: 12) {
+                // First row: Date and Time details - change from teal to black
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Date")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text(formatDate(report.uploadedAt, dateOnly: true))
+                            .font(.subheadline)
+                            .foregroundColor(.black) // Keep this teal to match screenshot
+                    }
+                    
+                    Spacer()
+                    
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Time")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text(formatDate(report.uploadedAt, timeOnly: true))
+                            .font(.subheadline)
+                            .foregroundColor(.black) // Keep this teal to match screenshot
+                    }
                 }
             }
             .padding(.horizontal, 15)
+            .padding(.vertical, 12)
             
-            // Action buttons with divider
-            Rectangle()
-                .fill(Color.gray.opacity(0.1))
-                .frame(height: 1)
+            // VIEW LAB REPORTS BUTTON - keep this teal as shown in the image
+            Button(action: {
+                selectedReport = report
+                showReportDetail = true
+            }) {
+                HStack {
+                    Image(systemName: "doc.text")
+                        .foregroundColor(primaryTeal)
+                    
+                    Text("View Lab Reports")
+                        .foregroundColor(primaryTeal)
+                        .font(.system(size: 16, weight: .medium))
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.gray.opacity(0.6))
+                        .font(.system(size: 14))
+                }
                 .padding(.horizontal, 15)
-            
-            HStack(spacing: 0) {
-                // View Button
-                Button(action: {
-                    selectedReport = report
-                    showReportDetail = true
-                }) {
-                    HStack {
-                        Image(systemName: "doc.text.fill")
-                            .foregroundColor(.blue)
-                        Text("View")
-                            .font(.subheadline)
-                            .foregroundColor(.blue)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(PlainButtonStyle())
-                
-                // Vertical divider
-                Rectangle()
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 1, height: 30)
-                
-                // Edit Button
-                Button(action: {
-                    reportToEdit = report
-                    showEditReport = true
-                }) {
-                    HStack {
-                        Image(systemName: "pencil")
-                            .foregroundColor(.green)
-                        Text("Edit")
-                            .font(.subheadline)
-                            .foregroundColor(.green)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(PlainButtonStyle())
-                
-                // Vertical divider
-                Rectangle()
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 1, height: 30)
-                
-                // Delete Button
-                Button(action: {
-                    reportToDelete = report
-                    showDeleteConfirmation = true
-                }) {
-                    HStack {
-                        Image(systemName: "trash")
-                            .foregroundColor(.red)
-                        Text("Delete")
-                            .font(.subheadline)
-                            .foregroundColor(.red)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(PlainButtonStyle())
+                .padding(.vertical, 12)
+                .background(Color.white)
             }
+            .buttonStyle(PlainButtonStyle())
         }
         .background(Color.white)
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.07), radius: 8, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
     
     // Date formatting functions
@@ -1323,31 +1753,33 @@ struct PatientReportsView: View {
         isLoading = true
         
         do {
+            // Get the lab admin ID from UserDefaults (set during login)
+            guard let labAdminId = UserDefaults.standard.string(forKey: "lab_admin_id") else {
+                throw NSError(domain: "LabReportError", code: 1, 
+                              userInfo: [NSLocalizedDescriptionKey: "Lab admin ID not found. Please log in again."])
+            }
+            
+            print("FETCH REPORTS: Fetching for lab admin ID: \(labAdminId)")
+            
             // Ensure the pat_reports table exists with the correct schema
             try await supabase.ensurePatReportsTableExists()
             
-            // Fetch reports from Supabase
-            let patientReportsData = try await supabase.select(from: "pat_reports")
-            print("FETCH REPORTS: Retrieved \(patientReportsData.count) reports")
+            // Fetch only reports associated with this lab admin
+            let patientReportsData = try await supabase.select(
+                from: "pat_reports",
+                where: "lab_id",
+                equals: labAdminId
+            )
             
-            // If no reports exist, insert a sample one for testing
+            print("FETCH REPORTS: Retrieved \(patientReportsData.count) reports for lab admin: \(labAdminId)")
+            
+            // If no reports exist, simply update the UI with empty data instead of creating a sample report
             if patientReportsData.isEmpty {
-                print("No reports found, adding sample data")
-                
-                // Sample report data matching the table schema
-                let sampleReport: [String: Any] = [
-                    "patient_name": "Sample Patient",
-                    "patient_id": "PAT001",
-                    "summary": "This is a sample lab report for demonstration purposes.",
-                    "file_url": "generated_pdf_sample"
-                ]
-                
-                try await supabase.insert(into: "pat_reports", values: sampleReport)
-                print("Sample report added successfully")
-                
-                // Fetch again after adding sample
-                let refreshedData = try await supabase.select(from: "pat_reports")
-                await updateReportsUI(with: refreshedData)
+                print("No reports found for lab admin ID: \(labAdminId)")
+                await MainActor.run {
+                    reports = []
+                    isLoading = false
+                }
             } else {
                 await updateReportsUI(with: patientReportsData)
             }

@@ -4,15 +4,22 @@ struct PaymentFinalView: View {
     let doctor: HospitalDoctor
     let appointmentDate: Date
     let appointmentTime: Date
+    let isPremium: Bool
     
     @Environment(\.dismiss) private var dismiss
-    @State private var showSuccess = false
+    @State private var navigateToSuccess = false
     @State private var sliderOffset: CGFloat = 0
     @State private var isDragging = false
     
     private let maxSliderOffset: CGFloat = 300 // Adjust this value based on your needs
     private let consultationFee = 500.0 // Default consultation fee
     private let bookingFee = 10.0
+    private let premiumFee = 200.0
+    
+    private var totalAmount: Double {
+        let baseAmount = consultationFee + bookingFee
+        return isPremium ? baseAmount + premiumFee : baseAmount
+    }
     
     var body: some View {
         NavigationStack {
@@ -50,13 +57,13 @@ struct PaymentFinalView: View {
                             Text("Rs.\(Int(bookingFee))")
                         }
                         
-                        if showSuccess {
+                        if isPremium {
                             HStack {
-                                Text("Promo applied")
-                                    .foregroundColor(.green)
+                                Text("Premium fee")
+                                    .foregroundColor(.teal)
                                 Spacer()
-                                Text("Rs. -3")
-                                    .foregroundColor(.green)
+                                Text("Rs.\(Int(premiumFee))")
+                                    .foregroundColor(.teal)
                             }
                         }
                     }
@@ -74,7 +81,7 @@ struct PaymentFinalView: View {
                             .font(.caption)
                             .foregroundColor(.gray)
                         Spacer()
-                        Text("Rs.\(Int(consultationFee + bookingFee))")
+                        Text("Rs.\(Int(totalAmount))")
                             .font(.headline)
                     }
                 }
@@ -88,43 +95,41 @@ struct PaymentFinalView: View {
                 
                 // Sliding confirmation button
                 ZStack(alignment: .leading) {
-                    // Background track
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.teal.opacity(0.2))
+                    RoundedRectangle(cornerRadius: 30)
+                        .fill(Color.gray.opacity(0.2))
                         .frame(height: 60)
                     
-                    // Slider button
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.teal)
-                        .frame(width: 60, height: 60)
-                        .overlay(
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.white)
-                        )
-                        .offset(x: sliderOffset)
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    isDragging = true
-                                    let newOffset = sliderOffset + value.translation.width
-                                    sliderOffset = min(max(0, newOffset), maxSliderOffset)
-                                }
-                                .onEnded { value in
-                                    isDragging = false
-                                    if sliderOffset >= maxSliderOffset - 20 {
-                                        withAnimation {
-                                            sliderOffset = maxSliderOffset
-                                            showSuccess = true
-                                        }
-                                    } else {
-                                        withAnimation {
-                                            sliderOffset = 0
+                    HStack {
+                        Circle()
+                            .fill(Color.teal)
+                            .frame(width: 50, height: 50)
+                            .padding(.leading, 5)
+                            .offset(x: sliderOffset)
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        isDragging = true
+                                        let newOffset = value.translation.width
+                                        sliderOffset = min(max(0, newOffset), maxSliderOffset - 60)
+                                    }
+                                    .onEnded { value in
+                                        isDragging = false
+                                        if sliderOffset > maxSliderOffset * 0.6 {
+                                            withAnimation {
+                                                sliderOffset = maxSliderOffset - 60
+                                                navigateToSuccess = true
+                                            }
+                                        } else {
+                                            withAnimation {
+                                                sliderOffset = 0
+                                            }
                                         }
                                     }
-                                }
-                        )
+                            )
+                        
+                        Spacer()
+                    }
                     
-                    // Text
                     Text("Swipe to Pay")
                         .foregroundColor(.teal)
                         .font(.headline)
@@ -134,12 +139,17 @@ struct PaymentFinalView: View {
                 .padding()
             }
             .navigationBarItems(trailing: Button("✕") { dismiss() })
-            .sheet(isPresented: $showSuccess) {
-                BookingSuccessView(doctor: doctor, appointmentDate: appointmentDate, appointmentTime: appointmentTime)
+            .navigationDestination(isPresented: $navigateToSuccess) {
+                BookingSuccessView(
+                    doctor: doctor,
+                    appointmentDate: appointmentDate,
+                    appointmentTime: appointmentTime,
+                    isPremium: isPremium
+                )
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DismissAllModals"))) { _ in
             dismiss()
         }
     }
-}
+} 
