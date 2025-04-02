@@ -334,14 +334,12 @@ struct HomeTabView: View {
         NavigationStack {
             VStack {
                 List {
-                    // Explicitly filter for completed appointments
-                    let completedAppointments = appointmentManager.appointments.filter { 
-                        print("Appointment status: \($0.status.rawValue)") // Debug print
-                        return $0.status == .completed 
-                    }
+                    // Filter appointments by status
+                    let completedAppointments = appointmentManager.appointments.filter { $0.status == .completed }
                     let cancelledAppointments = appointmentManager.appointments.filter { $0.status == .cancelled }
+                    let missedAppointments = appointmentManager.appointments.filter { $0.status == .missed }
                     
-                    if completedAppointments.isEmpty && cancelledAppointments.isEmpty {
+                    if completedAppointments.isEmpty && cancelledAppointments.isEmpty && missedAppointments.isEmpty {
                         Text("No appointment history")
                             .foregroundColor(.gray)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -355,6 +353,16 @@ struct HomeTabView: View {
                                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                     }
                                     .listRowBackground(Color.green.opacity(0.1))
+                                }
+                            }
+                        }
+                        
+                        if !missedAppointments.isEmpty {
+                            Section(header: Text("Missed Appointments")) {
+                                ForEach(missedAppointments) { appointment in
+                                    AppointmentHistoryCard(appointment: appointment, isMissed: true)
+                                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                        .listRowBackground(Color.orange.opacity(0.1))
                                 }
                             }
                         }
@@ -423,11 +431,11 @@ struct HomeTabView: View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
                 if let patientName = profileController.patient?.name {
-                    Text("Welcome Back, \(patientName)!")
+                    Text("Welcome, \(patientName)")
                         .font(.title)
                         .fontWeight(.bold)
                 } else {
-                    Text("Welcome Back!")
+                    Text("Welcome")
                         .font(.title)
                         .fontWeight(.bold)
                 }
@@ -760,6 +768,7 @@ struct HomeTabView: View {
 struct AppointmentHistoryCard: View {
     let appointment: Appointment
     var isCancelled: Bool = false
+    var isMissed: Bool = false
     @State private var isLoading = false
     
     var body: some View {
@@ -778,12 +787,12 @@ struct AppointmentHistoryCard: View {
                     ProgressView()
                         .scaleEffect(0.8)
                 } else {
-                    Text(isCancelled ? "Cancelled" : "Completed")
+                    Text(isCancelled ? "Cancelled" : isMissed ? "Missed" : "Completed")
                         .font(.caption)
-                        .foregroundColor(isCancelled ? .red : .green)
+                        .foregroundColor(isCancelled ? .red : isMissed ? .orange : .green)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(isCancelled ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
+                        .background(isCancelled ? Color.red.opacity(0.1) : isMissed ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
                         .cornerRadius(8)
                 }
             }

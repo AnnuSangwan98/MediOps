@@ -217,27 +217,12 @@ struct AppointmentView: View {
     }
     
     private func fetchAvailableSlots(for date: Date) async {
-        guard let availability = doctorAvailability else {
-            if errorMessage == nil {
-                errorMessage = "Doctor availability not loaded yet"
-            }
-            return
-        }
-        
-        // Check if date is more than 7 days in the future
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        let selectedDay = calendar.startOfDay(for: date)
-        let components = calendar.dateComponents([.day], from: today, to: selectedDay)
-        
-        if let days = components.day, days > 7 {
-            errorMessage = "Appointments can only be booked up to 7 days in advance"
-            availableSlots = []
-            return
-        }
+        guard let availability = doctorAvailability else { return }
         
         isLoading = true
-        availableSlots = []
+        errorMessage = nil
+        
+        let calendar = Calendar.current
         
         do {
             // Get the day of week
@@ -333,10 +318,12 @@ struct AppointmentView: View {
                 }
             }
             
-            // Sort slots by start time
+            // Sort slots by start time using 24-hour format raw times for accurate sorting
             availableSlots.sort { slot1, slot2 in
-                // Parse time strings to compare using raw time values
-                return slot1.rawStartTime < slot2.rawStartTime
+                // Convert raw times to comparable format (remove any whitespace and ensure HH:MM format)
+                let time1 = slot1.rawStartTime.trimmingCharacters(in: .whitespaces)
+                let time2 = slot2.rawStartTime.trimmingCharacters(in: .whitespaces)
+                return time1 < time2
             }
             
             self.availableSlots = availableSlots
@@ -441,15 +428,15 @@ struct AppointmentView: View {
     
     // Helper function to standardize raw time to consistent 24-hour format (HH:MM)
     private func standardizeRawTime(_ timeString: String) -> String {
-        let timeParts = timeString.trimmingCharacters(in: .whitespaces).split(separator: ":")
-        guard !timeParts.isEmpty else { return timeString }
+        let cleanTime = timeString.trimmingCharacters(in: .whitespaces)
+        let components = cleanTime.split(separator: ":")
         
-        let hourStr = String(timeParts[0])
-        guard let hour = Int(hourStr) else { return timeString }
+        guard components.count >= 2,
+              let hour = Int(components[0]),
+              let minute = Int(components[1]) else {
+            return cleanTime
+        }
         
-        let minute = timeParts.count > 1 ? String(timeParts[1]) : "00"
-        
-        // Ensure consistent format: HH:MM
-        return String(format: "%d:%@", hour, minute)
+        return String(format: "%02d:%02d", hour, minute)
     }
 }
