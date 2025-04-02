@@ -580,9 +580,43 @@ class AdminController {
                 print("DELETE DOCTOR: Successfully updated doctor status to '\(status)' with ID: \(id)")
                 return // Exit the function if this status update works
             } catch {
+                print("DELETE DOCTOR ERROR on direct API deletion: \(error.localizedDescription)")
+            }
+            
+            // As a last resort, try to update status (but we prefer actual deletion)
+        struct DoctorStatusUpdate: Encodable {
+            let doctor_status: String
+            let updated_at: String
+        }
+        
+        // Try various possible status values that might be allowed by the check constraint
+            let possibleStatuses = ["inactive", "suspended", "terminated"]
+        
+        for status in possibleStatuses {
+            do {
+                    print("DELETE DOCTOR: Deletion failed, trying status update to '\(status)'")
+                let doctorData = DoctorStatusUpdate(
+                    doctor_status: status,
+                    updated_at: ISO8601DateFormatter().string(from: Date())
+                )
+                
+                try await supabase.update(
+                    table: "doctors",
+                    data: doctorData,
+                    where: "id",
+                    equals: id
+                )
+                
+                    print("DELETE DOCTOR: Successfully performed soft delete with status: \(status)")
+                    return
+            } catch {
                 print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
                 // Continue trying other statuses
             }
+        }
+        
+        // If we reach here, none of our approaches worked
+        throw AdminError.doctorDeleteFailed
         }
         
         // If we reach here, none of our approaches worked
