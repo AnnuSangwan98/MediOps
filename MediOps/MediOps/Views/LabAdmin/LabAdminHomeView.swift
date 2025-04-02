@@ -17,10 +17,12 @@ struct LabAdminHomeView: View {
                         ToolbarItem(placement: .navigationBarLeading) {
                             VStack(alignment: .leading) {
                                 Text("Welcome,")
-                                    .font(.system(size: 16))
+                                    .font(.headline)
                                     .foregroundColor(.gray)
                                 Text(labAdmin.name)
-                                    .font(.system(size: 22, weight: .semibold))
+                                    .font(.title)
+                                    .fontWeight(.bold)
+
                             }
                         }
                         
@@ -30,10 +32,11 @@ struct LabAdminHomeView: View {
                                 showProfileDetails = true
                             }) {
                                 Image(systemName: "person.circle.fill")
-                                    .font(.system(size: 32))
+                                    .resizable()
+                                    .frame(width: 40, height: 40)
                                     .foregroundColor(.teal)
-                                    .background(Circle().fill(Color.white).frame(width: 48, height: 48))
-                                    .shadow(color: .gray.opacity(0.3), radius: 3)
+                                    .background(Circle().fill(Color.white))
+                                    .shadow(color: .gray.opacity(0.2), radius: 3)
                             }
                         }
                     }
