@@ -3,7 +3,10 @@ import SwiftUI
 struct BookingSuccessView: View {
     let doctor: HospitalDoctor
     let appointmentDate: Date
-    let appointmentTime: Date
+    let startTime: String
+    let endTime: String
+    let rawStartTime: String
+    let rawEndTime: String
     let isPremium: Bool
     
     @Environment(\.dismiss) private var dismiss
@@ -16,18 +19,8 @@ struct BookingSuccessView: View {
     @State private var appointmentId = "" // Store the appointment ID to avoid regenerating it
     @AppStorage("current_user_id") private var userId: String?
     
-    private func formatTime(_ time: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        let startTime = formatter.string(from: time)
-        
-        // Calculate end time (1 hour after start time)
-        if let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: time) {
-            let endTimeString = formatter.string(from: endTime)
-            return "\(startTime) to \(endTimeString)"
-        }
-        
-        return startTime
+    private func formatTime() -> String {
+        return "\(startTime) to \(endTime)"
     }
     
     private func checkIfAppointmentExists(_ appointmentId: String) async -> Bool {
@@ -44,176 +37,6 @@ struct BookingSuccessView: View {
         }
     }
     
-    private func saveAndNavigate() {
-        // Prevent multiple taps
-        if isLoading {
-            print("⚠️ Already processing, ignoring additional tap")
-            return
-        }
-        
-        isLoading = true
-        
-        // Generate appointment ID if not already generated
-        if appointmentId.isEmpty {
-            let randomNum = String(format: "%03d", Int.random(in: 0...999))
-            let randomLetter = String(UnicodeScalar(UInt8(65 + Int.random(in: 0...25))))
-            appointmentId = "APPT\(randomNum)\(randomLetter)"
-            print("📋 Generated new appointment ID: \(appointmentId)")
-        } else {
-            print("📋 Using existing appointment ID: \(appointmentId)")
-        }
-        
-        // Create appointment object for local state
-        let appointment = Appointment(
-            id: appointmentId,
-            doctor: doctor.toModelDoctor(),
-            date: appointmentDate,
-            time: appointmentTime,
-            status: .upcoming,
-            isPremium: isPremium
-        )
-        
-        Task {
-            do {
-                // First ensure we have a valid patient_id
-                guard let userId = userId else {
-                    print("❌ No user ID found")
-                    throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "User ID not found"])
-                }
-                
-                let supabase = SupabaseController.shared
-                
-                // Get patient_id using ensurePatientHasPatientId
-                let patientResults = try await supabase.select(
-                    from: "patients",
-                    where: "user_id",
-                    equals: userId
-                )
-                
-                guard let patientData = patientResults.first,
-                      let patientId = patientData["patient_id"] as? String else {
-                    print("❌ Could not get or create patient_id")
-                    throw NSError(domain: "AppointmentError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not verify patient record"])
-                }
-                
-                print("✅ Got patient_id: \(patientId)")
-                
-                // Format date for database
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "yyyy-MM-dd"
-                let formattedDate = dateFormatter.string(from: appointmentDate)
-                
-                // Format times
-                let timeFormatter = DateFormatter()
-                timeFormatter.dateFormat = "HH:mm:ss"
-                let startTime = timeFormatter.string(from: appointmentTime)
-                let endTime = timeFormatter.string(from: Calendar.current.date(byAdding: .hour, value: 1, to: appointmentTime) ?? appointmentTime)
-                
-                // Create appointment data
-                let appointmentData: [String: Any] = [
-                    "id": appointmentId,
-                    "patient_id": patientId,
-                    "doctor_id": doctor.id,
-                    "hospital_id": doctor.hospitalId,
-                    "appointment_date": formattedDate,
-                    "status": "upcoming",
-                    "reason": "Medical consultation",
-                    "isdone": false,
-                    "is_premium": isPremium,
-                    "slot_start_time": startTime,
-                    "slot_end_time": endTime,
-                    "slot": "{\"doctor_id\": \"\(doctor.id)\", \"start_time\": \"\(startTime)\", \"end_time\": \"\(endTime)\"}"
-                ]
-                
-                // Try to insert the appointment
-                print("🔄 Inserting appointment into database...")
-                try await supabase.insert(into: "appointments", values: appointmentData)
-                print("✅ Successfully inserted appointment")
-                
-                // Verify the appointment exists
-                let verifyAppointment = try await supabase.select(
-                    from: "appointments",
-                    where: "id",
-                    equals: appointmentId
-                )
-                
-                if verifyAppointment.isEmpty {
-                    print("⚠️ Appointment not found after insert, trying alternative method...")
-                    // Try alternative insert method
-                    try await supabase.executeSQL(sql: """
-                        INSERT INTO appointments (
-                            id, patient_id, doctor_id, hospital_id, appointment_date,
-                            status, reason, isdone, is_premium,
-                            slot_start_time, slot_end_time, slot
-                        ) VALUES (
-                            '\(appointmentId)', '\(patientId)', '\(doctor.id)', '\(doctor.hospitalId)', '\(formattedDate)',
-                            'upcoming', 'Medical consultation', false, \(isPremium),
-                            '\(startTime)', '\(endTime)', '{"doctor_id": "\(doctor.id)", "start_time": "\(startTime)", "end_time": "\(endTime)"}'
-                        )
-                    """)
-                }
-                
-                // Add to local state
-                await MainActor.run {
-                    // Create and add appointment to local state
-                    let appointment = Appointment(
-                        id: appointmentId,
-                        doctor: doctor.toModelDoctor(),
-                        date: appointmentDate,
-                        time: appointmentTime,
-                        status: .upcoming,
-                        isPremium: isPremium
-                    )
-                    AppointmentManager.shared.addAppointment(appointment)
-                }
-                
-                // Refresh appointments from database
-                if let userId = UserDefaults.standard.string(forKey: "current_user_id") {
-                    print("🔄 Refreshing appointments after booking with user ID: \(userId)")
-                    
-                    // We should get the patient ID again and use that to fetch appointments
-                    let patientResults = try await supabase.select(
-                        from: "patients",
-                        where: "user_id",
-                        equals: userId
-                    )
-                    
-                    if let patientData = patientResults.first,
-                       let fetchedPatientId = patientData["id"] as? String ?? patientData["patient_id"] as? String {
-                        try await hospitalVM.fetchAppointments(for: fetchedPatientId)
-                        print("✅ Successfully refreshed appointments after booking")
-                    } else {
-                        print("⚠️ Could not find patient ID after booking")
-                    }
-                }
-                
-                print("✅ Appointment booking completed successfully")
-                
-                // Now that we've confirmed the appointment is saved, navigate
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let window = windowScene.windows.first {
-                    print("🔄 Navigating to HomeTabView")
-                    let homeView = HomeTabView()
-                        .environmentObject(hospitalVM)
-                        .environmentObject(appointmentManager)
-                    
-                    window.rootViewController = UIHostingController(rootView: homeView)
-                    window.makeKeyAndVisible()
-                    
-                    // Post notification to dismiss all modals
-                    NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
-                }
-                
-            } catch {
-                print("❌ Error saving appointment: \(error.localizedDescription)")
-                // Keep the error state but don't prevent navigation
-                await MainActor.run {
-                    isLoading = false
-                }
-            }
-        }
-    }
-
     private func diagnoseDatabaseIssues() {
         Task {
             do {
@@ -345,81 +168,108 @@ struct BookingSuccessView: View {
     }
 
     var body: some View {
-        VStack(spacing: 25) {
-            // Success animation
-            VStack(spacing: 15) {
-                Image(systemName: "checkmark.circle.fill")
-                    .resizable()
-                    .frame(width: 60, height: 60)
-                    .foregroundColor(.green)
+        VStack(spacing: 30) {
+            // Success icon
+            ZStack {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 80, height: 80)
                 
+                Image(systemName: "checkmark")
+                    .foregroundColor(.white)
+                    .font(.system(size: 40, weight: .bold))
+            }
+            .padding(.top, 40)
+            
+            // Success message
+            VStack(spacing: 15) {
                 Text("Thanks, your booking has been confirmed.")
                     .font(.title3)
-                    .fontWeight(.semibold)
+                    .fontWeight(.bold)
+                    .multilineTextAlignment(.center)
                 
                 Text("Please check your email for receipt and booking details.")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
+                    .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             }
+            .padding(.horizontal)
             
-            // Appointment details
-            VStack(alignment: .leading, spacing: 15) {
-                HStack(spacing: 15) {
-                    Circle()
-                        .fill(Color.teal)
-                        .frame(width: 50, height: 50)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.white)
-                        )
-                    
-                    VStack(alignment: .leading) {
-                        Text(doctor.name)
-                            .font(.headline)
-                        Text(doctor.specialization)
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
+            // Appointment details card
+            VStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 15) {
+                    // Doctor avatar and info
+                    HStack(spacing: 15) {
+                        Circle()
+                            .fill(Color.teal)
+                            .frame(width: 50, height: 50)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .foregroundColor(.white)
+                            )
+                        
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(doctor.name)
+                                .font(.headline)
+                            Text(doctor.specialization)
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
                     }
-                }
-                
-                HStack {
-                    Image(systemName: "calendar")
-                    Text(appointmentDate.formatted(date: .long, time: .omitted))
-                }
-                
-                HStack {
-                    Image(systemName: "clock")
-                    Text(formatTime(appointmentTime))
+                    
+                    // Date and time
+                    HStack {
+                        Image(systemName: "calendar")
+                            .foregroundColor(.teal)
+                        
+                        Text(appointmentDate, style: .date)
+                            .foregroundColor(.black)
+                    }
+                    
+                    HStack {
+                        Image(systemName: "clock")
+                            .foregroundColor(.teal)
+                        
+                        Text(formatTime())
+                            .foregroundColor(.black)
+                    }
                 }
             }
             .padding()
             .background(Color.white)
             .cornerRadius(12)
-            .shadow(color: .gray.opacity(0.1), radius: 5)
+            .shadow(color: .gray.opacity(0.2), radius: 5)
             
-            Button(action: saveAndNavigate) {
-                HStack {
-                    if isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .padding(.trailing, 5)
-                    }
+            Spacer()
+            
+            Button(action: {
+                saveAndNavigate()
+            }) {
+                if isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green)
+                        .cornerRadius(10)
+                } else {
                     Text("Done")
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green)
+                        .cornerRadius(10)
                 }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.green)
-                .cornerRadius(10)
             }
+            .padding(.horizontal)
+            .padding(.bottom, 20)
             .disabled(isLoading)
         }
-        .padding()
-        .navigationBarBackButtonHidden(true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGray6).ignoresSafeArea())
         .alert(isPresented: $showError) {
             Alert(
-                title: Text(errorMessage.contains("Error") ? "Error" : "Success"),
+                title: Text("Error"),
                 message: Text(errorMessage),
                 dismissButton: .default(Text("OK"))
             )
@@ -438,6 +288,173 @@ struct BookingSuccessView: View {
             #if DEBUG
             diagnoseDatabaseIssues()
             #endif
+        }
+    }
+    
+    private func saveAndNavigate() {
+        // Prevent multiple taps
+        if isLoading {
+            print("⚠️ Already processing, ignoring additional tap")
+            return
+        }
+        
+        isLoading = true
+        
+        // Generate appointment ID if not already generated
+        if appointmentId.isEmpty {
+            let randomNum = String(format: "%03d", Int.random(in: 0...999))
+            let randomLetter = String(UnicodeScalar(UInt8(65 + Int.random(in: 0...25))))
+            appointmentId = "APPT\(randomNum)\(randomLetter)"
+            print("📋 Generated new appointment ID: \(appointmentId)")
+        } else {
+            print("📋 Using existing appointment ID: \(appointmentId)")
+        }
+        
+        // Create a date for the appointment time based on rawStartTime
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+        let appointmentTime = timeFormatter.date(from: rawStartTime) ?? Date()
+        
+        // Create appointment object for local state
+        let appointment = Appointment(
+            id: appointmentId,
+            doctor: doctor.toModelDoctor(),
+            date: appointmentDate,
+            time: appointmentTime,
+            status: .upcoming,
+            isPremium: isPremium
+        )
+        
+        Task {
+            do {
+                // First ensure we have a valid patient_id
+                guard let userId = userId else {
+                    print("❌ No user ID found")
+                    throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "User ID not found"])
+                }
+                
+                let supabase = SupabaseController.shared
+                
+                // Get patient_id using ensurePatientHasPatientId
+                let patientResults = try await supabase.select(
+                    from: "patients",
+                    where: "user_id",
+                    equals: userId
+                )
+                
+                guard let patientData = patientResults.first,
+                      let patientId = patientData["patient_id"] as? String else {
+                    print("❌ Could not get or create patient_id")
+                    throw NSError(domain: "AppointmentError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not verify patient record"])
+                }
+                
+                print("✅ Got patient_id: \(patientId)")
+                
+                // Format date for database
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                let formattedDate = dateFormatter.string(from: appointmentDate)
+                
+                // Use the raw times passed from previous views
+                let startTime = rawStartTime
+                let endTime = rawEndTime
+                
+                // Create appointment data
+                let appointmentData: [String: Any] = [
+                    "id": appointmentId,
+                    "patient_id": patientId,
+                    "doctor_id": doctor.id,
+                    "hospital_id": doctor.hospitalId,
+                    "appointment_date": formattedDate,
+                    "status": "upcoming",
+                    "reason": "Medical consultation",
+                    "isdone": false,
+                    "is_premium": isPremium,
+                    "slot_start_time": startTime,
+                    "slot_end_time": endTime,
+                    "slot": "{\"doctor_id\": \"\(doctor.id)\", \"start_time\": \"\(startTime)\", \"end_time\": \"\(endTime)\"}"
+                ]
+                
+                // Try to insert the appointment
+                print("🔄 Inserting appointment into database...")
+                try await supabase.insert(into: "appointments", values: appointmentData)
+                print("✅ Successfully inserted appointment")
+                
+                // Verify the appointment exists
+                let verifyAppointment = try await supabase.select(
+                    from: "appointments",
+                    where: "id",
+                    equals: appointmentId
+                )
+                
+                if verifyAppointment.isEmpty {
+                    print("⚠️ Appointment not found after insert, trying alternative method...")
+                    // Try alternative insert method
+                    try await supabase.executeSQL(sql: """
+                        INSERT INTO appointments (
+                            id, patient_id, doctor_id, hospital_id, appointment_date,
+                            status, reason, isdone, is_premium,
+                            slot_start_time, slot_end_time, slot
+                        ) VALUES (
+                            '\(appointmentId)', '\(patientId)', '\(doctor.id)', '\(doctor.hospitalId)', '\(formattedDate)',
+                            'upcoming', 'Medical consultation', false, \(isPremium),
+                            '\(startTime)', '\(endTime)', '{"doctor_id": "\(doctor.id)", "start_time": "\(startTime)", "end_time": "\(endTime)"}'
+                        )
+                    """)
+                }
+                
+                // Add to local state
+                await MainActor.run {
+                    // Create and add appointment to local state
+                    AppointmentManager.shared.addAppointment(appointment)
+                }
+                
+                // Refresh appointments from database
+                if let userId = UserDefaults.standard.string(forKey: "current_user_id") {
+                    print("🔄 Refreshing appointments after booking with user ID: \(userId)")
+                    
+                    // We should get the patient ID again and use that to fetch appointments
+                    let patientResults = try await supabase.select(
+                        from: "patients",
+                        where: "user_id",
+                        equals: userId
+                    )
+                    
+                    if let patientData = patientResults.first,
+                       let fetchedPatientId = patientData["id"] as? String ?? patientData["patient_id"] as? String {
+                        try await hospitalVM.fetchAppointments(for: fetchedPatientId)
+                        print("✅ Successfully refreshed appointments after booking")
+                    } else {
+                        print("⚠️ Could not find patient ID after booking")
+                    }
+                }
+                
+                print("✅ Appointment booking completed successfully")
+                
+                // Now that we've confirmed the appointment is saved, navigate
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = windowScene.windows.first {
+                    print("🔄 Navigating to HomeTabView")
+                    let homeView = HomeTabView()
+                        .environmentObject(hospitalVM)
+                        .environmentObject(appointmentManager)
+                    
+                    window.rootViewController = UIHostingController(rootView: homeView)
+                    window.makeKeyAndVisible()
+                    
+                    // Post notification to dismiss all modals
+                    NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
+                }
+                
+            } catch {
+                print("❌ Error saving appointment: \(error.localizedDescription)")
+                // Keep the error state but don't prevent navigation
+                await MainActor.run {
+                    isLoading = false
+                    showError = true
+                    errorMessage = "Error saving appointment: \(error.localizedDescription)"
+                }
+            }
         }
     }
 }

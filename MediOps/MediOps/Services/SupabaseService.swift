@@ -413,7 +413,7 @@ class SupabaseController {
         
         // Add slot times to appointment data if available
         if let startTime = slotStartTime {
-            appointmentData["slot_time"] = startTime
+            appointmentData["slot_start_time"] = startTime
         }
         
         if let endTime = slotEndTime {
