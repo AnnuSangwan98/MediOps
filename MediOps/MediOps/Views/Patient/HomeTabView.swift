@@ -335,7 +335,11 @@ struct HomeTabView: View {
 
                 if selectedHistoryType == 0 {
                     List {
-                        let completedAppointments = appointmentManager.appointments.filter { $0.status == .completed }
+                        // Explicitly filter for completed appointments
+                        let completedAppointments = appointmentManager.appointments.filter { 
+                            print("Appointment status: \($0.status.rawValue)") // Debug print
+                            return $0.status == .completed 
+                        }
                         let cancelledAppointments = appointmentManager.appointments.filter { $0.status == .cancelled }
                         
                         if completedAppointments.isEmpty && cancelledAppointments.isEmpty {
@@ -346,42 +350,40 @@ struct HomeTabView: View {
                         } else {
                             if !completedAppointments.isEmpty {
                                 Section(header: Text("Completed Appointments")) {
-                                    ForEach(completedAppointments, id: \.id) { appointment in
+                                    ForEach(completedAppointments) { appointment in
                                         NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
                                             AppointmentHistoryCard(appointment: appointment)
-                                                .listRowBackground(Color.green.opacity(0.1))
+                                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                         }
+                                        .listRowBackground(Color.green.opacity(0.1))
                                     }
                                 }
                             }
                             
                             if !cancelledAppointments.isEmpty {
                                 Section(header: Text("Cancelled Appointments")) {
-                                    ForEach(cancelledAppointments, id: \.id) { appointment in
+                                    ForEach(cancelledAppointments) { appointment in
                                         AppointmentHistoryCard(appointment: appointment, isCancelled: true)
+                                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                             .listRowBackground(Color.red.opacity(0.1))
                                     }
                                 }
                             }
                         }
                     }
+                    .listStyle(InsetGroupedListStyle())
+                    .refreshable {
+                        print("🔄 Manually refreshing appointments history")
+                        appointmentManager.refreshAppointments()
+                    }
                 } else {
                     labReportsSection
                 }
             }
             .navigationTitle("History")
-            .refreshable {
-                print("🔃 Manually refreshing history")
-                if selectedHistoryType == 0 {
-                    appointmentManager.refreshAppointments()
-                } else if let userId = userId {
-                    labReportManager.fetchLabReports(for: userId)
-                }
-            }
             .onAppear {
-                if selectedHistoryType == 1, let userId = userId {
-                    labReportManager.fetchLabReports(for: userId)
-                }
+                print("📱 History tab appeared - refreshing appointments")
+                appointmentManager.refreshAppointments()
             }
         }
     }
