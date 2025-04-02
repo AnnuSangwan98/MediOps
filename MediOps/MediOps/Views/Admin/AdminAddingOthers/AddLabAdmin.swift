@@ -430,3 +430,11 @@ struct AddLabAdminView: View {
         return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email)
     }
 }
+
+#Preview {
+    AddLabAdminView { activity in
+        print("Lab admin saved: \(activity.title)")
+    }
+}
+
+

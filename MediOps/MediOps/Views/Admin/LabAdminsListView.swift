@@ -39,12 +39,14 @@ struct LabAdminsListView: View {
                     Button(action: {
                         dismiss()
                     }) {
-                        Image(systemName: "chevron.left")
-                            .foregroundColor(.teal)
-                            .font(.system(size: 16, weight: .semibold))
-                            .padding(10)
-                            .background(Circle().fill(Color.white))
-                            .shadow(color: .gray.opacity(0.2), radius: 3)
+                        HStack(spacing: 5) {
+                            Image(systemName: "chevron.left")
+                                .foregroundColor(.blue)
+                                .fontWeight(.semibold)
+                            Text("Back")
+                                .foregroundColor(.blue)
+                                .fontWeight(.regular)
+                        }
                     }
                     
                     Spacer()
@@ -54,35 +56,9 @@ struct LabAdminsListView: View {
                         .fontWeight(.bold)
                     
                     Spacer()
-                    
-                    // Refresh button
-                    Button(action: { 
-                        Task {
-                            await fetchLabAdmins()
-                        }
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                            .foregroundColor(.teal)
-                            .padding(8)
-                            .background(Color.white.opacity(0.8))
-                            .clipShape(Circle())
-                            .shadow(color: .gray.opacity(0.2), radius: 2)
-                    }
                 }
                 .padding()
                 .background(Color.white.opacity(0.9))
-                
-                // Status bar
-                if !labAdmins.isEmpty {
-                    HStack {
-                        Text("\(labAdmins.count) lab admin\(labAdmins.count == 1 ? "" : "s")")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                }
                 
                 // Lab Admins List
                 ScrollView {
@@ -318,12 +294,6 @@ struct LabAdminsListView: View {
                     )
                 }
                 isLoading = false
-                
-                // Show success message if needed
-                if !labAdmins.isEmpty {
-                    successMessage = "Successfully retrieved \(labAdmins.count) lab admins"
-                    showSuccessMessage = true
-                }
             }
         } catch {
             await MainActor.run {

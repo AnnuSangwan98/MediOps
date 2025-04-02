@@ -30,18 +30,42 @@ struct DoctorsListView: View {
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Custom Navigation Bar
-                HStack {
+                // iOS-style navigation bar
+                HStack(spacing: 16) {
+                    // Back button
+                    Button(action: {
+                        dismiss()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Back")
+                        }
+                        .foregroundColor(.blue)
+                    }
+                    
                     Spacer()
                     
+                    // Title
                     Text("Doctors")
-                        .font(.title3)
-                        .fontWeight(.bold)
+                        .font(.headline)
+                        .foregroundColor(.black)
                     
                     Spacer()
+                    
+                    // Invisible placeholder to center the title
+                    Button(action: {}) {
+                        HStack(spacing: 4) {
+                            Text("Back")
+                            Image(systemName: "chevron.left")
+                        }
+                        .opacity(0)
+                    }
                 }
-                .padding()
+                .padding(.horizontal)
+                .frame(height: 44)
                 .background(Color.white.opacity(0.9))
+                .shadow(color: .gray.opacity(0.1), radius: 5)
                 
                 // Doctors List
                 ScrollView {
@@ -68,20 +92,22 @@ struct DoctorsListView: View {
                             .shadow(color: .gray.opacity(0.1), radius: 5)
                             .padding()
                         } else {
-                            ForEach(doctors) { doctor in
-                                AdminDoctorCard(
-                                    doctor: doctor,
-                                    onEdit: { editDoctor(doctor) },
-                                    onDelete: {
-                                        doctorToDelete = doctor
-                                        showDeleteConfirmation = true
-                                    }
-                                )
-                                .padding(.horizontal)
+                            LazyVStack(spacing: 15) {
+                                ForEach(doctors) { doctor in
+                                    AdminDoctorCard(
+                                        doctor: doctor,
+                                        onEdit: { editDoctor(doctor) },
+                                        onDelete: {
+                                            doctorToDelete = doctor
+                                            showDeleteConfirmation = true
+                                        }
+                                    )
+                                    .padding(.horizontal)
+                                }
                             }
+                            .padding(.vertical, 10)
                         }
                     }
-                    .padding(.vertical)
                 }
                 .refreshable {
                     await fetchDoctors()
@@ -244,28 +270,26 @@ struct DoctorsListView: View {
     }
 }
 
+// MARK: - Doctor Card
 struct AdminDoctorCard: View {
     let doctor: UIDoctor
-    var onEdit: () -> Void
-    var onDelete: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            // Doctor name and menu
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(doctor.fullName)
-                        .font(.headline)
-                    Text(doctor.specialization)
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                }
+                Text(doctor.fullName)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                
                 Spacer()
                 
                 Menu {
                     Button(action: onEdit) {
                         Label("Edit", systemImage: "pencil")
                     }
-                    
                     Button(role: .destructive, action: onDelete) {
                         Label("Delete", systemImage: "trash")
                     }
@@ -277,27 +301,49 @@ struct AdminDoctorCard: View {
                 }
             }
             
-            HStack {
-                Image(systemName: "phone.fill")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                Text(doctor.phone.isEmpty ? "No phone" : doctor.phone)
-                    .font(.caption)
+            // Specialization
+            Text(doctor.specialization)
+                .font(.subheadline)
+                .foregroundColor(.gray)
+            
+            Divider()
+            
+            // Contact info
+            HStack(spacing: 20) {
+                // Phone
+                HStack(spacing: 8) {
+                    Image(systemName: "phone.fill")
+                        .foregroundColor(.teal)
+                    Text(doctor.phone)
+                        .font(.subheadline)
+                }
+                
                 Spacer()
-                Image(systemName: "envelope.fill")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                Text(doctor.email.isEmpty ? "No email" : doctor.email)
-                    .font(.caption)
+                
+                // Email
+                HStack(spacing: 8) {
+                    Image(systemName: "envelope.fill")
+                        .foregroundColor(.teal)
+                    Text(doctor.email)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                }
             }
             
-            Text("License: \(doctor.license.isEmpty ? "Unknown" : doctor.license)")
-                .font(.caption)
-                .foregroundColor(.gray)
+            Divider()
+            
+            // License info
+            HStack {
+                Text("License: ")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                Text(doctor.license)
+                    .font(.subheadline)
+            }
         }
         .padding()
         .background(Color.white)
-        .cornerRadius(10)
+        .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
     }
 } 

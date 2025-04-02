@@ -18,9 +18,29 @@ struct EditDoctorView: View {
     
     // Add time slot states
     @State private var selectedTimeSlots: [String: [String: Bool]] = [:]
+    @State private var selectedDays: Set<String> = []
     @State private var maxNormalPatients: Int = 5
     @State private var maxPremiumPatients: Int = 2
-    @State private var selectedDate = Date()
+    
+    private let weekdays = [
+        "monday": "Mon",
+        "tuesday": "Tue",
+        "wednesday": "Wed",
+        "thursday": "Thu",
+        "friday": "Fri",
+        "saturday": "Sat",
+        "sunday": "Sun"
+    ]
+    
+    private let weekdayOrder = [
+        "monday": 0,
+        "tuesday": 1,
+        "wednesday": 2,
+        "thursday": 3,
+        "friday": 4,
+        "saturday": 5,
+        "sunday": 6
+    ]
     
     // Add time slots with ranges
     private let timeSlots = (0...23).map { hour in
@@ -127,40 +147,117 @@ struct EditDoctorView: View {
                 }
                 
                 Section(header: Text("Availability")) {
-                    DatePicker("Select Date", selection: $selectedDate, displayedComponents: .date)
-                        .datePickerStyle(.automatic)
-                    
+                    // Individual day selection buttons with Select All
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            ForEach(timeSlots, id: \.self) { slot in
-                                TimeSlotButton(
-                                    slot: slot,
-                                    isSelected: selectedTimeSlots["schedule"]?[slot] ?? false,
-                                    action: {
-                                        toggleTimeSlot(slot)
+                            // Select All Days button
+                            Button {
+                                if selectedDays.count == weekdays.count {
+                                    // If all days are selected, deselect all
+                                    selectedDays.removeAll()
+                                    selectedTimeSlots.removeAll()
+                                } else {
+                                    // Select all days
+                                    selectedDays = Set(weekdays.keys)
+                                    for day in selectedDays {
+                                        selectedTimeSlots[day] = [:]
                                     }
-                                )
+                                }
+                            } label: {
+                                Text("All Days")
+                                    .frame(minWidth: 70)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 12)
+                                    .background(selectedDays.count == weekdays.count ? Color.teal : Color.gray.opacity(0.2))
+                                    .foregroundColor(selectedDays.count == weekdays.count ? .white : .primary)
+                                    .cornerRadius(8)
+                            }
+                            
+                            ForEach(Array(weekdays.sorted(by: { weekdayOrder[$0.key] ?? 0 < weekdayOrder[$1.key] ?? 0 })), id: \.key) { day, shortName in
+                                Button {
+                                    if selectedDays.contains(day) {
+                                        selectedDays.remove(day)
+                                        selectedTimeSlots[day] = nil
+                                    } else {
+                                        selectedDays.insert(day)
+                                        selectedTimeSlots[day] = [:]
+                                    }
+                                } label: {
+                                    Text(shortName)
+                                        .frame(minWidth: 50)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 12)
+                                        .background(selectedDays.contains(day) ? Color.teal : Color.gray.opacity(0.2))
+                                        .foregroundColor(selectedDays.contains(day) ? .white : .primary)
+                                        .cornerRadius(8)
+                                }
                             }
                         }
                         .padding(.horizontal)
                     }
-                    .frame(height: 60)
+                    .padding(.bottom, 10)
                     
-                    HStack {
-                        Text("Selected slots: \(selectedTimeSlotsCount)")
-                        Spacer()
+                    // Time slots in three independent scrolling rows
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Morning slots (0-7)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(0..<8) { index in
+                                    TimeSlotButton(
+                                        slot: timeSlots[index],
+                                        isSelected: isTimeSlotSelected(timeSlots[index]),
+                                        action: { toggleTimeSlot(timeSlots[index]) }
+                                    )
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                        .frame(height: 55)
+                        
+                        // Afternoon slots (8-15)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(8..<16) { index in
+                                    TimeSlotButton(
+                                        slot: timeSlots[index],
+                                        isSelected: isTimeSlotSelected(timeSlots[index]),
+                                        action: { toggleTimeSlot(timeSlots[index]) }
+                                    )
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                        .frame(height: 55)
+                        
+                        // Evening/Night slots (16-23)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(16..<24) { index in
+                                    TimeSlotButton(
+                                        slot: timeSlots[index],
+                                        isSelected: isTimeSlotSelected(timeSlots[index]),
+                                        action: { toggleTimeSlot(timeSlots[index]) }
+                                    )
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                        .frame(height: 55)
                     }
-                    
-                    Stepper("Max Normal Patients: \(maxNormalPatients)", value: $maxNormalPatients, in: 1...20)
-                    Stepper("Max Premium Patients: \(maxPremiumPatients)", value: $maxPremiumPatients, in: 1...10)
+                    .opacity(selectedDays.isEmpty ? 0.5 : 1.0)
+                    .disabled(selectedDays.isEmpty)
                 }
             }
             .navigationTitle("Edit Doctor")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
+                    HStack {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+//                        Text("Doctors")
+//                            .font(.headline)
                     }
                 }
                 
@@ -269,32 +366,38 @@ struct EditDoctorView: View {
         }
     }
     
+    private func isTimeSlotSelected(_ slot: String) -> Bool {
+        for day in selectedDays {
+            if selectedTimeSlots[day]?[slot] == true {
+                return true
+            }
+        }
+        return false
+    }
+    
+    private func toggleTimeSlot(_ slot: String) {
+        let currentValue = isTimeSlotSelected(slot)
+        for day in selectedDays {
+            if selectedTimeSlots[day] == nil {
+                selectedTimeSlots[day] = [:]
+            }
+            selectedTimeSlots[day]?[slot] = !currentValue
+        }
+    }
+    
     private func createWeeklySchedule() -> [String: [String: Bool]] {
         var weeklySchedule: [String: [String: Bool]] = [:]
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "EEEE" // Get day name
-        let day = dateFormatter.string(from: selectedDate).lowercased()
         
-        weeklySchedule[day] = createDaySchedule()
+        // Create schedule for each selected day
+        for day in selectedDays {
+            weeklySchedule[day] = createDaySchedule(for: day)
+        }
         
         return weeklySchedule
     }
     
-    private func createDaySchedule() -> [String: Bool] {
-        var daySchedule: [String: Bool] = [:]
-        
-        for slot in timeSlots {
-            daySchedule[slot] = selectedTimeSlots["schedule"]?[slot] ?? false
-        }
-        
-        return daySchedule
-    }
-    
-    private func toggleTimeSlot(_ slot: String) {
-        if selectedTimeSlots["schedule"] == nil {
-            selectedTimeSlots["schedule"] = [:]
-        }
-        selectedTimeSlots["schedule"]?[slot] = !(selectedTimeSlots["schedule"]?[slot] ?? false)
+    private func createDaySchedule(for day: String) -> [String: Bool] {
+        return selectedTimeSlots[day] ?? [:]
     }
     
     private func isValidEmail(_ email: String) -> Bool {
@@ -310,19 +413,15 @@ struct EditDoctorView: View {
     private func loadDoctorAvailability() async {
         do {
             if let availability = try await adminController.getDoctorAvailability(doctorId: doctor.id) {
-                // Get today's day name
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "EEEE"
-                let today = dateFormatter.string(from: Date()).lowercased()
-                
-                // Initialize selected time slots with today's schedule
-                if let todaySchedule = availability.weeklySchedule[today] {
-                    selectedTimeSlots["schedule"] = todaySchedule
+                await MainActor.run {
+                    // Initialize selected days and time slots from the weekly schedule
+                    selectedDays = Set(availability.weeklySchedule.keys)
+                    selectedTimeSlots = availability.weeklySchedule
+                    
+                    // Set patient limits
+                    maxNormalPatients = availability.maxNormalPatients
+                    maxPremiumPatients = availability.maxPremiumPatients
                 }
-                
-                // Set patient limits
-                maxNormalPatients = availability.maxNormalPatients
-                maxPremiumPatients = availability.maxPremiumPatients
             }
         } catch {
             print("Failed to load doctor availability: \(error)")
