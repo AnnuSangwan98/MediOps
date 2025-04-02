@@ -175,7 +175,6 @@ class AppointmentManager: ObservableObject {
     
     @MainActor
     private func refreshAppointmentsAsync() async {
-        // If already refreshing, don't start another refresh
         if isRefreshing {
             return
         }
@@ -192,7 +191,6 @@ class AppointmentManager: ObservableObject {
         do {
             let supabase = SupabaseController.shared
             
-            // First get the patient record to get the patient_id
             print("🔍 Looking up patient record for user: \(userId)")
             let patientResults = try await supabase.select(
                 from: "patients",
@@ -206,7 +204,6 @@ class AppointmentManager: ObservableObject {
                 return
             }
             
-            // Try both patient_id and id fields, with patient_id taking precedence
             let patientId = (patientData["patient_id"] as? String) ?? (patientData["id"] as? String)
             
             guard let finalPatientId = patientId else {
@@ -217,8 +214,89 @@ class AppointmentManager: ObservableObject {
             
             print("✅ Found patient_id: \(finalPatientId)")
             
-            // Now fetch appointments using the patient_id
-            try await HospitalViewModel.shared.fetchAppointments(for: finalPatientId)
+            // Fetch appointments with specific columns
+            let appointmentResults = try await supabase.select(
+                from: "appointments",
+                where: "patient_id",
+                equals: finalPatientId
+            )
+            
+            print("📊 Found \(appointmentResults.count) appointments in total")
+            
+            var newAppointments: [Appointment] = []
+            for appointmentData in appointmentResults {
+                if let appointmentId = appointmentData["id"] as? String,
+                   let doctorId = appointmentData["doctor_id"] as? String,
+                   let statusString = appointmentData["status"] as? String {
+                    
+                    print("🔍 Processing appointment: \(appointmentId)")
+                    print("   Raw status from DB: \(statusString)")
+                    
+                    // Fetch doctor details
+                    let doctorResults = try await supabase.select(
+                        from: "doctors",
+                        where: "id",
+                        equals: doctorId
+                    )
+                    
+                    if let doctorData = doctorResults.first,
+                       let name = doctorData["name"] as? String,
+                       let specialization = doctorData["specialization"] as? String {
+                        
+                        let doctor = Models.Doctor.createSimplifiedDoctor(
+                            id: doctorId,
+                            name: name,
+                            specialization: specialization
+                        )
+                        
+                        // Parse the appointment date
+                        let dateString = appointmentData["appointment_date"] as? String ?? ""
+                        let dateFormatter = DateFormatter()
+                        dateFormatter.dateFormat = "yyyy-MM-dd"
+                        let date = dateFormatter.date(from: dateString) ?? Date()
+                        
+                        // Map the status string to AppointmentStatus
+                        let status: AppointmentStatus
+                        switch statusString.lowercased() {
+                        case "completed":
+                            status = .completed
+                        case "cancelled":
+                            status = .cancelled
+                        default:
+                            status = .upcoming
+                        }
+                        
+                        print("   Mapped status: \(status.rawValue)")
+                        
+                        let appointment = Appointment(
+                            id: appointmentId,
+                            doctor: doctor,
+                            date: date,
+                            time: date,
+                            status: status,
+                            startTime: appointmentData["slot_time"] as? String,
+                            endTime: appointmentData["slot_end_time"] as? String
+                        )
+                        
+                        newAppointments.append(appointment)
+                    }
+                }
+            }
+            
+            // Debug print appointment counts by status
+            let completedCount = newAppointments.filter { $0.status == .completed }.count
+            let upcomingCount = newAppointments.filter { $0.status == .upcoming }.count
+            let cancelledCount = newAppointments.filter { $0.status == .cancelled }.count
+            
+            print("📊 Appointment Status Summary:")
+            print("   Total: \(newAppointments.count)")
+            print("   Completed: \(completedCount)")
+            print("   Upcoming: \(upcomingCount)")
+            print("   Cancelled: \(cancelledCount)")
+            
+            // Update the appointments array
+            self.appointments = newAppointments
+            
             print("✅ Successfully refreshed appointments")
         } catch {
             print("❌ Error refreshing appointments: \(error.localizedDescription)")
@@ -227,4 +305,3 @@ class AppointmentManager: ObservableObject {
         isRefreshing = false
     }
 }
-
