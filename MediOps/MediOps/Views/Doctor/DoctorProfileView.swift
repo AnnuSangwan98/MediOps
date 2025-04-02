@@ -4,34 +4,95 @@ import SwiftUI
 import class MediOps.SupabaseController
 import struct MediOps.RoleSelectionView
 
-// Doctor Availability Model
-// struct DoctorAvailability {
-//     let id: Int
-//     let doctorId: String
-//     let hospitalId: String
-//     let weeklySchedule: WeeklySchedule
-//     let effectiveFrom: Date
-//     let effectiveUntil: Date?
-//     let maxNormalPatients: Int
-//     let maxPremiumPatients: Int
-// }
+// Doctor Schedule Model (for profile view)
+struct DoctorSchedule {
+    let id: Int
+    let doctorId: String
+    let hospitalId: String
+    let weeklySchedule: [String: [String: Bool]]
+    let effectiveFrom: Date
+    let effectiveUntil: Date?
+    let maxNormalPatients: Int
+    let maxPremiumPatients: Int
+    let createdAt: Date?
+    let updatedAt: Date?
+    
+    // Convert to EfficientAvailability
+    func toEfficientAvailability() -> DoctorAvailabilityModels.EfficientAvailability {
+        return DoctorAvailabilityModels.EfficientAvailability(
+            id: id,
+            doctorId: doctorId,
+            hospitalId: hospitalId,
+            weeklySchedule: weeklySchedule,
+            effectiveFrom: effectiveFrom,
+            effectiveUntil: effectiveUntil,
+            maxNormalPatients: maxNormalPatients,
+            maxPremiumPatients: maxPremiumPatients,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+    
+    // Create from EfficientAvailability
+    static func fromEfficientAvailability(_ availability: DoctorAvailabilityModels.EfficientAvailability) -> DoctorSchedule {
+        return DoctorSchedule(
+            id: availability.id,
+            doctorId: availability.doctorId,
+            hospitalId: availability.hospitalId,
+            weeklySchedule: availability.weeklySchedule,
+            effectiveFrom: availability.effectiveFrom,
+            effectiveUntil: availability.effectiveUntil,
+            maxNormalPatients: availability.maxNormalPatients,
+            maxPremiumPatients: availability.maxPremiumPatients,
+            createdAt: availability.createdAt,
+            updatedAt: availability.updatedAt
+        )
+    }
+}
 
 // Weekly Schedule Structure
-// struct WeeklySchedule: Codable {
-//     var monday: [TimeSlot]?
-//     var tuesday: [TimeSlot]?
-//     var wednesday: [TimeSlot]?
-//     var thursday: [TimeSlot]?
-//     var friday: [TimeSlot]?
-//     var saturday: [TimeSlot]?
-//     var sunday: [TimeSlot]?
+struct WeeklySchedule: Codable {
+    var monday: [TimeSlot]?
+    var tuesday: [TimeSlot]?
+    var wednesday: [TimeSlot]?
+    var thursday: [TimeSlot]?
+    var friday: [TimeSlot]?
+    var saturday: [TimeSlot]?
+    var sunday: [TimeSlot]?
     
-//     struct TimeSlot: Codable, Identifiable {
-//         let start: String
-//         let end: String
-//         var id: String { start + end }
-//     }
-// }
+    struct TimeSlot: Codable, Identifiable {
+        let start: String
+        let end: String
+        var id: String { start + end }
+    }
+    
+    // Convert to dictionary format
+    func toDictionary() -> [String: [String: Bool]] {
+        var result: [String: [String: Bool]] = [:]
+        
+        let daysAndSlots: [(String, [TimeSlot]?)] = [
+            ("monday", monday),
+            ("tuesday", tuesday),
+            ("wednesday", wednesday),
+            ("thursday", thursday),
+            ("friday", friday),
+            ("saturday", saturday),
+            ("sunday", sunday)
+        ]
+        
+        for (day, slots) in daysAndSlots {
+            if let timeSlots = slots {
+                var daySlots: [String: Bool] = [:]
+                for slot in timeSlots {
+                    daySlots["\(slot.start)-\(slot.end)"] = true
+                }
+                result[day] = daySlots
+            }
+        }
+        
+        return result
+    }
+}
 
 struct DoctorProfileView: View {
     @Environment(\.dismiss) private var dismiss
@@ -43,7 +104,8 @@ struct DoctorProfileView: View {
     @State private var showPasswordSheet = false
     @State private var showLogoutAlert = false
     @State private var navigateToRoleSelection = false
-    @State private var availability: DoctorAvailability?
+    @State private var schedule: DoctorSchedule?
+    @State private var availability: DoctorAvailabilityModels.EfficientAvailability?
     
     // Editable fields (moved to EditDoctorProfileView)
     
@@ -263,12 +325,12 @@ struct DoctorProfileView: View {
                             VStack(alignment: .leading, spacing: 15) {
                                 SectionTitle(title: "Weekly Schedule")
                                 
-                                if let availability = availability {
+                                if let schedule = availability {
                                     // Days selector with horizontal scroll
                                     ScrollView(.horizontal, showsIndicators: false) {
                                         LazyHStack(spacing: 15) {
                                             ForEach(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], id: \.self) { day in
-                                                let slots = getTimeSlotsForDay(day.lowercased(), in: availability.weeklySchedule)
+                                                let slots = getTimeSlotsForDay(day.lowercased(), in: schedule.weeklySchedule)
                                                 DayScheduleCard(day: day, slots: slots)
                                             }
                                         }
@@ -437,24 +499,12 @@ struct DoctorProfileView: View {
             // Parse the doctor data
             let doctorProfile = try parseDoctorData(doctorData)
             
-            // Fetch availability data
-            let availabilityResult = try await supabase.select(
-                from: "doctor_availability_efficient",
-                where: "doctor_id",
-                equals: doctorId
-            )
-            
-            // Create a variable to store the availability
-            var doctorAvailability: DoctorAvailability? = nil
-            
-            if let availabilityData = availabilityResult.first {
-                doctorAvailability = try parseAvailabilityData(availabilityData)
-            }
+            // Fetch schedule data
+            try await fetchDoctorSchedule()
             
             // Update UI
             await MainActor.run {
                 self.doctor = doctorProfile
-                self.availability = doctorAvailability
                 isLoading = false
             }
         } catch {
@@ -532,120 +582,85 @@ struct DoctorProfileView: View {
         )
     }
     
-    private func parseAvailabilityData(_ data: [String: Any]) throws -> DoctorAvailability {
+    private func fetchDoctorSchedule() async throws {
+        guard let doctorId = doctor?.id else { return }
+        
+        let supabase = SupabaseController.shared
+        let results = try await supabase.select(
+            from: "doctor_availability_efficient",
+            where: "doctor_id",
+            equals: doctorId
+        )
+        
+        guard let scheduleData = results.first else {
+            print("No schedule found for doctor")
+            return
+        }
+        
+        let doctorSchedule = try parseScheduleData(scheduleData)
+        
+        await MainActor.run {
+            self.schedule = doctorSchedule
+            self.availability = doctorSchedule.toEfficientAvailability()
+        }
+    }
+    
+    private func parseScheduleData(_ data: [String: Any]) throws -> DoctorSchedule {
         guard let id = data["id"] as? Int,
               let doctorId = data["doctor_id"] as? String,
               let hospitalId = data["hospital_id"] as? String,
-              let weeklySchedule = data["weekly_schedule"] as? [String: [String: Bool]],
-              let maxNormalPatients = data["max_normal_patients"] as? Int,
-              let maxPremiumPatients = data["max_premium_patients"] as? Int else {
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid availability data"])
+              let scheduleData = data["weekly_schedule"] as? [String: [String: Bool]],
+              let effectiveFromStr = data["effective_from"] as? String else {
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid schedule data"])
         }
         
-        // Parse dates
         let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
         
-        guard let effectiveFromStr = data["effective_from"] as? String,
-              let effectiveFrom = dateFormatter.date(from: effectiveFromStr) else {
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid effective_from date"])
+        guard let effectiveFrom = dateFormatter.date(from: effectiveFromStr) else {
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid date format"])
         }
         
         var effectiveUntil: Date? = nil
-        if let effectiveUntilStr = data["effective_until"] as? String {
-            effectiveUntil = dateFormatter.date(from: effectiveUntilStr)
+        if let untilStr = data["effective_until"] as? String {
+            effectiveUntil = dateFormatter.date(from: untilStr)
         }
         
-        // Create DoctorAvailability using the convenience initializer
-        return DoctorAvailability(
+        var createdAt: Date? = nil
+        if let createdAtStr = data["created_at"] as? String {
+            createdAt = dateFormatter.date(from: createdAtStr)
+        }
+        
+        var updatedAt: Date? = nil
+        if let updatedAtStr = data["updated_at"] as? String {
+            updatedAt = dateFormatter.date(from: updatedAtStr)
+        }
+        
+        return DoctorSchedule(
+            id: id,
             doctorId: doctorId,
-            weeklySchedule: weeklySchedule,
-            maxNormalPatients: maxNormalPatients,
-            maxPremiumPatients: maxPremiumPatients
+            hospitalId: hospitalId,
+            weeklySchedule: scheduleData,
+            effectiveFrom: effectiveFrom,
+            effectiveUntil: effectiveUntil,
+            maxNormalPatients: data["max_normal_patients"] as? Int ?? 5,
+            maxPremiumPatients: data["max_premium_patients"] as? Int ?? 2,
+            createdAt: createdAt,
+            updatedAt: updatedAt
         )
     }
     
-    private func parseWeeklySchedule(_ data: [String: Any]) throws -> [String: [String: Bool]] {
-        var schedule: [String: [String: Bool]] = [:]
-        
-        let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-        
-        for day in days {
-            // Debug print to see the raw data
-            print("Raw data for \(day): \(data[day] ?? "nil")")
-            
-            // Handle the new schedule format where each day is a dictionary of time slots
-            if let dayData = data[day] as? [String: Bool] {
-                schedule[day] = dayData
-            } else {
-                schedule[day] = [:]
-            }
-        }
-        
-        return schedule
-    }
-    
-    // Helper function to format time for storage
-    private func formatTimeForStorage(_ timeString: String) -> String {
-        // Handle cases like "0:00" or "9:00"
-        let components = timeString.split(separator: ":")
-        guard components.count == 2 else { return timeString }
-        
-        let hour = Int(components[0]) ?? 0
-        let minute = String(components[1])  // Convert SubString to String
-        
-        // Pad hour with leading zero if needed
-        return String(format: "%02d:%@", hour, minute)
-    }
-    
-    // Helper function to convert time to 24-hour format for sorting
-    private func convertTo24Hour(_ timeString: String) -> String {
-        let components = timeString.split(separator: ":")
-        guard components.count == 2 else { return timeString }
-        
-        let hour = Int(components[0]) ?? 0
-        return String(format: "%02d:%@", hour, String(components[1]))  // Convert SubString to String
-    }
-    
-    private func formatTime(_ timeString: String) -> String {
-        let inputFormatter = DateFormatter()
-        inputFormatter.dateFormat = "HH:mm"
-        
-        if let date = inputFormatter.date(from: timeString) {
-            let outputFormatter = DateFormatter()
-            outputFormatter.dateFormat = "h:mm a"
-            return outputFormatter.string(from: date)
-        }
-        
-        // If parsing fails, try to handle edge case of "0:00"
-        if timeString == "0:00" {
-            return "12:00 AM"
-        }
-        
-        return timeString
-    }
-    
     // Add helper functions at the bottom of the struct
-    private func getTimeSlotsForDay(_ day: String, in schedule: [String: [String: Bool]]) -> [TimeSlot] {
-        guard let daySchedule = schedule[day.lowercased()] else {
-            return []
-        }
-        
-        // Convert the schedule dictionary to TimeSlot array
-        return daySchedule.compactMap { timeRange, isAvailable -> TimeSlot? in
-            guard isAvailable else { return nil }
-            
+    private func getTimeSlotsForDay(_ day: String, in schedule: [String: [String: Bool]]) -> [WeeklySchedule.TimeSlot] {
+        guard let daySlots = schedule[day] else { return [] }
+        return daySlots.keys.compactMap { timeRange in
             let components = timeRange.split(separator: "-")
             guard components.count == 2 else { return nil }
             
             let start = String(components[0])
             let end = String(components[1])
             
-            return TimeSlot(start: start, end: end)
-        }.sorted { slot1, slot2 in
-            let time1 = convertTo24Hour(slot1.start)
-            let time2 = convertTo24Hour(slot2.start)
-            return time1 < time2
+            return WeeklySchedule.TimeSlot(start: start, end: end)
         }
     }
 }
@@ -1307,7 +1322,7 @@ struct ChangePasswordView: View {
 // DayScheduleCard - New component for displaying a day's schedule
 struct DayScheduleCard: View {
     let day: String
-    let slots: [TimeSlot]
+    let slots: [WeeklySchedule.TimeSlot]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
