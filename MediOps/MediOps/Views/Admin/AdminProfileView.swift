@@ -155,19 +155,52 @@ struct AdminProfileView: View {
             return
         }
         
-        // In a real app, call the authentication service to change the password
-        // For now, we'll simulate a successful password change
-        
-        // Clear the form
-        currentPassword = ""
-        newPassword = ""
-        confirmPassword = ""
-        
-        // Close the password reset sheet
-        showResetPasswordSheet = false
-        
-        // Show success message
-        showResetSuccess = true
+        Task {
+            do {
+                // Get the current admin ID
+                guard let adminId = UserDefaults.standard.string(forKey: "current_admin_id") else {
+                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Session expired. Please login again."])
+                }
+                
+                // Verify current password
+                let supabase = SupabaseController.shared
+                let result = try await supabase.select(
+                    from: "hospital_admins",
+                    where: "id",
+                    equals: adminId
+                )
+                
+                guard let adminData = result.first,
+                      let storedPassword = adminData["password"] as? String,
+                      storedPassword == currentPassword else {
+                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Current password is incorrect. Please try again."])
+                }
+                
+                // Update password
+                try await supabase.update(
+                    table: "hospital_admins",
+                    data: ["password": newPassword],
+                    where: "id",
+                    equals: adminId
+                )
+                
+                // Clear the form
+                currentPassword = ""
+                newPassword = ""
+                confirmPassword = ""
+                
+                // Close the password reset sheet
+                showResetPasswordSheet = false
+                
+                // Show success message
+                showResetSuccess = true
+            } catch {
+                resetErrorMessage = error.localizedDescription
+                showResetError = true
+                // Clear the current password field on error
+                currentPassword = ""
+            }
+        }
     }
     
     private func isValidPassword(_ password: String) -> Bool {
@@ -198,6 +231,9 @@ struct ResetPasswordView: View {
     @State private var isCurrentPasswordVisible = false
     @State private var isNewPasswordVisible = false
     @State private var isConfirmPasswordVisible = false
+    @State private var isVerifyingPassword = false
+    @State private var showVerificationError = false
+    @State private var verificationErrorMessage = ""
     @Environment(\.dismiss) private var dismiss
     
     var onSubmit: () -> Void
@@ -231,58 +267,65 @@ struct ResetPasswordView: View {
                         }
                         .frame(width: 44, height: 44)
                     }
+                    
+                    if isVerifyingPassword {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                    }
                 }
                 
-                Section(header: Text("New Password")) {
-                    HStack {
-                        if isNewPasswordVisible {
-                            TextField("Enter new password", text: $newPassword)
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
-                        } else {
-                            SecureField("Enter new password", text: $newPassword)
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
+                if !currentPassword.isEmpty {
+                    Section(header: Text("New Password")) {
+                        HStack {
+                            if isNewPasswordVisible {
+                                TextField("Enter new password", text: $newPassword)
+                                    .autocapitalization(.none)
+                                    .disableAutocorrection(true)
+                            } else {
+                                SecureField("Enter new password", text: $newPassword)
+                                    .autocapitalization(.none)
+                                    .disableAutocorrection(true)
+                            }
+                            
+                            Button {
+                                isNewPasswordVisible.toggle()
+                            } label: {
+                                Image(systemName: isNewPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                                    .foregroundColor(.gray)
+                            }
+                            .frame(width: 44, height: 44)
                         }
                         
-                        Button {
-                            isNewPasswordVisible.toggle()
-                        } label: {
-                            Image(systemName: isNewPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                                .foregroundColor(.gray)
-                        }
-                        .frame(width: 44, height: 44)
+                        Text("Must contain at least 8 characters, one uppercase letter, one number, and one special character")
+                            .font(.caption)
+                            .foregroundColor(.gray)
                     }
                     
-                    Text("Must contain at least 8 characters, one uppercase letter, one number, and one special character")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                
-                Section(header: Text("Confirm Password")) {
-                    HStack {
-                        if isConfirmPasswordVisible {
-                            TextField("Confirm new password", text: $confirmPassword)
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
-                        } else {
-                            SecureField("Confirm new password", text: $confirmPassword)
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
+                    Section(header: Text("Confirm Password")) {
+                        HStack {
+                            if isConfirmPasswordVisible {
+                                TextField("Confirm new password", text: $confirmPassword)
+                                    .autocapitalization(.none)
+                                    .disableAutocorrection(true)
+                            } else {
+                                SecureField("Confirm new password", text: $confirmPassword)
+                                    .autocapitalization(.none)
+                                    .disableAutocorrection(true)
+                            }
+                            
+                            Button {
+                                isConfirmPasswordVisible.toggle()
+                            } label: {
+                                Image(systemName: isConfirmPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                                    .foregroundColor(.gray)
+                            }
+                            .frame(width: 44, height: 44)
                         }
-                        
-                        Button {
-                            isConfirmPasswordVisible.toggle()
-                        } label: {
-                            Image(systemName: isConfirmPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                                .foregroundColor(.gray)
-                        }
-                        .frame(width: 44, height: 44)
                     }
                 }
                 
                 Section {
-                    Button(action: onSubmit) {
+                    Button(action: verifyAndSubmit) {
                         Text("Reset Password")
                             .frame(maxWidth: .infinity)
                             .foregroundColor(.white)
@@ -290,7 +333,7 @@ struct ResetPasswordView: View {
                             .background(isFormValid ? Color.teal : Color.gray)
                             .cornerRadius(10)
                     }
-                    .disabled(!isFormValid)
+                    .disabled(!isFormValid || isVerifyingPassword)
                     
                     Button(action: onCancel) {
                         Text("Cancel")
@@ -314,6 +357,58 @@ struct ResetPasswordView: View {
                         dismiss()
                         onCancel()
                     }
+                }
+            }
+            .alert("Verification Error", isPresented: $showVerificationError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(verificationErrorMessage)
+            }
+        }
+    }
+    
+    private func verifyAndSubmit() {
+        guard !currentPassword.isEmpty else {
+            verificationErrorMessage = "Please enter your current password."
+            showVerificationError = true
+            return
+        }
+        
+        isVerifyingPassword = true
+        
+        Task {
+            do {
+                // Get the current admin ID
+                guard let adminId = UserDefaults.standard.string(forKey: "current_admin_id") else {
+                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Session expired. Please login again."])
+                }
+                
+                // Verify current password
+                let supabase = SupabaseController.shared
+                let result = try await supabase.select(
+                    from: "hospital_admins",
+                    where: "id",
+                    equals: adminId
+                )
+                
+                guard let adminData = result.first,
+                      let storedPassword = adminData["password"] as? String,
+                      storedPassword == currentPassword else {
+                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Current password is incorrect. Please try again."])
+                }
+                
+                // If verification succeeds, proceed with password reset
+                await MainActor.run {
+                    isVerifyingPassword = false
+                    onSubmit()
+                }
+            } catch {
+                await MainActor.run {
+                    isVerifyingPassword = false
+                    verificationErrorMessage = error.localizedDescription
+                    showVerificationError = true
+                    // Clear the current password field on error
+                    currentPassword = ""
                 }
             }
         }
