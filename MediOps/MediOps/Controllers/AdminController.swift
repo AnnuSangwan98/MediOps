@@ -1967,6 +1967,103 @@ class AdminController {
             )
         }
     }
+    
+    // MARK: - Blood Donation Request Methods
+    
+    /// Get all patients who are registered as blood donors
+    /// Optionally filter by blood group
+    func getRegisteredBloodDonors(bloodGroup: String? = nil) async throws -> [BloodDonor] {
+        // Get all blood donors
+        let allDonors = try await supabase.select(
+            from: "patients",
+            where: "is_blood_donor",
+            equals: "true"
+        )
+        
+        return allDonors.compactMap { donorData in
+            guard let patientId = donorData["patient_id"] as? String,
+                  let name = donorData["name"] as? String,
+                  let donorBloodGroup = donorData["bloodGroup"] as? String,
+                  let contactNumber = donorData["phoneNumber"] as? String,
+                  let email = donorData["email"] as? String else {
+                return nil
+            }
+            
+            // If blood group filter is specified, only include matching donors
+            if let requestedGroup = bloodGroup {
+                // Only return donors with matching blood group
+                if donorBloodGroup.lowercased() == requestedGroup.lowercased() {
+                    return BloodDonor(
+                        id: patientId,  // Use patient_id for the id field to match the foreign key constraint
+                        name: name,
+                        bloodGroup: donorBloodGroup,
+                        contactNumber: contactNumber,
+                        email: email
+                    )
+                } else {
+                    return nil // Skip donors with non-matching blood group
+                }
+            } else {
+                // No filter - return all donors
+                return BloodDonor(
+                    id: patientId,  // Use patient_id for the id field to match the foreign key constraint
+                    name: name,
+                    bloodGroup: donorBloodGroup,
+                    contactNumber: contactNumber,
+                    email: email
+                )
+            }
+        }
+    }
+    
+    /// Send blood donation request to specified donors
+    func sendBloodDonationRequest(donorIds: [String], bloodGroup: String) async throws {
+        guard !donorIds.isEmpty else {
+            throw AdminError.invalidData("No donors selected")
+        }
+        
+        // Validate blood group against allowed values
+        let validBloodGroups = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"]
+        guard validBloodGroups.contains(bloodGroup) else {
+            throw AdminError.invalidData("Invalid blood group: \(bloodGroup)")
+        }
+        
+        // Get the current admin ID from hospital_id key in UserDefaults
+        guard let adminId = UserDefaults.standard.string(forKey: "hospital_id") else {
+            throw AdminError.adminNotFound
+        }
+        
+        print("BLOOD DONATION: Using admin ID: \(adminId) for blood donation request")
+        
+        // Define the request data structure that matches table constraints
+        struct BloodDonorRequestData: Encodable {
+            let donor_id: String
+            let requested_by_admin: String
+            let blood_requested_for: String
+            let requested_activity_status: Bool
+            let request_status: String
+            
+            // We don't need to specify id, blood_requested_time as they have default values in the database
+        }
+        
+        // Send request to each selected donor
+        for donorId in donorIds {
+            // Create data for the blood_donor_requests table
+            let requestData = BloodDonorRequestData(
+                donor_id: donorId,
+                requested_by_admin: adminId,
+                blood_requested_for: bloodGroup,
+                requested_activity_status: true,  // Changed from "true" string to true boolean
+                request_status: "Pending"  // This matches the enum constraint in the database
+            )
+            
+            // Insert the request into the database
+            try await supabase.insert(
+                into: "blood_donor_requests",
+                data: requestData
+            )
+        }
+    }
 }
 
 // MARK: - Admin Errors

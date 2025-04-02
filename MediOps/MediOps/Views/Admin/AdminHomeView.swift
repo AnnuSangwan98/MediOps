@@ -92,11 +92,81 @@ struct AdminDashboardCard: View {
     }
 }
 
+// MARK: - Blood Donation Card
+struct BloodDonationCard: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 15) {
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.red)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Blood Donation Request")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    Text("Send requests to registered blood donors")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
+            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
+        }
+    }
+}
+
+// MARK: - Blood Donors List Card
+struct BloodDonorsListCard: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 15) {
+                Image(systemName: "list.bullet.clipboard")
+                    .font(.system(size: 24))
+                    .foregroundColor(.blue)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("All Blood Donors")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    Text("View all registered blood donors")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
+            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
+        }
+    }
+}
+
 // MARK: - Modified Admin Home View
 struct AdminHomeView: View {
     @State private var showAddDoctor = false
     @State private var showAddLabAdmin = false
     @State private var showProfile = false
+    @State private var showBloodDonationRequest = false
+    @State private var showAllBloodDonors = false
     @State private var recentActivities: [UIActivity] = []
     @State private var doctors: [UIDoctor] = []
     @State private var labAdmins: [UILabAdmin] = []
@@ -158,6 +228,18 @@ struct AdminHomeView: View {
                                 icon: "flask.fill",
                                 labAdmins: $labAdmins
                             )
+                        }
+                        .padding(.horizontal)
+                        
+                        // Add Blood Donation Card here
+                        BloodDonationCard {
+                            showBloodDonationRequest = true
+                        }
+                        .padding(.horizontal)
+                        
+                        // Add Blood Donors List Card
+                        BloodDonorsListCard {
+                            showAllBloodDonors = true
                         }
                         .padding(.horizontal)
                     }
@@ -228,6 +310,12 @@ struct AdminHomeView: View {
                         labAdmins.append(labAdmin)
                     }
                 }
+            }
+            .sheet(isPresented: $showBloodDonationRequest) {
+                BloodDonationRequestView()
+            }
+            .sheet(isPresented: $showAllBloodDonors) {
+                AllBloodDonorsView()
             }
             .sheet(isPresented: $showProfile) {
                 HospitalAdminProfileView()

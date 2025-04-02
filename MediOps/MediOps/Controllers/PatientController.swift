@@ -264,7 +264,7 @@ class PatientController {
         
         // 2. Prepare update data
         let updateData: [String: String] = [
-            "is_blood_donor": String(isDonor),
+            "is_blood_donor": isDonor ? "true" : "false",  // Changed back to String format
             "updated_at": ISO8601DateFormatter().string(from: Date())
         ]
         
