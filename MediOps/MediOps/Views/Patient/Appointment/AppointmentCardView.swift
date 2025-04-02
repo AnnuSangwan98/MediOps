@@ -120,13 +120,29 @@ struct AppointmentCard: View {
 
                     Spacer()
 
-                    Text(appointment.status.rawValue)
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.teal.opacity(0.1))
-                        .foregroundColor(.teal)
-                        .cornerRadius(8)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text(appointment.status.rawValue)
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(statusBackgroundColor)
+                            .foregroundColor(statusTextColor)
+                            .cornerRadius(8)
+                        
+                        if let isPremium = appointment.isPremium, isPremium {
+                            HStack(spacing: 4) {
+                                Image(systemName: "star.fill")
+                                    .font(.caption)
+                                Text("Premium")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(.yellow)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.yellow.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+                    }
                 }
 
                 Divider()
@@ -187,20 +203,101 @@ struct AppointmentCard: View {
         }
         .buttonStyle(PlainButtonStyle()) // This ensures the card doesn't get the default button styling
     }
+    
+    // Helper computed properties for status colors
+    private var statusBackgroundColor: Color {
+        switch appointment.status {
+        case .upcoming:
+            return Color.blue.opacity(0.1)
+        case .completed:
+            return Color.green.opacity(0.1)
+        case .cancelled:
+            return Color.red.opacity(0.1)
+        case .missed:
+            return Color.yellow.opacity(0.1)
+        }
+    }
+    
+    private var statusTextColor: Color {
+        switch appointment.status {
+        case .upcoming:
+            return .blue
+        case .completed:
+            return .green
+        case .cancelled:
+            return .red
+        case .missed:
+            return .yellow
+        }
+    }
 }
 
 struct AllAppointmentsView: View {
-    let appointments: [Appointment]
-
+    @ObservedObject var hospitalViewModel = HospitalViewModel.shared
+    
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                ForEach(appointments) { appointment in
-                    AppointmentCard(appointment: appointment)
+            VStack(alignment: .leading, spacing: 20) {
+                // Completed Appointments Section
+                if !hospitalViewModel.completedAppointments.filter({ $0.status == .completed }).isEmpty {
+                    Text("COMPLETED APPOINTMENTS")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .padding(.horizontal)
+                    
+                    VStack(spacing: 15) {
+                        ForEach(hospitalViewModel.completedAppointments.filter { $0.status == .completed }) { appointment in
+                            AppointmentCard(appointment: appointment)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // Cancelled Appointments Section
+                if !hospitalViewModel.completedAppointments.filter({ $0.status == .cancelled }).isEmpty {
+                    Text("CANCELLED APPOINTMENTS")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .padding(.horizontal)
+                        .padding(.top)
+                    
+                    VStack(spacing: 15) {
+                        ForEach(hospitalViewModel.completedAppointments.filter { $0.status == .cancelled }) { appointment in
+                            AppointmentCard(appointment: appointment)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // Missed Appointments Section
+                if !hospitalViewModel.missedAppointments.isEmpty {
+                    Text("MISSED APPOINTMENTS")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .padding(.horizontal)
+                        .padding(.top)
+                    
+                    VStack(spacing: 15) {
+                        ForEach(hospitalViewModel.missedAppointments) { appointment in
+                            AppointmentCard(appointment: appointment)
+                                .background(Color.yellow.opacity(0.1))
+                                .cornerRadius(12)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // No appointments message
+                if hospitalViewModel.completedAppointments.isEmpty && hospitalViewModel.missedAppointments.isEmpty {
+                    Text("No appointment history")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding()
                 }
             }
-            .padding()
+            .padding(.vertical)
         }
-        .navigationTitle("Appointments")
+        .navigationTitle("Appointments History")
     }
 }

@@ -330,6 +330,8 @@ class AppointmentManager: ObservableObject {
                             status = .completed
                         case "cancelled":
                             status = .cancelled
+                        case "missed":
+                            status = .missed
                         default:
                             status = .upcoming
                         }
@@ -356,12 +358,14 @@ class AppointmentManager: ObservableObject {
             let completedCount = newAppointments.filter { $0.status == .completed }.count
             let upcomingCount = newAppointments.filter { $0.status == .upcoming }.count
             let cancelledCount = newAppointments.filter { $0.status == .cancelled }.count
+            let missedCount = newAppointments.filter { $0.status == .missed }.count
             
             print("📊 Appointment Status Summary:")
             print("   Total: \(newAppointments.count)")
             print("   Completed: \(completedCount)")
             print("   Upcoming: \(upcomingCount)")
             print("   Cancelled: \(cancelledCount)")
+            print("   Missed: \(missedCount)")
             
             // Update the appointments array
             self.appointments = newAppointments

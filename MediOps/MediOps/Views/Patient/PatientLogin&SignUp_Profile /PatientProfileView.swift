@@ -125,19 +125,6 @@ struct PatientProfileView: View {
                                         .padding(.bottom, 5)
                                     InfoRow(title: "Address", value: patient.address ?? "Not provided")
                                     InfoRow(title: "Phone Number", value: patient.phoneNumber)
-                                    
-                                    // Remove blood group from here since it's now a separate card
-                                }
-                            }
-                            
-                            CardView {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Text("Emergency Contact")
-                                        .font(.headline)
-                                        .padding(.bottom, 5)
-                                    InfoRow(title: "Name", value: patient.emergencyContactName ?? "Not provided")
-                                    InfoRow(title: "Contact No.", value: patient.emergencyContactNumber)
-                                    InfoRow(title: "Relationship", value: patient.emergencyRelationship)
                                 }
                             }
                         }

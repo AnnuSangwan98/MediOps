@@ -566,22 +566,29 @@ class HospitalViewModel: ObservableObject {
         print("🔄 Fetching appointments for patient: \(patientId)")
         
         let supabase = SupabaseController.shared
+        
+        // Use select with filter conditions instead of raw SQL
         let results = try await supabase.select(
             from: "appointments",
             where: "patient_id",
             equals: patientId
-        )
+        ).filter { appointment in
+            guard let status = appointment["status"] as? String else { return false }
+            return ["completed", "cancelled", "missed"].contains(status)
+        }
+        
+        print("📋 Found \(results.count) appointments")
         
         // Clear existing data first
         await MainActor.run {
             self.upcomingAppointments = []
             self.completedAppointments = []
+            self.missedAppointments = []
         }
         
-        print("📋 Found \(results.count) appointments")
-        
-        var upcoming: [Appointment] = []
         var completed: [Appointment] = []
+        var cancelled: [Appointment] = []
+        var missed: [Appointment] = []
         
         for appointmentData in results {
             guard let id = appointmentData["id"] as? String,
@@ -593,54 +600,15 @@ class HospitalViewModel: ObservableObject {
                 continue
             }
             
-            // Use rawValue constructor for AppointmentStatus
-            let status = AppointmentStatus(rawValue: statusStr) ?? .upcoming
+            print("📝 Processing appointment: \(id) with status: \(statusStr)")
             
-            // Get raw time from the appointment data - try all possible fields
-            var rawStartTimeString: String?
-            var rawEndTimeString: String?
+            // Get raw time from the appointment data
+            let rawStartTime = appointmentData["slot_start_time"] as? String ?? "12:00:00"
+            let rawEndTime = appointmentData["slot_end_time"] as? String ?? "13:00:00"
             
-            // Preferred source: slot_start_time and slot_end_time fields
-            if let slotStartTime = appointmentData["slot_start_time"] as? String {
-                rawStartTimeString = slotStartTime
-                print("📌 Using slot_start_time: \(slotStartTime)")
-            }
-            
-            if let slotEndTime = appointmentData["slot_end_time"] as? String {
-                rawEndTimeString = slotEndTime
-                print("📌 Using slot_end_time: \(slotEndTime)")
-            }
-            
-            // Fall back to slot JSON if direct fields not available
-            if rawStartTimeString == nil || rawEndTimeString == nil,
-               let slotJson = appointmentData["slot"] as? String,
-               let slotData = slotJson.data(using: .utf8) {
-                do {
-                    if let slot = try JSONSerialization.jsonObject(with: slotData) as? [String: Any] {
-                        if rawStartTimeString == nil, let startTime = slot["start_time"] as? String {
-                            rawStartTimeString = startTime
-                            print("📌 Using slot JSON start_time: \(startTime)")
-                        }
-                        
-                        if rawEndTimeString == nil, let endTime = slot["end_time"] as? String {
-                            rawEndTimeString = endTime
-                            print("📌 Using slot JSON end_time: \(endTime)")
-                        }
-                    }
-                } catch {
-                    print("⚠️ Error parsing slot JSON: \(error.localizedDescription)")
-                }
-            }
-            
-            // If we still don't have times, use defaults
-            let rawStartTime = rawStartTimeString ?? "12:00:00"
-            let rawEndTime = rawEndTimeString ?? "13:00:00"
-            
-            // Format the times for display consistently using our helper
+            // Format the times for display
             let displayStartTime = formatSlotTime(rawStartTime)
             let displayEndTime = formatSlotTime(rawEndTime)
-            
-            print("🕒 Appointment times - Raw: (\(rawStartTime)-\(rawEndTime)) Display: (\(displayStartTime)-\(displayEndTime))")
             
             // Parse appointment date
             let dateFormatter = DateFormatter()
@@ -658,6 +626,7 @@ class HospitalViewModel: ObservableObject {
             
             // Fetch doctor details
             if let doctor = await fetchDoctor(id: doctorId, hospitalId: hospitalId) {
+                let status = AppointmentStatus(rawValue: statusStr.lowercased()) ?? .upcoming
                 let appointment = Appointment(
                     id: id,
                     doctor: doctor,
@@ -669,37 +638,44 @@ class HospitalViewModel: ObservableObject {
                     isPremium: appointmentData["is_premium"] as? Bool ?? false
                 )
                 
-                if status == .upcoming {
-                    upcoming.append(appointment)
-                } else {
+                // Categorize the appointment based on status
+                switch status {
+                case .completed:
                     completed.append(appointment)
+                    print("✅ Added completed appointment: \(id)")
+                case .cancelled:
+                    cancelled.append(appointment)
+                    print("❌ Added cancelled appointment: \(id)")
+                case .missed:
+                    missed.append(appointment)
+                    print("⚠️ Added missed appointment: \(id)")
+                default:
+                    break
                 }
-            } else {
-                print("⚠️ Could not fetch doctor for appointment")
             }
         }
         
-        // Sort appointments by date/time
-        upcoming.sort { (a1, a2) -> Bool in
+        // Sort appointments by date/time in descending order
+        let sortByDateTime: (Appointment, Appointment) -> Bool = { (a1, a2) in
             if Calendar.current.isDate(a1.date, inSameDayAs: a2.date) {
-                return a1.time < a2.time
+                return a1.time > a2.time // Changed to descending order
             }
-            return a1.date < a2.date
+            return a1.date > a2.date // Changed to descending order
         }
         
-        completed.sort { (a1, a2) -> Bool in
-            if Calendar.current.isDate(a1.date, inSameDayAs: a2.date) {
-                return a1.time < a2.time
-            }
-            return a1.date < a2.date
-        }
+        completed.sort(by: sortByDateTime)
+        cancelled.sort(by: sortByDateTime)
+        missed.sort(by: sortByDateTime)
         
         await MainActor.run {
-            self.upcomingAppointments = upcoming
-            self.completedAppointments = completed
+            self.completedAppointments = completed + cancelled
+            self.missedAppointments = missed
         }
         
-        print("✅ Successfully fetched and processed appointments: \(upcoming.count) upcoming, \(completed.count) completed")
+        print("✅ Successfully processed appointments:")
+        print("   - Completed: \(completed.count)")
+        print("   - Cancelled: \(cancelled.count)")
+        print("   - Missed: \(missed.count)")
     }
     
     // MARK: - Helper Methods
@@ -947,6 +923,7 @@ class HospitalViewModel: ObservableObject {
     @Published var appointments: [AppointmentModels.Appointment] = []
     @Published var upcomingAppointments: [Appointment] = []
     @Published var completedAppointments: [Appointment] = []
+    @Published var missedAppointments: [Appointment] = []
     
     // Helper function to convert between status types
     private func convertToModelStatus(_ status: AppointmentStatus) -> AppointmentModels.Status {
@@ -957,8 +934,8 @@ class HospitalViewModel: ObservableObject {
             return .completed
         case .cancelled:
             return .cancelled
-        // If we need to handle .missed, we can default to cancelled
-        // since AppointmentStatus doesn't have a .missed case
+        case .missed:
+            return .missed
         }
     }
     
@@ -980,8 +957,10 @@ class HospitalViewModel: ObservableObject {
             return .upcoming
         case .completed:
             return .completed
-        case .cancelled, .missed:
-            return .cancelled  // Since AppointmentStatus doesn't have a missed case
+        case .cancelled:
+            return .cancelled
+        case .missed:
+            return .missed
         }
     }
     

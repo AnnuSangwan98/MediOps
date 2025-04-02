@@ -164,6 +164,8 @@ struct AppointmentDetailView: View {
             return .green
         case .cancelled:
             return .red
+        case .missed:
+            return .orange
         }
     }
     
@@ -176,6 +178,8 @@ struct AppointmentDetailView: View {
             return "checkmark.circle"
         case .cancelled:
             return "xmark.circle"
+        case .missed:
+            return "exclamationmark.circle"
         }
     }
     
@@ -188,6 +192,8 @@ struct AppointmentDetailView: View {
             return "Completed"
         case .cancelled:
             return "Cancelled"
+        case .missed:
+            return "Missed"
         }
     }
 } 
