@@ -297,13 +297,14 @@ struct AdminDoctorCard: View {
             
             Divider()
             
-            // License info
+            // Doctor ID
             HStack {
-                Text("License: ")
+                Text("Doctor ID: ")
                     .font(.subheadline)
                     .foregroundColor(.gray)
-                Text(doctor.license)
+                Text(doctor.id)
                     .font(.subheadline)
+                    .foregroundColor(.teal)
             }
         }
         .padding()
