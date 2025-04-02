@@ -85,7 +85,7 @@ class HospitalViewModel: ObservableObject {
     @Published var selectedSpecialization: String? = nil
     @Published var doctors: [HospitalDoctor] = []
     @Published var selectedDoctor: HospitalDoctor? = nil
-    @Published var availableSlots: [AppointmentModels.DoctorAvailability] = []
+    @Published var availableSlots: [AppointmentModels.DoctorAvailabilitySlot] = []
     @Published var isLoading = false
     @Published var error: Error? = nil
     
@@ -364,7 +364,7 @@ class HospitalViewModel: ObservableObject {
                 // Default to true for isAvailable field
                 let isAvailable = true
                 
-                return AppointmentModels.DoctorAvailability(
+                return AppointmentModels.DoctorAvailabilitySlot(
                     id: id,
                     doctorId: doctorId,
                     date: date,

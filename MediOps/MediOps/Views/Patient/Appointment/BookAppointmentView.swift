@@ -10,7 +10,7 @@ struct BookAppointmentView: View {
     @State private var selectedDoctor: HospitalDoctor? = nil
     @State private var selectedHospital: HospitalModel? = nil
     @State private var selectedDate = Date()
-    @State private var selectedSlot: AppointmentModels.DoctorAvailability?
+    @State private var selectedSlot: AppointmentModels.DoctorAvailabilitySlot?
     @State private var reason: String = ""
     @State private var showAlert = false
     @State private var alertMessage = ""

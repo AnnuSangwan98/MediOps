@@ -5,33 +5,33 @@ import class MediOps.SupabaseController
 import struct MediOps.RoleSelectionView
 
 // Doctor Availability Model
-struct DoctorAvailability {
-    let id: Int
-    let doctorId: String
-    let hospitalId: String
-    let weeklySchedule: WeeklySchedule
-    let effectiveFrom: Date
-    let effectiveUntil: Date?
-    let maxNormalPatients: Int
-    let maxPremiumPatients: Int
-}
+// struct DoctorAvailability {
+//     let id: Int
+//     let doctorId: String
+//     let hospitalId: String
+//     let weeklySchedule: WeeklySchedule
+//     let effectiveFrom: Date
+//     let effectiveUntil: Date?
+//     let maxNormalPatients: Int
+//     let maxPremiumPatients: Int
+// }
 
 // Weekly Schedule Structure
-struct WeeklySchedule: Codable {
-    var monday: [TimeSlot]?
-    var tuesday: [TimeSlot]?
-    var wednesday: [TimeSlot]?
-    var thursday: [TimeSlot]?
-    var friday: [TimeSlot]?
-    var saturday: [TimeSlot]?
-    var sunday: [TimeSlot]?
+// struct WeeklySchedule: Codable {
+//     var monday: [TimeSlot]?
+//     var tuesday: [TimeSlot]?
+//     var wednesday: [TimeSlot]?
+//     var thursday: [TimeSlot]?
+//     var friday: [TimeSlot]?
+//     var saturday: [TimeSlot]?
+//     var sunday: [TimeSlot]?
     
-    struct TimeSlot: Codable, Identifiable {
-        let start: String
-        let end: String
-        var id: String { start + end }
-    }
-}
+//     struct TimeSlot: Codable, Identifiable {
+//         let start: String
+//         let end: String
+//         var id: String { start + end }
+//     }
+// }
 
 struct DoctorProfileView: View {
     @Environment(\.dismiss) private var dismiss
@@ -536,7 +536,7 @@ struct DoctorProfileView: View {
         guard let id = data["id"] as? Int,
               let doctorId = data["doctor_id"] as? String,
               let hospitalId = data["hospital_id"] as? String,
-              let scheduleData = data["weekly_schedule"] as? [String: Any],
+              let weeklySchedule = data["weekly_schedule"] as? [String: [String: Bool]],
               let maxNormalPatients = data["max_normal_patients"] as? Int,
               let maxPremiumPatients = data["max_premium_patients"] as? Int else {
             throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid availability data"])
@@ -556,23 +556,17 @@ struct DoctorProfileView: View {
             effectiveUntil = dateFormatter.date(from: effectiveUntilStr)
         }
         
-        // Parse weekly schedule
-        let weeklySchedule = try parseWeeklySchedule(scheduleData)
-        
+        // Create DoctorAvailability using the convenience initializer
         return DoctorAvailability(
-            id: id,
             doctorId: doctorId,
-            hospitalId: hospitalId,
             weeklySchedule: weeklySchedule,
-            effectiveFrom: effectiveFrom,
-            effectiveUntil: effectiveUntil,
             maxNormalPatients: maxNormalPatients,
             maxPremiumPatients: maxPremiumPatients
         )
     }
     
-    private func parseWeeklySchedule(_ data: [String: Any]) throws -> WeeklySchedule {
-        var schedule = WeeklySchedule()
+    private func parseWeeklySchedule(_ data: [String: Any]) throws -> [String: [String: Bool]] {
+        var schedule: [String: [String: Bool]] = [:]
         
         let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
         
@@ -582,45 +576,9 @@ struct DoctorProfileView: View {
             
             // Handle the new schedule format where each day is a dictionary of time slots
             if let dayData = data[day] as? [String: Bool] {
-                // Filter only the available time slots (where value is true)
-                let availableSlots = dayData.filter { $0.value == true }
-                
-                // Convert the time slot strings to TimeSlot objects
-                let timeSlots = availableSlots.keys.compactMap { timeRange -> WeeklySchedule.TimeSlot? in
-                    // Split the time range (e.g., "9:00-10:00") into start and end times
-                    let components = timeRange.split(separator: "-")
-                    guard components.count == 2 else { return nil }
-                    
-                    let start = String(components[0])
-                    let end = String(components[1])
-                    
-                    // Convert to proper time format if needed
-                    let formattedStart = formatTimeForStorage(start)
-                    let formattedEnd = formatTimeForStorage(end)
-                    
-                    return WeeklySchedule.TimeSlot(start: formattedStart, end: formattedEnd)
-                }
-                
-                // Sort time slots by start time
-                let sortedSlots = timeSlots.sorted { slot1, slot2 in
-                    let time1 = convertTo24Hour(slot1.start)
-                    let time2 = convertTo24Hour(slot2.start)
-                    return time1 < time2
-                }
-                
-                // Debug print for parsed slots
-                print("Parsed slots for \(day): \(sortedSlots)")
-                
-                switch day {
-                case "monday": schedule.monday = sortedSlots
-                case "tuesday": schedule.tuesday = sortedSlots
-                case "wednesday": schedule.wednesday = sortedSlots
-                case "thursday": schedule.thursday = sortedSlots
-                case "friday": schedule.friday = sortedSlots
-                case "saturday": schedule.saturday = sortedSlots
-                case "sunday": schedule.sunday = sortedSlots
-                default: break
-                }
+                schedule[day] = dayData
+            } else {
+                schedule[day] = [:]
             }
         }
         
@@ -668,16 +626,26 @@ struct DoctorProfileView: View {
     }
     
     // Add helper functions at the bottom of the struct
-    private func getTimeSlotsForDay(_ day: String, in schedule: WeeklySchedule) -> [WeeklySchedule.TimeSlot] {
-        switch day {
-        case "monday": return schedule.monday ?? []
-        case "tuesday": return schedule.tuesday ?? []
-        case "wednesday": return schedule.wednesday ?? []
-        case "thursday": return schedule.thursday ?? []
-        case "friday": return schedule.friday ?? []
-        case "saturday": return schedule.saturday ?? []
-        case "sunday": return schedule.sunday ?? []
-        default: return []
+    private func getTimeSlotsForDay(_ day: String, in schedule: [String: [String: Bool]]) -> [TimeSlot] {
+        guard let daySchedule = schedule[day.lowercased()] else {
+            return []
+        }
+        
+        // Convert the schedule dictionary to TimeSlot array
+        return daySchedule.compactMap { timeRange, isAvailable -> TimeSlot? in
+            guard isAvailable else { return nil }
+            
+            let components = timeRange.split(separator: "-")
+            guard components.count == 2 else { return nil }
+            
+            let start = String(components[0])
+            let end = String(components[1])
+            
+            return TimeSlot(start: start, end: end)
+        }.sorted { slot1, slot2 in
+            let time1 = convertTo24Hour(slot1.start)
+            let time2 = convertTo24Hour(slot2.start)
+            return time1 < time2
         }
     }
 }
@@ -1339,7 +1307,7 @@ struct ChangePasswordView: View {
 // DayScheduleCard - New component for displaying a day's schedule
 struct DayScheduleCard: View {
     let day: String
-    let slots: [WeeklySchedule.TimeSlot]
+    let slots: [TimeSlot]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
