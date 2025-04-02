@@ -352,15 +352,21 @@ struct DoctorAppointmentDetailsView: View {
                             
                             // Write Prescription Button
                             Button(action: {
-                                showPrescriptionSheet = true
+                                if hasPrescription {
+                                    // If prescription exists, load it first for editing
+                                    loadPrescriptionForEdit()
+                                } else {
+                                    // If no prescription, create a new one
+                                    showPrescriptionSheet = true
+                                }
                             }) {
                                 HStack {
                                     Image(systemName: "pills.fill")
-                                        .foregroundColor(hasPrescription ? .gray : .blue)
+                                        .foregroundColor(!isAppointmentTimeReached ? .gray : .blue)
                                     
-                                    Text("Write Prescription")
+                                    Text(hasPrescription ? "Edit Prescription" : "Write Prescription")
                                         .font(.body)
-                                        .foregroundColor(hasPrescription ? .gray : .blue)
+                                        .foregroundColor(!isAppointmentTimeReached ? .gray : .blue)
                                     
                                     Spacer()
                                     
@@ -370,7 +376,7 @@ struct DoctorAppointmentDetailsView: View {
                                 }
                                 .padding(.vertical, 8)
                             }
-                            .disabled(hasPrescription)
+                            .disabled(!isAppointmentTimeReached)
                             
                             Divider()
                             
@@ -406,11 +412,11 @@ struct DoctorAppointmentDetailsView: View {
                             }) {
                                 HStack {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.teal)
+                                        .foregroundColor(!isAppointmentTimeReached ? .gray : .teal)
                                     
                                     Text("Mark as Completed")
                                         .font(.body)
-                                        .foregroundColor(.teal)
+                                        .foregroundColor(!isAppointmentTimeReached ? .gray : .teal)
                                     
                                     Spacer()
                                     
@@ -426,7 +432,7 @@ struct DoctorAppointmentDetailsView: View {
                                 }
                                 .padding(.vertical, 8)
                             }
-                            .disabled(isUpdatingStatus)
+                            .disabled(!isAppointmentTimeReached || isUpdatingStatus)
                         }
                         .padding()
                         .background(Color.white)
@@ -476,6 +482,15 @@ struct DoctorAppointmentDetailsView: View {
                     }
                 }
                 
+                if !isAppointmentTimeReached {
+                    Text("Actions will be available at the scheduled appointment time")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.top, 4)
+                        .padding(.bottom, 8)
+                        .padding(.leading, 2)
+                }
+                
                 Spacer()
                     .frame(height: 30)
             }
@@ -484,6 +499,12 @@ struct DoctorAppointmentDetailsView: View {
         .onAppear {
             fetchPatientDetails()
             checkForExistingPrescriptions()
+            
+            // Debug logs
+            print("DEBUG: Appointment date: \(appointment.appointmentDate)")
+            print("DEBUG: Appointment time: \(appointment.slotTime)")
+            print("DEBUG: Current time: \(Date())")
+            print("DEBUG: Is appointment time reached: \(isAppointmentTimeReached)")
         }
         .alert("Appointment Completed", isPresented: $showCompletionSuccess) {
             Button("OK") {
@@ -568,11 +589,11 @@ struct DoctorAppointmentDetailsView: View {
                     // Parse patient data
                     let name = patientData["name"] as? String ?? "Unknown"
                     let email = patientData["email"] as? String ?? "Not provided"
-                    let phone = patientData["phone"] as? String ?? "Not provided"
+                    let phone = patientData["phoneNumber"] as? String ?? "Not provided"
                     let gender = patientData["gender"] as? String ?? "Not specified"
                     let age = patientData["age"] as? Int ?? 0
                     let medicalHistory = patientData["medical_history"] as? String ?? ""
-                    let bloodGroup = patientData["blood_group"] as? String ?? "Not specified"
+                    let bloodGroup = patientData["bloodGroup"] as? String ?? "Not specified"
                     
                     // Create patient details model
                     let patient = PatientDetailModel(
@@ -646,6 +667,100 @@ struct DoctorAppointmentDetailsView: View {
         }
     }
     
+    private func loadPrescriptionForEdit() {
+        Task {
+            do {
+                let supabase = SupabaseController.shared
+                
+                // Fetch the latest prescription for this appointment
+                let result = try await supabase.select(
+                    from: "prescriptions",
+                    columns: "*",
+                    where: "appointment_id",
+                    equals: appointment.id
+                )
+                
+                // Since we can't sort with the API, sort the results here to get the latest
+                let sortedResults = result.sorted { first, second in
+                    guard let firstDate = first["prescription_date"] as? String,
+                          let secondDate = second["prescription_date"] as? String else {
+                        return false
+                    }
+                    return firstDate > secondDate
+                }
+                
+                guard let prescriptionData = sortedResults.first else {
+                    print("ERROR: No prescription found for editing")
+                    return
+                }
+                
+                // Create a new prescription data object to populate
+                var newPrescriptionData = DoctorPrescriptionData()
+                
+                // Parse medications
+                if let medications = prescriptionData["medications"] as? [[String: Any]] {
+                    var medicationList: [DoctorPrescriptionMedication] = []
+                    
+                    for med in medications {
+                        let medicineName = med["medicine_name"] as? String ?? ""
+                        let dosage = med["dosage"] as? String ?? ""
+                        let frequency = med["frequency"] as? String ?? ""
+                        let timing = med["timing"] as? String ?? ""
+                        let brandName = med["brand_name"] as? String ?? ""
+                        
+                        let medication = DoctorPrescriptionMedication(
+                            medicineName: medicineName,
+                            dosage: dosage,
+                            frequency: frequency,
+                            timing: timing,
+                            brandName: brandName
+                        )
+                        
+                        medicationList.append(medication)
+                    }
+                    
+                    newPrescriptionData.medications = medicationList
+                }
+                
+                // Parse lab tests
+                if let labTests = prescriptionData["lab_tests"] as? [[String: Any]] {
+                    var labTestList: [DoctorPrescriptionLabTest] = []
+                    
+                    for test in labTests {
+                        let testName = test["test_name"] as? String ?? ""
+                        let instructions = test["instructions"] as? String ?? ""
+                        
+                        let labTest = DoctorPrescriptionLabTest(
+                            testName: testName,
+                            instructions: instructions
+                        )
+                        
+                        labTestList.append(labTest)
+                    }
+                    
+                    newPrescriptionData.labTests = labTestList
+                }
+                
+                // Parse precautions and notes
+                newPrescriptionData.precautions = prescriptionData["precautions"] as? String ?? ""
+                newPrescriptionData.additionalNotes = prescriptionData["additional_notes"] as? String ?? ""
+                
+                // Update UI on main thread
+                await MainActor.run {
+                    self.prescriptionData = newPrescriptionData
+                    self.showPrescriptionSheet = true
+                }
+            } catch {
+                print("ERROR: Failed to load prescription for editing: \(error)")
+                
+                // If loading fails, just show an empty prescription sheet
+                await MainActor.run {
+                    self.showPrescriptionSheet = true
+                }
+            }
+        }
+    }
+    
     private func savePrescription() async throws {
         isSavingPrescription = true
         
@@ -664,12 +779,31 @@ struct DoctorAppointmentDetailsView: View {
             print("DEBUG: Appointment ID: \(appointment.id)")
             print("DEBUG: Patient ID: \(appointment.patientId)")
             
+            // If we already have a prescription, check if we should update it instead
+            if hasPrescription {
+                // First, fetch the existing prescription
+                let existingPrescriptions = try await supabase.select(
+                    from: "prescriptions",
+                    columns: "id",
+                    where: "appointment_id",
+                    equals: appointment.id
+                )
+                
+                if let existingPrescription = existingPrescriptions.first, let prescriptionId = existingPrescription["id"] as? String {
+                    print("DEBUG: Updating existing prescription ID: \(prescriptionId)")
+                    
+                    // Update the existing prescription
+                    return try await updateExistingPrescription(prescriptionId: prescriptionId)
+                }
+            }
+            
+            // If we reach here, create a new prescription
             // Generate a unique prescription ID (PRSR + 3 digits + 1 letter)
             let randomNum = String(format: "%03d", Int.random(in: 0...999))
             let randomLetter = String(UnicodeScalar(UInt8(65 + Int.random(in: 0...25))))
             let prescriptionId = "PRSR\(randomNum)\(randomLetter)"
             
-            print("DEBUG: Generated Prescription ID: \(prescriptionId)")
+            print("DEBUG: Generated new Prescription ID: \(prescriptionId)")
             
             // Validate medications
             guard !prescriptionData.medications.isEmpty else {
@@ -689,8 +823,6 @@ struct DoctorAppointmentDetailsView: View {
                 ]
             }
             
-            print("DEBUG: Medications JSON: \(medicationsJson)")
-            
             // Convert lab tests to JSON format if present
             let labTestsJson = prescriptionData.labTests.map { test in
                 [
@@ -698,8 +830,6 @@ struct DoctorAppointmentDetailsView: View {
                     "instructions": test.instructions
                 ]
             }
-            
-            print("DEBUG: Lab Tests JSON: \(labTestsJson)")
             
             // Format the current date in ISO8601 format
             let isoFormatter = ISO8601DateFormatter()
@@ -721,10 +851,8 @@ struct DoctorAppointmentDetailsView: View {
                 additional_notes: prescriptionData.additionalNotes.isEmpty ? nil : prescriptionData.additionalNotes
             )
             
-            print("DEBUG: Final Payload: \(payload)")
-            
             // Insert prescription into database
-            print("DEBUG: Attempting to insert prescription...")
+            print("DEBUG: Inserting new prescription...")
             try await supabase.insert(
                 into: "prescriptions",
                 data: payload
@@ -752,6 +880,82 @@ struct DoctorAppointmentDetailsView: View {
             }
             throw error
         }
+    }
+    
+    // Add a function to update an existing prescription
+    private func updateExistingPrescription(prescriptionId: String) async throws {
+        // Validate medications
+        guard !prescriptionData.medications.isEmpty else {
+            throw NSError(domain: "MediOps", code: 400, userInfo: [
+                NSLocalizedDescriptionKey: "Please add at least one medication."
+            ])
+        }
+        
+        // Convert medications to JSON format
+        let medicationsJson = prescriptionData.medications.map { med in
+            [
+                "medicine_name": med.medicineName,
+                "dosage": med.dosage,
+                "frequency": med.frequency,
+                "timing": med.timing,
+                "brand_name": med.brandName
+            ]
+        }
+        
+        // Convert lab tests to JSON format if present
+        let labTestsJson = prescriptionData.labTests.map { test in
+            [
+                "test_name": test.testName,
+                "instructions": test.instructions
+            ]
+        }
+        
+        // Format the current date in ISO8601 format for the update timestamp
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        let updateDateString = isoFormatter.string(from: Date())
+        
+        // Create an Encodable struct for the update
+        struct PrescriptionUpdateData: Encodable {
+            let medications: [[String: String]]
+            let lab_tests: [[String: String]]?
+            let precautions: String
+            let additional_notes: String
+            let updated_at: String
+        }
+        
+        // Create update data as an Encodable struct
+        let updateData = PrescriptionUpdateData(
+            medications: medicationsJson,
+            lab_tests: labTestsJson.isEmpty ? nil : labTestsJson,
+            precautions: prescriptionData.precautions,
+            additional_notes: prescriptionData.additionalNotes,
+            updated_at: updateDateString
+        )
+        
+        let supabase = SupabaseController.shared
+        
+        // Update the prescription in the database
+        print("DEBUG: Updating prescription \(prescriptionId)...")
+        try await supabase.update(
+            table: "prescriptions",
+            data: updateData,
+            where: "id",
+            equals: prescriptionId
+        )
+        
+        print("DEBUG: Prescription updated successfully!")
+        
+        // Clear the prescription data after successful update
+        await MainActor.run {
+            prescriptionData = DoctorPrescriptionData()
+            isSavingPrescription = false
+            showPrescriptionSheet = false
+            showPrescriptionSuccess = true
+            hasPrescription = true
+        }
+        
+        return
     }
     
     private func fetchPrescriptions() {
@@ -926,6 +1130,51 @@ struct DoctorAppointmentDetailsView: View {
                 print("ERROR: Failed to check for existing prescriptions: \(error)")
             }
         }
+    }
+    
+    private var isAppointmentTimeReached: Bool {
+        let now = Date()
+        let calendar = Calendar.current
+        
+        // First check if appointment date is in the past
+        if calendar.compare(appointment.appointmentDate, to: now, toGranularity: .day) == .orderedAscending {
+            // If appointment date is in the past, enable the buttons
+            return true
+        }
+        
+        // If appointment is today, check if current time is past the slot_start_time
+        if calendar.isDateInToday(appointment.appointmentDate) {
+            // Create a date by combining today's date with the appointment time
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "h:mm a"
+            
+            // Try to parse the time
+            guard let timeDate = timeFormatter.date(from: appointment.slotTime) else {
+                print("DEBUG: Failed to parse time: \(appointment.slotTime)")
+                return false // If can't parse time, disable by default
+            }
+            
+            // Get time components
+            let timeComponents = calendar.dateComponents([.hour, .minute], from: timeDate)
+            
+            // Create datetime by combining today's date with appointment time
+            guard let appointmentDateTime = calendar.date(bySettingHour: timeComponents.hour ?? 0,
+                                                         minute: timeComponents.minute ?? 0,
+                                                         second: 0,
+                                                         of: Date()) else {
+                print("DEBUG: Failed to create appointment datetime")
+                return false
+            }
+            
+            print("DEBUG: Current time: \(now)")
+            print("DEBUG: Appointment time: \(appointmentDateTime)")
+            
+            // Enable if current time is at or past appointment time
+            return now >= appointmentDateTime
+        }
+        
+        // For future dates, disable buttons
+        return false
     }
 }
 
