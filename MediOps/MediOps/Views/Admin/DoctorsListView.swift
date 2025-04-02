@@ -243,14 +243,42 @@ struct AdminDoctorCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Doctor name and menu
-            HStack {
-                Text(doctor.fullName)
-                    .font(.title3)
-                    .fontWeight(.semibold)
+            // Top section with name and menu
+            HStack(alignment: .top, spacing: 12) {
+                // Avatar circle
+                Circle()
+                    .fill(Color.cyan.opacity(0.1))
+                    .frame(width: 45, height: 45)
+                    .overlay(
+                        Text(doctor.fullName.prefix(1))
+                            .font(.title3)
+                            .foregroundColor(.cyan)
+                    )
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    // Name
+                    Text(doctor.fullName)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                    
+                    // Specialization
+                    Text(doctor.specialization)
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    
+                    // Doctor ID with light blue background
+                    Text("ID: \(doctor.id)")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.cyan.opacity(0.1))
+                        .foregroundColor(.cyan)
+                        .cornerRadius(6)
+                }
                 
                 Spacer()
                 
+                // Menu Button
                 Menu {
                     Button(action: onEdit) {
                         Label("Edit", systemImage: "pencil")
@@ -262,55 +290,39 @@ struct AdminDoctorCard: View {
                     Image(systemName: "ellipsis")
                         .foregroundColor(.gray)
                         .padding(8)
-                        .contentShape(Rectangle())
                 }
             }
             
-            // Specialization
-            Text(doctor.specialization)
-                .font(.subheadline)
-                .foregroundColor(.gray)
-            
             Divider()
+                .padding(.vertical, 4)
             
             // Contact info
-            HStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 8) {
                 // Phone
                 HStack(spacing: 8) {
                     Image(systemName: "phone.fill")
-                        .foregroundColor(.teal)
+                        .foregroundColor(.cyan)
                     Text(doctor.phone)
                         .font(.subheadline)
+                        .foregroundColor(.black.opacity(0.8))
                 }
-                
-                Spacer()
                 
                 // Email
                 HStack(spacing: 8) {
                     Image(systemName: "envelope.fill")
-                        .foregroundColor(.teal)
+                        .foregroundColor(.cyan)
                     Text(doctor.email)
                         .font(.subheadline)
+                        .foregroundColor(.black.opacity(0.8))
                         .lineLimit(1)
                 }
             }
-            
-            Divider()
-            
-            // Doctor ID
-            HStack {
-                Text("Doctor ID: ")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                Text(doctor.id)
-                    .font(.subheadline)
-                    .foregroundColor(.teal)
-            }
         }
-        .padding()
+        .padding(16)
         .background(Color.white)
         .cornerRadius(12)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .shadow(color: Color.black.opacity(0.03), radius: 5, x: 0, y: 2)
+        .padding(.horizontal)
     }
 } 
 
