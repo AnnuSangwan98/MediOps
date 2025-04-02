@@ -60,6 +60,7 @@ enum AppointmentStatusType: String {
     case upcoming = "upcoming"
     case completed = "completed"
     case cancelled = "cancelled"
+    case missed = "missed"
     
     var color: Color {
         switch self {
@@ -69,6 +70,8 @@ enum AppointmentStatusType: String {
             return .green
         case .cancelled:
             return .red
+        case .missed:
+            return .orange
         }
     }
 }
@@ -84,11 +87,13 @@ struct DoctorHomeView: View {
     @State private var error: String? = nil
     @State private var doctorName: String = ""
     @State private var isLoadingDoctorInfo = true
+    @State private var autoRefreshTimer: Timer? = nil
     
     // Stats counters
     @State private var todayCount = 0
     @State private var upcomingCount = 0
     @State private var completedCount = 0
+    @State private var missedCount = 0
     
     var body: some View {
         NavigationStack {
@@ -153,7 +158,7 @@ struct DoctorHomeView: View {
                             value: "\(upcomingCount)",
                             title: "Upcoming",
                             icon: "clock.fill",
-                            iconColor: .orange
+                            iconColor: .blue
                         )
                         
                         // Completed Appointments
@@ -163,6 +168,7 @@ struct DoctorHomeView: View {
                             icon: "checkmark.circle.fill",
                             iconColor: .green
                         )
+                        
                     }
                     .padding(.horizontal)
                     
@@ -177,6 +183,7 @@ struct DoctorHomeView: View {
                             TabButton(title: "Upcoming", selected: $selectedTab)
                             TabButton(title: "Cancelled", selected: $selectedTab)
                             TabButton(title: "Completed", selected: $selectedTab)
+                            TabButton(title: "Missed", selected: $selectedTab)
                         }
                     }
                                 .padding(.horizontal)
@@ -199,7 +206,9 @@ struct DoctorHomeView: View {
                                         .padding(.horizontal)
                                 } else {
                                     let filteredAppointments = appointments.filter { 
-                                        $0.status.rawValue.lowercased() == selectedTab.lowercased() 
+                                        let tabLowercased = selectedTab.lowercased()
+                                        let statusLowercased = $0.status.rawValue.lowercased()
+                                        return statusLowercased == tabLowercased
                                     }
                                     
                                     if filteredAppointments.isEmpty {
@@ -240,8 +249,32 @@ struct DoctorHomeView: View {
             .onAppear {
                 fetchDoctorData()
                 fetchDoctorAppointments()
+                startAutoRefreshTimer()
+            }
+            .onDisappear {
+                stopAutoRefreshTimer()
             }
         }
+    }
+    
+    // Start a timer to periodically check for missed appointments
+    private func startAutoRefreshTimer() {
+        // Cancel any existing timer
+        stopAutoRefreshTimer()
+        
+        // Start a new timer that fires every 60 seconds
+        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+            Task {
+                print("🔄 Auto-refresh timer fired - checking for missed appointments")
+                await refreshData()
+            }
+        }
+    }
+    
+    // Stop the auto-refresh timer
+    private func stopAutoRefreshTimer() {
+        autoRefreshTimer?.invalidate()
+        autoRefreshTimer = nil
     }
     
     // Add a new async function to refresh all data
@@ -337,59 +370,182 @@ struct DoctorHomeView: View {
         
         do {
             let supabase = SupabaseController.shared
-            let result = try await supabase.select(
+            
+            // First fetch appointments with all required fields
+            let appointmentResults = try await supabase.select(
                 from: "appointments",
                 columns: "id, patient_id, doctor_id, hospital_id, appointment_date, booking_time, status, reason, isdone, is_premium, slot_start_time, slot_end_time, slot",
                 where: "doctor_id",
                 equals: doctorId
             )
             
-            // Parse result
-            let appointments = try parseAppointments(result)
+            print("📊 Found \(appointmentResults.count) appointments for doctor: \(doctorId)")
             
-            // Fetch additional details for each appointment (patient, hospital)
+            // Process each appointment
             var enhancedAppointments: [DoctorAppointmentModel] = []
+            let now = Date()
             
-            for appointment in appointments {
-                // Load patient details
+            for appointmentData in appointmentResults {
+                // Debug print
+                print("Processing appointment: \(appointmentData)")
+                
+                // Required fields
+                guard let id = appointmentData["id"] as? String,
+                      let patientId = appointmentData["patient_id"] as? String,
+                      let hospitalId = appointmentData["hospital_id"] as? String,
+                      let appointmentDateString = appointmentData["appointment_date"] as? String,
+                      var statusString = appointmentData["status"] as? String else {
+                    print("⚠️ Skipping appointment due to missing required fields")
+                    continue
+                }
+                
+                // Parse appointment date
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                guard let appointmentDate = dateFormatter.date(from: appointmentDateString) else {
+                    print("⚠️ Could not parse date: \(appointmentDateString)")
+                    continue
+                }
+                
+                // Optional fields with defaults
+                let bookingTimeString = appointmentData["booking_time"] as? String ?? ""
+                let bookingTime = ISO8601DateFormatter().date(from: bookingTimeString) ?? Date()
+                let reason = appointmentData["reason"] as? String ?? ""
+                let isDone = appointmentData["isdone"] as? Bool ?? false
+                let isPremium = appointmentData["is_premium"] as? Bool
+                
+                // Get slot times
+                let slotStartTimeRaw = appointmentData["slot_start_time"] as? String
+                let slotEndTimeRaw = appointmentData["slot_end_time"] as? String
+                
+                // Format times for display
+                var slotStartTime = ""
+                var slotEndTime: String? = nil
+                
+                // Date components for checking if appointment is missed
+                var slotEndDateTime: Date? = nil
+                
+                // Format start time if available
+                if let timeString = slotStartTimeRaw {
+                    let timeFormatter = DateFormatter()
+                    timeFormatter.dateFormat = "HH:mm:ss"
+                    if let timeDate = timeFormatter.date(from: timeString) {
+                        let displayFormatter = DateFormatter()
+                        displayFormatter.dateFormat = "h:mm a"
+                        slotStartTime = displayFormatter.string(from: timeDate)
+                    } else {
+                        slotStartTime = timeString
+                    }
+                }
+                
+                // Format end time if available
+                if let timeString = slotEndTimeRaw {
+                    let timeFormatter = DateFormatter()
+                    timeFormatter.dateFormat = "HH:mm:ss"
+                    if let timeDate = timeFormatter.date(from: timeString) {
+                        let displayFormatter = DateFormatter()
+                        displayFormatter.dateFormat = "h:mm a"
+                        slotEndTime = displayFormatter.string(from: timeDate)
+                        
+                        // Create a date by combining appointment date with slot end time
+                        let calendar = Calendar.current
+                        let hour = calendar.component(.hour, from: timeDate)
+                        let minute = calendar.component(.minute, from: timeDate)
+                        let second = calendar.component(.second, from: timeDate)
+                        
+                        var endDateComponents = calendar.dateComponents([.year, .month, .day], from: appointmentDate)
+                        endDateComponents.hour = hour
+                        endDateComponents.minute = minute
+                        endDateComponents.second = second
+                        
+                        slotEndDateTime = calendar.date(from: endDateComponents)
+                    } else {
+                        slotEndTime = timeString
+                    }
+                }
+                
+                // Debug slot time information
+                print("Slot times - Start: \(slotStartTime), End: \(slotEndTime ?? "nil")")
+                
+                // Auto-mark as missed if:
+                // 1. Status is "upcoming"
+                // 2. Appointment end time has passed
+                // 3. isDone is false
+                if statusString.lowercased() == "upcoming" && !isDone {
+                    if let endDateTime = slotEndDateTime, endDateTime < now {
+                        print("🔄 Auto-marking appointment \(id) as missed (End time: \(endDateTime) has passed current time: \(now))")
+                        statusString = "missed"
+                        
+                        // Update status in database
+                        Task {
+                            do {
+                                try await supabase.update(
+                                    table: "appointments",
+                                    id: id,
+                                    data: ["status": "missed"]
+                                )
+                                print("✅ Updated appointment \(id) status to missed in database")
+                            } catch {
+                                print("❌ Failed to update appointment status: \(error.localizedDescription)")
+                            }
+                        }
+                    }
+                }
+                
+                // Parse status after potential auto-update
+                guard let status = AppointmentStatusType(rawValue: statusString.lowercased()) else {
+                    print("⚠️ Invalid status: \(statusString)")
+                    continue
+                }
+                
+                // Fetch patient details
                 var patientName = "Unknown Patient"
                 if let patientResult = try? await supabase.select(
                     from: "patients",
                     where: "patient_id",
-                    equals: appointment.patientId
+                    equals: patientId
                 ).first, let name = patientResult["name"] as? String {
                     patientName = name
                 }
                 
-                // Load hospital details
+                // Fetch hospital details
                 var hospitalName = "Unknown Hospital"
                 if let hospitalResult = try? await supabase.select(
                     from: "hospitals",
                     where: "id",
-                    equals: appointment.hospitalId
-                ).first, let name = hospitalResult["name"] as? String {
+                    equals: hospitalId
+                ).first, let name = hospitalResult["hospital_name"] as? String {
                     hospitalName = name
                 }
                 
-                // Create enhanced appointment
-                let enhancedAppointment = DoctorAppointmentModel(
-                    id: appointment.id,
-                    patientId: appointment.patientId,
+                // Create appointment model
+                let appointment = DoctorAppointmentModel(
+                    id: id,
+                    patientId: patientId,
                     patientName: patientName,
-                    hospitalId: appointment.hospitalId,
+                    hospitalId: hospitalId,
                     hospitalName: hospitalName,
-                    appointmentDate: appointment.appointmentDate,
-                    bookingTime: appointment.bookingTime,
-                    status: appointment.status,
-                    reason: appointment.reason,
-                    isDone: appointment.isDone,
-                    isPremium: appointment.isPremium,
-                    slotId: 0,
-                    slotTime: appointment.slotTime,
-                    slotEndTime: appointment.slotEndTime
+                    appointmentDate: appointmentDate,
+                    bookingTime: bookingTime,
+                    status: status,
+                    reason: reason,
+                    isDone: isDone,
+                    isPremium: isPremium,
+                    slotId: 0, // Not used anymore
+                    slotTime: slotStartTime,
+                    slotEndTime: slotEndTime
                 )
                 
-                enhancedAppointments.append(enhancedAppointment)
+                enhancedAppointments.append(appointment)
+                print("✅ Successfully processed appointment: \(id)")
+            }
+            
+            // Sort appointments by date and time
+            enhancedAppointments.sort { (a1, a2) -> Bool in
+                if a1.appointmentDate == a2.appointmentDate {
+                    return a1.bookingTime < a2.bookingTime
+                }
+                return a1.appointmentDate < a2.appointmentDate
             }
             
             // Update UI on main thread
@@ -398,108 +554,15 @@ struct DoctorHomeView: View {
                 updateCounts(enhancedAppointments)
                 isLoadingAppointments = false
             }
+            
+            print("✅ Updated appointments list with \(enhancedAppointments.count) appointments")
+            
         } catch {
+            print("❌ Error fetching appointments: \(error.localizedDescription)")
             await MainActor.run {
                 self.error = "Failed to load appointments: \(error.localizedDescription)"
                 isLoadingAppointments = false
             }
-        }
-    }
-    
-    private func parseAppointments(_ data: [[String: Any]]) throws -> [DoctorAppointmentModel] {
-        // Initialize date formatter
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
-        
-        // Time formatter for slot times
-        let slotTimeFormatter = DateFormatter()
-        slotTimeFormatter.dateFormat = "HH:mm:ss"
-        
-        return try data.map { appointmentData in
-            print("PARSING APPOINTMENT: \(appointmentData)")
-            
-            // Required fields
-            guard let id = appointmentData["id"] as? String else {
-                throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing appointment ID"])
-            }
-            
-            guard let patientId = appointmentData["patient_id"] as? String else {
-                throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing patient ID"])
-            }
-            
-            guard let hospitalId = appointmentData["hospital_id"] as? String else {
-                throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing hospital ID"])
-            }
-            
-            guard let appointmentDateString = appointmentData["appointment_date"] as? String,
-                  let appointmentDate = dateFormatter.date(from: appointmentDateString) else {
-                throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid appointment date"])
-            }
-            
-            guard let statusString = appointmentData["status"] as? String,
-                  let status = AppointmentStatusType(rawValue: statusString.lowercased()) else {
-                throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid status"])
-            }
-            
-            // Optional fields with defaults
-            let bookingTimeString = appointmentData["booking_time"] as? String ?? ""
-            let bookingTime = timeFormatter.date(from: bookingTimeString) ?? Date()
-            
-            let reason = appointmentData["reason"] as? String ?? ""
-            let isDone = appointmentData["isdone"] as? Bool ?? false
-            let isPremium = appointmentData["is_premium"] as? Bool
-            
-            // Get slot times directly from the appointment
-            var slotTime = ""
-            if let slotTimeString = appointmentData["slot_start_time"] as? String {
-                // Format time from "HH:MM:SS" to "HH:MM AM/PM"
-                if let timeDate = slotTimeFormatter.date(from: slotTimeString) {
-                    let displayFormatter = DateFormatter()
-                    displayFormatter.dateFormat = "h:mm a"
-                    slotTime = displayFormatter.string(from: timeDate)
-                } else {
-                    slotTime = slotTimeString
-                }
-            }
-            
-            // Handle slot end time
-            var slotEndTime: String? = nil
-            if let endTimeString = appointmentData["slot_end_time"] as? String {
-                if let timeDate = slotTimeFormatter.date(from: endTimeString) {
-                    let displayFormatter = DateFormatter()
-                    displayFormatter.dateFormat = "h:mm a"
-                    slotEndTime = displayFormatter.string(from: timeDate)
-                } else {
-                    slotEndTime = endTimeString
-                }
-            }
-            
-            // Debug slot times
-            print("Appointment ID: \(id)")
-            print("Raw slot_start_time: \(appointmentData["slot_start_time"] as? String ?? "nil")")
-            print("Raw slot_end_time: \(appointmentData["slot_end_time"] as? String ?? "nil")")
-            print("Formatted slotTime: \(slotTime)")
-            print("Formatted slotEndTime: \(slotEndTime ?? "nil")")
-            
-            return DoctorAppointmentModel(
-                id: id,
-                patientId: patientId,
-                patientName: "Unknown Patient", // Will be updated later
-                hospitalId: hospitalId,
-                hospitalName: "Unknown Hospital", // Will be updated later
-                appointmentDate: appointmentDate,
-                bookingTime: bookingTime,
-                status: status,
-                reason: reason,
-                isDone: isDone,
-                isPremium: isPremium,
-                slotId: 0, // Not used anymore
-                slotTime: slotTime,
-                slotEndTime: slotEndTime
-            )
         }
     }
     
@@ -516,6 +579,9 @@ struct DoctorHomeView: View {
         // Count by status
         upcomingCount = appointments.filter { $0.status == .upcoming }.count
         completedCount = appointments.filter { $0.status == .completed }.count
+        missedCount = appointments.filter { $0.status == .missed }.count
+        
+        print("📊 Appointment counts - Today: \(todayCount), Upcoming: \(upcomingCount), Completed: \(completedCount), Missed: \(missedCount)")
     }
     
     private func fetchDoctorData() {
