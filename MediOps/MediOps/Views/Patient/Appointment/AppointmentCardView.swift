@@ -141,6 +141,21 @@ struct AppointmentCard: View {
                     Text(formatTimeRange(appointment.time))
                 }
 
+                // Premium badge if applicable
+                if let isPremium = appointment.isPremium, isPremium {
+                    HStack {
+                        Image(systemName: "star.fill")
+                            .foregroundColor(.yellow)
+                        Text("Premium Appointment")
+                            .font(.subheadline)
+                            .foregroundColor(.black)
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .background(Color.yellow.opacity(0.1))
+                    .cornerRadius(8)
+                }
+
                 // Show Cancel Button only for upcoming appointments
                 if appointment.status == .upcoming {
                     Button(action: { showCancelAlert = true }) {
