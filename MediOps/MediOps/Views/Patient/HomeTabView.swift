@@ -61,12 +61,19 @@ struct HomeTabView: View {
                     }
                     .tag(1)
                 
-                bloodDonateTab
+                labReportsTab
                     .tabItem {
-                        Image(systemName: selectedTab == 2 ? "drop.fill" : "drop")
-                        Text("Blood Donate")
+                        Image(systemName: selectedTab == 2 ? "doc.text.fill" : "doc.text")
+                        Text("Lab Reports")
                     }
                     .tag(2)
+                
+                bloodDonateTab
+                    .tabItem {
+                        Image(systemName: selectedTab == 3 ? "drop.fill" : "drop")
+                        Text("Blood Donate")
+                    }
+                    .tag(3)
             }
             .accentColor(.blue)
             .onAppear {
@@ -326,65 +333,61 @@ struct HomeTabView: View {
     private var historyTab: some View {
         NavigationStack {
             VStack {
-                Picker("History Type", selection: $selectedHistoryType) {
-                    Text("Appointments").tag(0)
-                    Text("Lab Reports").tag(1)
-                }
-                .pickerStyle(SegmentedPickerStyle())
-                .padding()
-
-                if selectedHistoryType == 0 {
-                    List {
-                        // Explicitly filter for completed appointments
-                        let completedAppointments = appointmentManager.appointments.filter { 
-                            print("Appointment status: \($0.status.rawValue)") // Debug print
-                            return $0.status == .completed 
-                        }
-                        let cancelledAppointments = appointmentManager.appointments.filter { $0.status == .cancelled }
-                        
-                        if completedAppointments.isEmpty && cancelledAppointments.isEmpty {
-                            Text("No appointment history")
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding()
-                        } else {
-                            if !completedAppointments.isEmpty {
-                                Section(header: Text("Completed Appointments")) {
-                                    ForEach(completedAppointments) { appointment in
-                                        NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
-                                            AppointmentHistoryCard(appointment: appointment)
-                                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                                        }
-                                        .listRowBackground(Color.green.opacity(0.1))
-                                    }
-                                }
-                            }
-                            
-                            if !cancelledAppointments.isEmpty {
-                                Section(header: Text("Cancelled Appointments")) {
-                                    ForEach(cancelledAppointments) { appointment in
-                                        AppointmentHistoryCard(appointment: appointment, isCancelled: true)
+                List {
+                    // Explicitly filter for completed appointments
+                    let completedAppointments = appointmentManager.appointments.filter { 
+                        print("Appointment status: \($0.status.rawValue)") // Debug print
+                        return $0.status == .completed 
+                    }
+                    let cancelledAppointments = appointmentManager.appointments.filter { $0.status == .cancelled }
+                    
+                    if completedAppointments.isEmpty && cancelledAppointments.isEmpty {
+                        Text("No appointment history")
+                            .foregroundColor(.gray)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding()
+                    } else {
+                        if !completedAppointments.isEmpty {
+                            Section(header: Text("Completed Appointments")) {
+                                ForEach(completedAppointments) { appointment in
+                                    NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
+                                        AppointmentHistoryCard(appointment: appointment)
                                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                                            .listRowBackground(Color.red.opacity(0.1))
                                     }
+                                    .listRowBackground(Color.green.opacity(0.1))
+                                }
+                            }
+                        }
+                        
+                        if !cancelledAppointments.isEmpty {
+                            Section(header: Text("Cancelled Appointments")) {
+                                ForEach(cancelledAppointments) { appointment in
+                                    AppointmentHistoryCard(appointment: appointment, isCancelled: true)
+                                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                        .listRowBackground(Color.red.opacity(0.1))
                                 }
                             }
                         }
                     }
-                    .listStyle(InsetGroupedListStyle())
-                    .refreshable {
-                        print("🔄 Manually refreshing appointments history")
-                        appointmentManager.refreshAppointments()
-                    }
-                } else {
-                    labReportsSection
+                }
+                .listStyle(InsetGroupedListStyle())
+                .refreshable {
+                    print("🔄 Manually refreshing appointments history")
+                    appointmentManager.refreshAppointments()
                 }
             }
-            .navigationTitle("History")
+            .navigationTitle("Appointments History")
             .onAppear {
                 print("📱 History tab appeared - refreshing appointments")
                 appointmentManager.refreshAppointments()
             }
+        }
+    }
+    
+    private var labReportsTab: some View {
+        NavigationStack {
+            labReportsSection
+                .navigationTitle("Lab Reports")
         }
     }
     
