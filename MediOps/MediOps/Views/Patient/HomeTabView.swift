@@ -25,6 +25,7 @@ enum ActiveSheet: Identifiable {
 struct HomeTabView: View {
     @ObservedObject var hospitalVM = HospitalViewModel.shared
     @StateObject var appointmentManager = AppointmentManager.shared
+    @StateObject private var labReportManager = LabReportManager.shared
     @State private var showProfile = false
     @State private var showAddVitals = false
     @State private var selectedHospital: HospitalModel?
@@ -34,6 +35,7 @@ struct HomeTabView: View {
     @State private var selectedTab = 0
     @AppStorage("current_user_id") private var currentUserId: String?
     @AppStorage("userId") private var userId: String?
+    @State private var selectedHistoryType = 0
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -324,49 +326,62 @@ struct HomeTabView: View {
     private var historyTab: some View {
         NavigationStack {
             VStack {
-                List {
-                    if appointmentManager.appointments.filter({ $0.status == .completed || $0.status == .cancelled }).isEmpty {
-                        Text("No appointment history")
-                            .foregroundColor(.gray)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding()
-                            .listRowBackground(Color.clear)
-                    } else {
-                        Section(header: Text("Completed Appointments")
-                            .font(.headline)
-                            .foregroundColor(.black)
-                            .padding(.top, 10)) {
-                            ForEach(appointmentManager.appointments.filter { $0.status == .completed }, id: \.id) { appointment in
-                                NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
-                                    AppointmentHistoryCard(appointment: appointment)
-                                        .listRowBackground(Color.green.opacity(0.1))
-                                }
-                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                            }
-                        }
+                Picker("History Type", selection: $selectedHistoryType) {
+                    Text("Appointments").tag(0)
+                    Text("Lab Reports").tag(1)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .padding()
+
+                if selectedHistoryType == 0 {
+                    List {
+                        let completedAppointments = appointmentManager.appointments.filter { $0.status == .completed }
+                        let cancelledAppointments = appointmentManager.appointments.filter { $0.status == .cancelled }
                         
-                        Section(header: Text("Cancelled Appointments")
-                            .font(.headline)
-                            .foregroundColor(.black)
-                            .padding(.top, 10)) {
-                            ForEach(appointmentManager.appointments.filter { $0.status == .cancelled }, id: \.id) { appointment in
-                                AppointmentHistoryCard(appointment: appointment, isCancelled: true)
-                                    .listRowBackground(Color.red.opacity(0.1))
-                                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        if completedAppointments.isEmpty && cancelledAppointments.isEmpty {
+                            Text("No appointment history")
+                                .foregroundColor(.gray)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding()
+                        } else {
+                            if !completedAppointments.isEmpty {
+                                Section(header: Text("Completed Appointments")) {
+                                    ForEach(completedAppointments, id: \.id) { appointment in
+                                        NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
+                                            AppointmentHistoryCard(appointment: appointment)
+                                                .listRowBackground(Color.green.opacity(0.1))
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if !cancelledAppointments.isEmpty {
+                                Section(header: Text("Cancelled Appointments")) {
+                                    ForEach(cancelledAppointments, id: \.id) { appointment in
+                                        AppointmentHistoryCard(appointment: appointment, isCancelled: true)
+                                            .listRowBackground(Color.red.opacity(0.1))
+                                    }
+                                }
                             }
                         }
                     }
+                } else {
+                    labReportsSection
                 }
-                .listStyle(InsetGroupedListStyle())
-                .scrollContentBackground(.hidden)
-                .background(Color(.systemGray6))
             }
-            .background(Color(.systemGray6))
-            .navigationTitle("Appointment History")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("History")
             .refreshable {
-                print("🔃 Manually refreshing appointment history")
-                appointmentManager.refreshAppointments()
+                print("🔃 Manually refreshing history")
+                if selectedHistoryType == 0 {
+                    appointmentManager.refreshAppointments()
+                } else if let userId = userId {
+                    labReportManager.fetchLabReports(for: userId)
+                }
+            }
+            .onAppear {
+                if selectedHistoryType == 1, let userId = userId {
+                    labReportManager.fetchLabReports(for: userId)
+                }
             }
         }
     }
@@ -509,6 +524,89 @@ struct HomeTabView: View {
         .padding(.vertical)
     }
 
+    private var labReportsSection: some View {
+        List {
+            if labReportManager.isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            } else if let error = labReportManager.error {
+                Text(error.localizedDescription)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            } else if labReportManager.labReports.isEmpty {
+                Text("No lab reports available")
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            } else {
+                ForEach(labReportManager.labReports) { report in
+                    PatientLabReportCard(report: report)
+                        .padding(.vertical, 4)
+                }
+            }
+        }
+        .refreshable {
+            if let userId = userId {
+                // First get the patient's PAT ID from patients table
+                Task {
+                    do {
+//                        let patientData = try await SupabaseController.shared.select(
+//                            from: "patients",
+//                            columns: "patient_id",
+//                            where: "id",
+//                            equals: userId
+//                        )
+                        
+                        struct PatientIds: Codable {
+                            var patient_id: String
+                        }
+
+                        let patient: [PatientIds] = try await SupabaseController.shared.client
+                            .from("patients")
+                            .select("patient_id")
+                            .eq("user_id", value: userId)
+                            .execute()
+                            .value
+//
+                        labReportManager.fetchLabReports(for: patient[0].patient_id)
+//                        if let patientRecord = patientData.first,
+//                           let patId = patientRecord["patient_id"] as? String {
+//                            print("📍 Found patient_id: \(patId)")
+//                            labReportManager.fetchLabReports(for: patId)
+//                        }
+                    } catch {
+                        print("❌ Error getting patient ID: \(error)")
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if let userId = userId {
+                // First get the patient's PAT ID from patients table
+                Task {
+                    do {
+                        let patientData = try await SupabaseController.shared.select(
+                            from: "patients",
+                            columns: "patient_id",
+                            where: "id",
+                            equals: userId
+                        )
+                        
+                        if let patientRecord = patientData.first,
+                           let patId = patientRecord["patient_id"] as? String {
+                            print("📍 Found patient_id: \(patId)")
+                            labReportManager.fetchLabReports(for: patId)
+                        }
+                    } catch {
+                        print("❌ Error getting patient ID: \(error)")
+                    }
+                }
+            }
+        }
+    }
+    
     // Pull-to-refresh control
     struct RefreshControl: View {
         var coordinateSpace: CoordinateSpace
@@ -657,11 +755,12 @@ struct HomeTabView: View {
 struct AppointmentHistoryCard: View {
     let appointment: Appointment
     var isCancelled: Bool = false
+    @State private var isLoading = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading) {
                     Text(appointment.doctor.name)
                         .font(.headline)
                     Text(appointment.doctor.specialization)
@@ -670,43 +769,41 @@ struct AppointmentHistoryCard: View {
                 }
                 Spacer()
                 
-                Text(isCancelled ? "Cancelled" : "Completed")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(isCancelled ? .red : .green)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(isCancelled ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
-                    .cornerRadius(8)
-            }
-            
-            Divider()
-                .padding(.vertical, 4)
-            
-            HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "calendar")
-                        .foregroundColor(.gray)
-                    Text(appointment.date.formatted(date: .long, time: .omitted))
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Text(isCancelled ? "Cancelled" : "Completed")
+                        .font(.caption)
+                        .foregroundColor(isCancelled ? .red : .green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(isCancelled ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
+                        .cornerRadius(8)
                 }
-                .font(.subheadline)
-                
-                Spacer()
             }
             
-            HStack(spacing: 8) {
+            HStack {
+                Image(systemName: "calendar")
+                Text(appointment.date.formatted(date: .long, time: .omitted))
+                Spacer()
                 Image(systemName: "clock")
-                    .foregroundColor(.gray)
                 let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: appointment.time)!
                 Text("\(appointment.time.formatted(date: .omitted, time: .shortened)) to \(endTime.formatted(date: .omitted, time: .shortened))")
-                    .font(.subheadline)
             }
+            .font(.subheadline)
+            .foregroundColor(.gray)
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
+        .padding()
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
+        .onAppear {
+            isLoading = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isLoading = false
+            }
+        }
     }
 }
 
