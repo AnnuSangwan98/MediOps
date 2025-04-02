@@ -4,6 +4,11 @@ struct ReviewAndPayView: View {
     let doctor: HospitalDoctor
     let appointmentDate: Date
     let appointmentTime: Date
+    let slotId: Int
+    let startTime: String
+    let endTime: String
+    let rawStartTime: String
+    let rawEndTime: String
     
     @Environment(\.dismiss) private var dismiss
     @State private var promoCode = ""
@@ -62,8 +67,22 @@ struct ReviewAndPayView: View {
                     
                     HStack {
                         Image(systemName: "clock")
-                        let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: appointmentTime)!
-                        Text("\(appointmentTime.formatted(date: .omitted, time: .shortened)) to \(endTime.formatted(date: .omitted, time: .shortened))")
+                        Text("\(startTime) to \(endTime)")
+                    }
+                    
+                    HStack {
+                        Image(systemName: "tag")
+                        Text("Appointment Slot ID: \(slotId)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    
+                    // For debugging - can be removed in production
+                    HStack {
+                        Image(systemName: "info.circle")
+                        Text("Raw times: \(rawStartTime) to \(rawEndTime)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
                     }
                 }
                 .padding()
@@ -193,6 +212,11 @@ struct ReviewAndPayView: View {
                 doctor: doctor,
                 appointmentDate: appointmentDate,
                 appointmentTime: appointmentTime,
+                slotId: slotId,
+                startTime: startTime,
+                endTime: endTime,
+                rawStartTime: rawStartTime,
+                rawEndTime: rawEndTime,
                 isPremium: isPremium
             )
         }
