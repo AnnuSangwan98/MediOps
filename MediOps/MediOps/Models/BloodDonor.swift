@@ -6,6 +6,7 @@ struct BloodDonor: Identifiable, Codable {
     let bloodGroup: String
     let contactNumber: String
     let email: String
+    var requestStatus: String?
     
     enum CodingKeys: String, CodingKey {
         case id = "patient_id"
@@ -13,6 +14,19 @@ struct BloodDonor: Identifiable, Codable {
         case bloodGroup
         case contactNumber = "phoneNumber"
         case email
+        case requestStatus
+    }
+    
+    // Helper properties for status checks
+    var hasPendingRequest: Bool { requestStatus == "Pending" }
+    var hasCompletedRequest: Bool { requestStatus == "Completed" }
+    var hasRejectedRequest: Bool { requestStatus == "Rejected" || requestStatus == "Cancelled" }
+    var hasActiveRequest: Bool { hasPendingRequest || requestStatus == "Accepted" }
+    
+    // Only allow requesting donors that don't have active requests
+    // Donors with pending or accepted requests should be locked
+    var canBeRequested: Bool {
+        return !hasActiveRequest  // Can request if NOT active
     }
 }
 
@@ -30,6 +44,8 @@ struct BloodDonorRequest: Identifiable, Codable {
         case accepted = "Accepted"
         case rejected = "Rejected"
         case pending = "Pending"
+        case completed = "Completed"
+        case cancelled = "Cancelled"
     }
     
     enum CodingKeys: String, CodingKey {

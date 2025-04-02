@@ -1973,6 +1973,11 @@ class AdminController {
     /// Get all patients who are registered as blood donors
     /// Optionally filter by blood group
     func getRegisteredBloodDonors(bloodGroup: String? = nil) async throws -> [BloodDonor] {
+        // Get the current admin ID
+        guard let adminId = UserDefaults.standard.string(forKey: "hospital_id") else {
+            throw AdminError.adminNotFound
+        }
+        
         // Get all blood donors
         let allDonors = try await supabase.select(
             from: "patients",
@@ -1980,40 +1985,66 @@ class AdminController {
             equals: "true"
         )
         
-        return allDonors.compactMap { donorData in
+        var donors: [BloodDonor] = []
+        
+        for donorData in allDonors {
             guard let patientId = donorData["patient_id"] as? String,
                   let name = donorData["name"] as? String,
                   let donorBloodGroup = donorData["bloodGroup"] as? String,
                   let contactNumber = donorData["phoneNumber"] as? String,
                   let email = donorData["email"] as? String else {
-                return nil
+                continue
             }
             
             // If blood group filter is specified, only include matching donors
             if let requestedGroup = bloodGroup {
                 // Only return donors with matching blood group
-                if donorBloodGroup.lowercased() == requestedGroup.lowercased() {
-                    return BloodDonor(
-                        id: patientId,  // Use patient_id for the id field to match the foreign key constraint
-                        name: name,
-                        bloodGroup: donorBloodGroup,
-                        contactNumber: contactNumber,
-                        email: email
-                    )
-                } else {
-                    return nil // Skip donors with non-matching blood group
+                if donorBloodGroup.lowercased() != requestedGroup.lowercased() {
+                    continue // Skip donors with non-matching blood group
                 }
-            } else {
-                // No filter - return all donors
-                return BloodDonor(
-                    id: patientId,  // Use patient_id for the id field to match the foreign key constraint
-                    name: name,
-                    bloodGroup: donorBloodGroup,
-                    contactNumber: contactNumber,
-                    email: email
-                )
             }
+            
+            // Get the donor's request status
+            let donorRequests = try await supabase.select(
+                from: "blood_donor_requests",
+                where: "donor_id",
+                equals: patientId
+            )
+            
+            // Find requests from this admin and for the specified blood group
+            let matchingRequests = donorRequests.filter { request in
+                guard let requestedByAdmin = request["requested_by_admin"] as? String,
+                      let bloodRequestedFor = request["blood_requested_for"] as? String,
+                      let requestStatus = request["request_status"] as? String else {
+                    return false
+                }
+                
+                let matchesAdmin = requestedByAdmin == adminId
+                let matchesBloodGroup = bloodGroup == nil || bloodRequestedFor == bloodGroup
+                
+                return matchesAdmin && matchesBloodGroup
+            }
+            
+            // Get the most recent request status
+            var requestStatus: String? = nil
+            if let latestRequest = matchingRequests.first {
+                requestStatus = latestRequest["request_status"] as? String
+            }
+            
+            // Create the donor object with request status
+            let donor = BloodDonor(
+                id: patientId,
+                name: name,
+                bloodGroup: donorBloodGroup,
+                contactNumber: contactNumber,
+                email: email,
+                requestStatus: requestStatus
+            )
+            
+            donors.append(donor)
         }
+        
+        return donors
     }
     
     /// Send blood donation request to specified donors
@@ -2042,26 +2073,195 @@ class AdminController {
             let blood_requested_for: String
             let requested_activity_status: Bool
             let request_status: String
-            
-            // We don't need to specify id, blood_requested_time as they have default values in the database
         }
         
         // Send request to each selected donor
         for donorId in donorIds {
-            // Create data for the blood_donor_requests table
+            // Get all requests for this donor
+            let donorRequests = try await supabase.select(
+                from: "blood_donor_requests",
+                where: "donor_id",
+                equals: donorId
+            )
+            
+            // Filter for active requests matching our criteria
+            let existingActiveRequest = donorRequests.first { request in
+                guard let requestedByAdmin = request["requested_by_admin"] as? String,
+                      let bloodRequestedFor = request["blood_requested_for"] as? String,
+                      let requestedActivityStatus = request["requested_activity_status"] as? Bool,
+                      let requestStatus = request["request_status"] as? String else {
+                    return false
+                }
+                
+                return requestedByAdmin == adminId &&
+                       bloodRequestedFor == bloodGroup &&
+                       requestedActivityStatus == true &&
+                       (requestStatus == "Pending" || requestStatus == "Accepted")
+            }
+            
+            // If an active request already exists, skip creating a new one
+            if existingActiveRequest != nil {
+                print("BLOOD DONATION: Active request already exists for donor \(donorId). Skipping.")
+                continue
+            }
+            
+            // Always create a new request (even if there was a rejected/cancelled/completed one before)
             let requestData = BloodDonorRequestData(
                 donor_id: donorId,
                 requested_by_admin: adminId,
                 blood_requested_for: bloodGroup,
-                requested_activity_status: true,  // Changed from "true" string to true boolean
-                request_status: "Pending"  // This matches the enum constraint in the database
+                requested_activity_status: true,
+                request_status: "Pending"
             )
             
-            // Insert the request into the database
+            // Insert the request into the database (creating a new row)
             try await supabase.insert(
                 into: "blood_donor_requests",
                 data: requestData
             )
+        }
+    }
+    
+    /// Cancel blood donation request for specified donors
+    func cancelBloodDonationRequest(donorIds: [String], bloodGroup: String) async throws {
+        guard !donorIds.isEmpty else {
+            throw AdminError.invalidData("No donors selected")
+        }
+        
+        // Get the current admin ID from hospital_id key in UserDefaults
+        guard let adminId = UserDefaults.standard.string(forKey: "hospital_id") else {
+            throw AdminError.adminNotFound
+        }
+        
+        print("BLOOD DONATION: Using admin ID: \(adminId) for canceling blood donation request")
+        
+        // Define the update data structure
+        struct BloodDonorRequestUpdateData: Encodable {
+            let requested_activity_status: Bool
+            let request_status: String
+        }
+        
+        // Set update data with cancelled status
+        let updateData = BloodDonorRequestUpdateData(
+            requested_activity_status: false,
+            request_status: "Cancelled"
+        )
+        
+        // For each donor, update the request status
+        for donorId in donorIds {
+            let conditions: [String: String] = [
+                "donor_id": donorId,
+                "requested_by_admin": adminId,
+                "blood_requested_for": bloodGroup
+            ]
+            
+            try await supabase.update(
+                table: "blood_donor_requests",
+                data: updateData,
+                where: conditions
+            )
+        }
+    }
+    
+    /// Complete blood donation request for specified donors
+    func completeBloodDonationRequest(donorIds: [String], bloodGroup: String) async throws {
+        guard !donorIds.isEmpty else {
+            throw AdminError.invalidData("No donors selected")
+        }
+        
+        // Get the current admin ID from hospital_id key in UserDefaults
+        guard let adminId = UserDefaults.standard.string(forKey: "hospital_id") else {
+            throw AdminError.adminNotFound
+        }
+        
+        print("BLOOD DONATION: Using admin ID: \(adminId) for completing blood donation request")
+        
+        // Define the update data structure
+        struct BloodDonorRequestUpdateData: Encodable {
+            let requested_activity_status: Bool
+            let request_status: String
+        }
+        
+        // Set update data with completed status
+        let updateData = BloodDonorRequestUpdateData(
+            requested_activity_status: true,
+            request_status: "Completed"
+        )
+        
+        // For each donor, update the request status
+        for donorId in donorIds {
+            let conditions: [String: String] = [
+                "donor_id": donorId,
+                "requested_by_admin": adminId,
+                "blood_requested_for": bloodGroup
+            ]
+            
+            try await supabase.update(
+                table: "blood_donor_requests",
+                data: updateData,
+                where: conditions
+            )
+        }
+    }
+    
+    /// Get blood donation request history for the current admin
+    func getBloodDonationRequestHistory() async throws -> [[String: Any]] {
+        // Get the current admin ID from hospital_id key in UserDefaults
+        guard let adminId = UserDefaults.standard.string(forKey: "hospital_id") else {
+            throw AdminError.adminNotFound
+        }
+        
+        // Get all requests for this admin
+        let requests = try await supabase.select(
+            from: "blood_donor_requests",
+            where: "requested_by_admin",
+            equals: adminId
+        )
+        
+        // Filter for completed, cancelled, or rejected requests
+        let filteredRequests = requests.filter { request in
+            guard let requestStatus = request["request_status"] as? String else {
+                return false
+            }
+            
+            return requestStatus == "Completed" || requestStatus == "Cancelled" || requestStatus == "Rejected"
+        }
+        
+        // Enrich with donor information
+        var enrichedRequests: [[String: Any]] = []
+        
+        for request in filteredRequests {
+            var enrichedRequest = request
+            
+            // Add donor information if available
+            if let donorId = request["donor_id"] as? String {
+                let donorInfo = try await supabase.select(
+                    from: "patients",
+                    where: "patient_id",
+                    equals: donorId
+                )
+                
+                if let donor = donorInfo.first {
+                    if let name = donor["name"] as? String {
+                        enrichedRequest["donor_name"] = name
+                    }
+                    if let bloodGroup = donor["bloodGroup"] as? String {
+                        enrichedRequest["donor_blood_group"] = bloodGroup
+                    }
+                }
+            }
+            
+            enrichedRequests.append(enrichedRequest)
+        }
+        
+        // Sort by request time (newest first)
+        return enrichedRequests.sorted { first, second in
+            guard let firstTime = first["blood_requested_time"] as? String,
+                  let secondTime = second["blood_requested_time"] as? String else {
+                return false
+            }
+            
+            return firstTime > secondTime
         }
     }
 }

@@ -293,6 +293,28 @@ class SupabaseController {
             .execute()
     }
     
+    /// Update records in a table with multiple WHERE conditions
+    func update<T: Encodable>(table: String, data: T, where conditions: [String: String]) async throws {
+        print("SUPABASE: Updating \(table) with multiple conditions")
+        
+        var query = try client.database
+            .from(table)
+            .update(data)
+        
+        // Apply all conditions
+        for (column, value) in conditions {
+            query = query.eq(column, value: value)
+        }
+        
+        do {
+            let result = try await query.execute()
+            print("SUPABASE: Update with multiple conditions completed successfully: \(result.status)")
+        } catch {
+            print("SUPABASE ERROR: Failed to update \(table) with conditions: \(error.localizedDescription)")
+            throw error
+        }
+    }
+    
     /// Generic method to delete data from a table
     func delete(from table: String, where column: String, equals value: String) async throws {
         print("SUPABASE: Deleting from \(table) where \(column) = \(value)")
