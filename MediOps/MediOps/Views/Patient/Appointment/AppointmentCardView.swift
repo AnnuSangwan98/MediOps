@@ -102,13 +102,6 @@ struct AppointmentCard: View {
         ) {
             VStack(alignment: .leading, spacing: 15) {
                 HStack(spacing: 15) {
-                    Circle()
-                        .fill(Color.teal)
-                        .frame(width: 50, height: 50)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.white)
-                        )
 
                     VStack(alignment: .leading) {
                         Text(appointment.doctor.name)
@@ -117,7 +110,7 @@ struct AppointmentCard: View {
                             .font(.subheadline)
                             .foregroundColor(.gray)
                     }
-
+//
                     Spacer()
 
                     VStack(alignment: .trailing, spacing: 4) {

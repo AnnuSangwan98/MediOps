@@ -216,8 +216,8 @@ class AppointmentManager: ObservableObject {
             
             // Fetch appointments with specific columns
             let appointmentResults = try await supabase.select(
-                from: "appointments",
-                where: "patient_id",
+                        from: "appointments",
+                        where: "patient_id",
                 equals: finalPatientId
             )
             

@@ -454,7 +454,7 @@ class HospitalViewModel: ObservableObject {
                     let slot = DoctorAvailabilityModels.AppointmentSlot(
                         id: slotId,
                         doctorId: doctor.id,
-                        date: date,
+                    date: date,
                         startTime: formattedStartTime,
                         endTime: formattedEndTime,
                         rawStartTime: timeSlot.startTime,
@@ -481,7 +481,7 @@ class HospitalViewModel: ObservableObject {
         } catch {
             print("❌ Error fetching available slots: \(error)")
             await MainActor.run {
-                self.error = error
+            self.error = error
                 self.availableSlots = []
                 self.isLoading = false
             }
@@ -571,7 +571,7 @@ class HospitalViewModel: ObservableObject {
         let results = try await supabase.select(
             from: "appointments",
             where: "patient_id",
-            equals: patientId
+                    equals: patientId
         ).filter { appointment in
             guard let status = appointment["status"] as? String else { return false }
             return ["completed", "cancelled", "missed"].contains(status)
@@ -591,15 +591,15 @@ class HospitalViewModel: ObservableObject {
         var missed: [Appointment] = []
         
         for appointmentData in results {
-            guard let id = appointmentData["id"] as? String,
-                  let doctorId = appointmentData["doctor_id"] as? String,
-                  let hospitalId = appointmentData["hospital_id"] as? String,
+                guard let id = appointmentData["id"] as? String,
+                      let doctorId = appointmentData["doctor_id"] as? String,
+                      let hospitalId = appointmentData["hospital_id"] as? String,
                   let appointmentDateStr = appointmentData["appointment_date"] as? String,
                   let statusStr = appointmentData["status"] as? String else {
                 print("⚠️ Skipping appointment with missing required data")
-                continue
-            }
-            
+                    continue
+                }
+                
             print("📝 Processing appointment: \(id) with status: \(statusStr)")
             
             // Get raw time from the appointment data
@@ -616,9 +616,9 @@ class HospitalViewModel: ObservableObject {
             
             guard let appointmentDate = dateFormatter.date(from: appointmentDateStr) else {
                 print("⚠️ Could not parse appointment date: \(appointmentDateStr)")
-                continue
-            }
-            
+                        continue
+                    }
+                    
             // Create the appointment time as a Date object for sorting
             let timeFormatter = DateFormatter()
             timeFormatter.dateFormat = "HH:mm:ss" 
@@ -627,8 +627,8 @@ class HospitalViewModel: ObservableObject {
             // Fetch doctor details
             if let doctor = await fetchDoctor(id: doctorId, hospitalId: hospitalId) {
                 let status = AppointmentStatus(rawValue: statusStr.lowercased()) ?? .upcoming
-                let appointment = Appointment(
-                    id: id,
+                    let appointment = Appointment(
+                        id: id,
                     doctor: doctor,
                     date: appointmentDate,
                     time: timeDate,
@@ -667,7 +667,7 @@ class HospitalViewModel: ObservableObject {
         cancelled.sort(by: sortByDateTime)
         missed.sort(by: sortByDateTime)
         
-        await MainActor.run {
+            await MainActor.run {
             self.completedAppointments = completed + cancelled
             self.missedAppointments = missed
         }

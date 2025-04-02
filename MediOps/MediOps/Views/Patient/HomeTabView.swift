@@ -39,6 +39,12 @@ struct HomeTabView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
+            // Apply background gradient to the main container
+            LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                         startPoint: .topLeading,
+                         endPoint: .bottomTrailing)
+                .ignoresSafeArea()
+            
             TabView(selection: $selectedTab) {
                 homeTab
                     .tabItem {
@@ -75,8 +81,11 @@ struct HomeTabView: View {
                     }
                     .tag(3)
             }
-            .accentColor(.blue)
+            .accentColor(.teal)
             .onAppear {
+                // Configure navigation bar appearance
+                configureNavigationBar()
+                
                 // Customize the TabView appearance
                 UITabBar.appearance().backgroundColor = UIColor.systemBackground
                 UITabBar.appearance().backgroundImage = UIImage()
@@ -135,86 +144,74 @@ struct HomeTabView: View {
                 appointmentManager.refreshAppointments()
             }
         }
-        .ignoresSafeArea(.container, edges: .bottom) // Only ignore bottom safe area, respect top
+        .ignoresSafeArea(.container, edges: .bottom)
     }
     
     private var homeTab: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                // Background color
-                Color(.systemGray6)
+                // Apply consistent background gradient
+                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                              startPoint: .topLeading,
+                              endPoint: .bottomTrailing)
                     .ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // Fixed Header - This will stay in place while scrolling
-                    VStack(spacing: 15) {
-                        headerSection
-                            .padding(.top, 8)
-                        
-                        searchAndFilterSection
-                        
-                        Divider()
-                            .background(Color.gray.opacity(0.3))
-                            .padding(.horizontal, 8)
-                    }
-                    .padding(.bottom, 5)
-                    .background(Color(.systemGray6))
-                    .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 3)
-                    .zIndex(1) // Keep header on top
+                    // Fixed Header section
+                    headerSection
+                        .padding(.top, 8)
                     
-                    // Scrollable Content
+                    // Divider
+                    Divider()
+                        .background(Color.gray.opacity(0.3))
+                        .padding(.horizontal)
+                        .padding(.top, 5)
+                    
+                    // Main content with simplified layout
                     ScrollView {
                         VStack(spacing: 20) {
                             if !hospitalVM.searchText.isEmpty {
+                                // Simple search bar
+                                searchAndFilterSection
+                                    .padding(.top, 15)
+                                    .padding(.bottom, 5)
+                                
                                 searchResultsSection
                                     .padding(.top, 5)
                             } else {
+                                searchAndFilterSection
+                                    .padding(.top, 15)
+                                    .padding(.bottom, 5)
+                                
                                 upcomingAppointmentsSection
                                     .padding(.top, 5)
                                 
-                                // Show all hospitals when not searching
+                                // Show all hospitals with simplified styling
                                 VStack(alignment: .leading, spacing: 15) {
-                                    HStack {
-                                        Text("All Hospitals")
-                                            .font(.title2)
-                                            .fontWeight(.bold)
-                                        
-                                        Spacer()
-                                    }
-                                    .padding(.horizontal)
+                                    Text("Hospitals")
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal)
                                     
                                     if hospitalVM.isLoading {
                                         ProgressView()
                                             .progressViewStyle(CircularProgressViewStyle())
-                                            .scaleEffect(1.5)
+                                            .scaleEffect(1.2)
                                             .frame(maxWidth: .infinity)
                                             .padding()
                                     } else if let error = hospitalVM.error {
-                                        VStack {
-                                            Text("Error loading hospitals")
-                                                .foregroundColor(.red)
-                                                .padding(.bottom, 4)
-                                            
-                                            Text(error.localizedDescription)
-                                                .font(.caption)
-                                                .foregroundColor(.gray)
-                                                .multilineTextAlignment(.center)
-                                                .padding(.horizontal)
-                                            
-                                            Button("Try Again") {
-                                                Task {
-                                                    await refreshHospitals()
-                                                }
-                                            }
-                                            .padding(.vertical, 8)
-                                            .padding(.horizontal, 16)
-                                            .background(Color.teal)
-                                            .foregroundColor(.white)
-                                            .cornerRadius(8)
-                                            .padding(.top, 8)
-                                        }
-                                        .padding()
-                                        .frame(maxWidth: .infinity)
+                                        Text("Error loading hospitals: \(error.localizedDescription)")
+                                            .foregroundColor(.red)
+                                            .font(.callout)
+                                            .multilineTextAlignment(.center)
+                                            .padding()
+                                            .frame(maxWidth: .infinity)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .fill(Color.white)
+                                            )
+                                            .padding(.horizontal)
                                     } else if !hospitalVM.hospitals.isEmpty {
                                         ForEach(hospitalVM.hospitals) { hospital in
                                             NavigationLink {
@@ -226,30 +223,21 @@ struct HomeTabView: View {
                                             .padding(.horizontal)
                                         }
                                     } else {
-                                        VStack(spacing: 12) {
-                                            Text("No hospitals found")
-                                                .foregroundColor(.gray)
-                                            
-                                            Button("Refresh") {
-                                                Task {
-                                                    await refreshHospitals()
-                                                }
-                                            }
-                                            .padding(.vertical, 8)
-                                            .padding(.horizontal, 16)
-                                            .background(Color.teal)
-                                            .foregroundColor(.white)
-                                            .cornerRadius(8)
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        .padding()
+                                        Text("No hospitals found")
+                                            .foregroundColor(.gray)
+                                            .frame(maxWidth: .infinity)
+                                            .padding()
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .fill(Color.white)
+                                            )
+                                            .padding(.horizontal)
                                     }
                                 }
-                                .padding(.bottom, 30) // Extra padding at bottom for tab bar
+                                .padding(.bottom, 30)
                             }
                         }
-                        .padding(.top, 10) // Add padding to separate from fixed header
-                        .padding(.bottom, 80) // Extra padding at bottom for tab bar
+                        .padding(.bottom, 80)
                     }
                     .refreshable {
                         await refreshHospitals()
@@ -257,7 +245,7 @@ struct HomeTabView: View {
                 }
             }
             .navigationBarHidden(true)
-            .ignoresSafeArea(.container, edges: .bottom) // Only ignore bottom safe area
+            .ignoresSafeArea(.container, edges: .bottom)
             .task {
                 print("🔄 Home tab task started - refreshing hospitals")
                 await refreshHospitals()
@@ -270,19 +258,6 @@ struct HomeTabView: View {
                     if profileController.patient == nil {
                         print("🔄 Loading patient profile data")
                         await profileController.loadProfile(userId: userId)
-                    }
-                }
-            }
-            .onAppear {
-                if let userId = userId {
-                    print("📱 Home tab appeared with user ID: \(userId)")
-                    appointmentManager.refreshAppointments()
-                    
-                    // Ensure profile data is loaded when tab appears
-                    if profileController.patient == nil {
-                        Task {
-                            await profileController.loadProfile(userId: userId)
-                        }
                     }
                 }
             }
@@ -332,7 +307,13 @@ struct HomeTabView: View {
     
     private var historyTab: some View {
         NavigationStack {
-            VStack {
+            ZStack {
+                // Consistent background gradient
+                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                             startPoint: .topLeading,
+                             endPoint: .bottomTrailing)
+                    .ignoresSafeArea()
+                
                 List {
                     // Filter appointments by status
                     let completedAppointments = appointmentManager.appointments.filter { $0.status == .completed }
@@ -379,12 +360,16 @@ struct HomeTabView: View {
                     }
                 }
                 .listStyle(InsetGroupedListStyle())
+                .scrollContentBackground(.hidden) // Hide default list background
                 .refreshable {
                     print("🔄 Manually refreshing appointments history")
                     appointmentManager.refreshAppointments()
                 }
             }
             .navigationTitle("Appointments History")
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbarBackground(Color.teal.opacity(0.1), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .onAppear {
                 print("📱 History tab appeared - refreshing appointments")
                 appointmentManager.refreshAppointments()
@@ -394,54 +379,83 @@ struct HomeTabView: View {
     
     private var labReportsTab: some View {
         NavigationStack {
-            labReportsSection
-                .navigationTitle("Lab Reports")
+            ZStack {
+                // Consistent background gradient
+                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                             startPoint: .topLeading,
+                             endPoint: .bottomTrailing)
+                    .ignoresSafeArea()
+                
+                labReportsSection
+                    .scrollContentBackground(.hidden) // Hide default list background if this contains a List
+            }
+            .navigationTitle("Lab Reports")
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbarBackground(Color.teal.opacity(0.1), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
         }
     }
     
     private var bloodDonateTab: some View {
         NavigationStack {
-            Color(.systemGray6)
-                .ignoresSafeArea()
-                .navigationTitle("Blood Donation")
-                .navigationBarTitleDisplayMode(.inline)
+            ZStack {
+                // Consistent background gradient
+                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                             startPoint: .topLeading,
+                             endPoint: .bottomTrailing)
+                    .ignoresSafeArea()
+                
+                // Content will go here when implemented
+                VStack {
+                    Image(systemName: "drop.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 80, height: 80)
+                        .foregroundColor(.teal)
+                        .padding()
+                    
+                    Text("Blood Donation Feature")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.teal)
+                    
+                    Text("Coming Soon")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .padding()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .navigationTitle("Blood Donation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbarBackground(Color.teal.opacity(0.1), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
         }
     }
     
-    private var searchResultsSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Search Results")
-                .font(.title2)
-                .fontWeight(.bold)
-                .padding(.horizontal)
-
-            ForEach(hospitalVM.filteredHospitals) { hospital in
-                NavigationLink {
-                    DoctorListView(hospital: hospital)
-                } label: {
-                    HospitalCard(hospital: hospital)
-                }
-                .buttonStyle(PlainButtonStyle())
-                .padding(.horizontal)
-            }
-        }
-    }
-
+    // Simplified header section
     private var headerSection: some View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
+                Text("Welcome")
+                    .font(.headline)
+                    .foregroundColor(.gray)
+                
                 if let patientName = profileController.patient?.name {
-                    Text("Welcome, \(patientName)")
+                    Text(patientName)
                         .font(.title)
                         .fontWeight(.bold)
+                        .foregroundColor(.black)
                 } else {
-                    Text("Welcome")
+                    Text("Patient")
                         .font(.title)
                         .fontWeight(.bold)
+                        .foregroundColor(.black)
                 }
             }
             Spacer()
-
+            
             Button(action: {
                 // Create and initialize the profile controller before showing the sheet
                 let controller = PatientProfileController()
@@ -468,55 +482,79 @@ struct HomeTabView: View {
                     .resizable()
                     .frame(width: 40, height: 40)
                     .foregroundColor(.teal)
+                    .background(Circle().fill(Color.white))
+                    .shadow(color: .gray.opacity(0.2), radius: 3)
             }
             .sheet(isPresented: $showProfile) {
                 PatientProfileView(profileController: profileController)
             }
         }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(10)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
         .padding(.horizontal)
-        .padding(.top, 8)
+        .padding(.vertical, 10)
     }
 
+    // Simplified search and filter section
     private var searchAndFilterSection: some View {
         HStack {
-            HospitalSearchBar(searchText: $hospitalVM.searchText)
-            cityFilterMenu
-        }
-        .padding(.horizontal)
-    }
-
-    private var cityFilterMenu: some View {
-        Menu {
-            ForEach(hospitalVM.availableCities, id: \.self) { city in
-                Button(action: {
-                    hospitalVM.selectedCity = hospitalVM.selectedCity == city ? nil : city
-                }) {
-                    HStack {
-                        Text(city)
-                        if hospitalVM.selectedCity == city {
-                            Image(systemName: "checkmark")
-                        }
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.teal)
+                TextField("Search hospitals...", text: $hospitalVM.searchText)
+                    .foregroundColor(.primary)
+                
+                if !hospitalVM.searchText.isEmpty {
+                    Button(action: {
+                        hospitalVM.searchText = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.teal)
                     }
                 }
             }
-            Button("Clear Filter", action: { hospitalVM.selectedCity = nil })
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle")
-                .foregroundColor(.teal)
-                .font(.title2)
+            .padding(10)
+            .background(Color.white)
+            .cornerRadius(8)
+            
+            // Simple city filter button
+            Menu {
+                ForEach(hospitalVM.availableCities, id: \.self) { city in
+                    Button(action: {
+                        hospitalVM.selectedCity = hospitalVM.selectedCity == city ? nil : city
+                    }) {
+                        HStack {
+                            Text(city)
+                            if hospitalVM.selectedCity == city {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.teal)
+                            }
+                        }
+                    }
+                }
+                Button("Clear Filter", action: { hospitalVM.selectedCity = nil })
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundColor(.teal)
+                    .font(.title3)
+                    .frame(width: 40, height: 40)
+                    .background(Color.white)
+                    .clipShape(Circle())
+            }
         }
+        .padding(.horizontal)
     }
 
+    // Simplified upcoming appointments section
     private var upcomingAppointmentsSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Upcoming Appointments")
-                .font(.title2)
-                .fontWeight(.bold)
-                .padding(.horizontal)
+            HStack {
+                Text("Upcoming Appointments")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.black)
+                
+                
+            }
+            .padding(.horizontal)
 
             if appointmentManager.appointments.isEmpty {
                 Text("No upcoming appointments")
@@ -524,17 +562,65 @@ struct HomeTabView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.white)
-                    .cornerRadius(10)
-                    .shadow(color: .gray.opacity(0.1), radius: 5)
+                    .cornerRadius(8)
                     .padding(.horizontal)
             } else {
-                ForEach(appointmentManager.appointments.filter { $0.status == .upcoming }) { appointment in
-                    AppointmentCard(appointment: appointment)
+                let upcomingAppointments = appointmentManager.appointments.filter { $0.status == .upcoming }
+                
+                if upcomingAppointments.isEmpty {
+                    Text("No upcoming appointments")
+                        .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(8)
                         .padding(.horizontal)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 16) {
+                            ForEach(upcomingAppointments) { appointment in
+                                AppointmentCard(appointment: appointment)
+                                    .frame(width: 380)
+                            }
+                        }
+                        .padding(.leading, 10)
+                        .padding(.trailing, 10)
+                        .padding(.bottom, 8)
+                    }
                 }
             }
         }
-        .padding(.vertical)
+    }
+
+    // Simplified search results section
+    private var searchResultsSection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Search Results")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.teal)
+                .padding(.horizontal)
+
+            if hospitalVM.filteredHospitals.isEmpty {
+                Text("No hospitals found")
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.white)
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+            } else {
+                ForEach(hospitalVM.filteredHospitals) { hospital in
+                    NavigationLink {
+                        DoctorListView(hospital: hospital)
+                    } label: {
+                        HospitalCard(hospital: hospital)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .padding(.horizontal)
+                }
+            }
+        }
     }
 
     private var labReportsSection: some View {
@@ -543,35 +629,34 @@ struct HomeTabView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
+                    .listRowBackground(Color.clear)
             } else if let error = labReportManager.error {
                 Text(error.localizedDescription)
                     .foregroundColor(.red)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
+                    .listRowBackground(Color.clear)
             } else if labReportManager.labReports.isEmpty {
                 Text("No lab reports available")
                     .foregroundColor(.gray)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
+                    .listRowBackground(Color.clear)
             } else {
                 ForEach(labReportManager.labReports) { report in
                     PatientLabReportCard(report: report)
                         .padding(.vertical, 4)
+                        .listRowBackground(Color.clear)
                 }
             }
         }
+        .scrollContentBackground(.hidden) // Hide default list background
         .refreshable {
             if let userId = userId {
                 // First get the patient's PAT ID from patients table
                 Task {
                     do {
-//                        let patientData = try await SupabaseController.shared.select(
-//                            from: "patients",
-//                            columns: "patient_id",
-//                            where: "id",
-//                            equals: userId
-//                        )
-                        
+                        // Use either method to fetch patient ID
                         struct PatientIds: Codable {
                             var patient_id: String
                         }
@@ -582,35 +667,11 @@ struct HomeTabView: View {
                             .eq("user_id", value: userId)
                             .execute()
                             .value
-//
-                        labReportManager.fetchLabReports(for: patient[0].patient_id)
-//                        if let patientRecord = patientData.first,
-//                           let patId = patientRecord["patient_id"] as? String {
-//                            print("📍 Found patient_id: \(patId)")
-//                            labReportManager.fetchLabReports(for: patId)
-//                        }
-                    } catch {
-                        print("❌ Error getting patient ID: \(error)")
-                    }
-                }
-            }
-        }
-        .onAppear {
-            if let userId = userId {
-                // First get the patient's PAT ID from patients table
-                Task {
-                    do {
-                        let patientData = try await SupabaseController.shared.select(
-                            from: "patients",
-                            columns: "patient_id",
-                            where: "id",
-                            equals: userId
-                        )
-                        
-                        if let patientRecord = patientData.first,
-                           let patId = patientRecord["patient_id"] as? String {
-                            print("📍 Found patient_id: \(patId)")
-                            labReportManager.fetchLabReports(for: patId)
+
+                        if !patient.isEmpty {
+                            labReportManager.fetchLabReports(for: patient[0].patient_id)
+                        } else {
+                            print("❌ No patient found with user ID: \(userId)")
                         }
                     } catch {
                         print("❌ Error getting patient ID: \(error)")
@@ -763,6 +824,18 @@ struct HomeTabView: View {
             }
         }
     }
+
+    // Add this method to handle navigation Bar appearance consistently
+    private func configureNavigationBar() {
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundColor = UIColor(Color.teal.opacity(0.1))
+        appearance.titleTextAttributes = [.foregroundColor: UIColor(Color.teal)]
+        
+        UINavigationBar.appearance().standardAppearance = appearance
+        UINavigationBar.appearance().compactAppearance = appearance
+        UINavigationBar.appearance().scrollEdgeAppearance = appearance
+    }
 }
 
 struct AppointmentHistoryCard: View {
@@ -799,9 +872,11 @@ struct AppointmentHistoryCard: View {
             
             HStack {
                 Image(systemName: "calendar")
+                    .foregroundColor(.teal)
                 Text(appointment.date.formatted(date: .long, time: .omitted))
                 Spacer()
                 Image(systemName: "clock")
+                    .foregroundColor(.teal)
                 let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: appointment.time)!
                 Text("\(appointment.time.formatted(date: .omitted, time: .shortened)) to \(endTime.formatted(date: .omitted, time: .shortened))")
             }
@@ -811,7 +886,7 @@ struct AppointmentHistoryCard: View {
         .padding()
         .background(Color.white)
         .cornerRadius(12)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .shadow(color: .teal.opacity(0.1), radius: 5)
         .onAppear {
             isLoading = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -828,21 +903,24 @@ struct HospitalSearchBar: View {
     var body: some View {
         HStack {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.gray)
+                .foregroundColor(.teal)
             TextField("Search hospitals...", text: $searchText)
+                .foregroundColor(.primary)
             
             if !searchText.isEmpty {
                 Button(action: {
                     searchText = ""
                 }) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.gray)
+                        .foregroundColor(.teal)
                 }
             }
         }
         .padding(10)
-        .background(Color.white)
-        .cornerRadius(10)
-        .shadow(color: .gray.opacity(0.2), radius: 3)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white)
+                .shadow(color: .teal.opacity(0.2), radius: 3)
+        )
     }
 }

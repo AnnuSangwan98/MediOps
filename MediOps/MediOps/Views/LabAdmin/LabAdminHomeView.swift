@@ -16,7 +16,7 @@ struct LabAdminHomeView: View {
                     .toolbar {
                         ToolbarItem(placement: .navigationBarLeading) {
                             VStack(alignment: .leading) {
-                                Text("Welcome,")
+                                Text("Welcome")
                                     .font(.system(size: 16))
                                     .foregroundColor(.gray)
                                 Text(labAdmin.name)

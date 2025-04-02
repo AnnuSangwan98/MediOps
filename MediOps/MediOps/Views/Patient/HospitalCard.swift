@@ -2,6 +2,9 @@ import SwiftUI
 
 struct HospitalCard: View {
     let hospital: HospitalModel
+    var onEdit: (() -> Void)? = nil
+    var onDelete: (() -> Void)? = nil
+    @State private var showMenu = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -29,37 +32,74 @@ struct HospitalCard: View {
                     fallbackHospitalImage
                 }
                 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(hospital.hospitalName)
-                        .font(.headline)
-                        .foregroundColor(.blue)
+                VStack(alignment: .leading, spacing: 6) {
+                    // Hospital Name and Status
+                    HStack {
+                        Text(hospital.hospitalName)
+                            .font(.headline)
+                            .foregroundColor(.black)
+                        
+                        Spacer()
+                        
+                        // Add menu button if edit/delete functions are provided
+                        if onEdit != nil || onDelete != nil {
+                            Menu {
+                                if let editAction = onEdit {
+                                    Button(action: editAction) {
+                                        Label("Edit", systemImage: "pencil")
+                                    }
+                                }
+                                if let deleteAction = onDelete {
+                                    Button(action: deleteAction) {
+                                        Label("Delete", systemImage: "trash")
+                                            .foregroundColor(.red)
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .foregroundColor(.gray)
+                                    .padding(8)
+                                    .background(Color.gray.opacity(0.1))
+                                    .clipShape(Circle())
+                            }
+                        }
+                    }
                     
+                    // City/Location
                     Text(hospital.hospitalCity)
                         .font(.subheadline)
                         .foregroundColor(.gray)
                     
-                    Text(hospital.hospitalAddress)
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                        .lineLimit(2)
+                    // Address
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Address")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                        Text(hospital.hospitalAddress)
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .lineLimit(2)
+                    }
                     
-                    HStack {
+                    Divider()
+                        .padding(.vertical, 4)
+                    
+                    // Show number of doctors
+                    HStack(spacing: 4) {
                         Image(systemName: "person.2.fill")
+                            .font(.caption)
                             .foregroundColor(.teal)
                         
                         if hospital.numberOfDoctors > 0 {
                             Text("\(hospital.numberOfDoctors) Doctors")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundColor(.teal)
+                                .font(.caption)
+                                .foregroundColor(.gray)
                         } else {
                             Text("No Doctors Available")
-                                .font(.subheadline)
+                                .font(.caption)
                                 .foregroundColor(.gray)
                                 .italic()
                         }
-                        
-                        Spacer()
                     }
                 }
             }
