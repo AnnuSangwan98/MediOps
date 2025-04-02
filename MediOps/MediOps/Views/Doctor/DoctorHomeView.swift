@@ -103,26 +103,27 @@ struct DoctorHomeView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 8) {
                                 if isLoadingDoctorInfo {
-                                    Text("Welcome, ")
-                                        .font(.title)
-                                        .fontWeight(.bold)
+                                    Text("Welcome ")
+                                        .font(.headline)
+                                        .foregroundColor(.gray)
                                     
                                     HStack(spacing: 10) {
                                         Text("Dr.")
-                                            .font(.title)
-                                            .fontWeight(.bold)
-                                        
+                                    .font(.title)
+                                    .fontWeight(.bold)
                                         ProgressView()
                                             .scaleEffect(0.7)
                                     }
                                 } else {
-                                    Text("Welcome, ")
-                                        .font(.title)
-                                        .fontWeight(.bold)
+                                    Text("Welcome ")
+                                        .font(.headline)
+                                    .foregroundColor(.gray)
                                     
                                     Text(doctorName.isEmpty ? "Dr. Doctor" : doctorName)
-                                    .font(.title)
-                                    .fontWeight(.bold)
+                                        .font(.title)
+                                        .fontWeight(.bold)
+                                   
+
                                 }
                             }
                             Spacer()
