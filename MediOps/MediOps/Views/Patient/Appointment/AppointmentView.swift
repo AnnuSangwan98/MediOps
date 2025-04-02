@@ -71,6 +71,8 @@ struct AppointmentView: View {
                                 let isSelected = selectedSlot?.id == slot.id
                                 
                                 Button(action: {
+                                    print("🕒 SELECTED SLOT - Display: \(slot.startTime) to \(slot.endTime)")
+                                    print("🕒 SELECTED SLOT - Raw: \(slot.rawStartTime) to \(slot.rawEndTime)")
                                     selectedSlot = slot
                                 }) {
                                     VStack(spacing: 4) {
@@ -126,8 +128,8 @@ struct AppointmentView: View {
                     slotId: selectedSlot?.id ?? 0,
                     startTime: selectedSlot?.startTime ?? "",
                     endTime: selectedSlot?.endTime ?? "",
-                    rawStartTime: selectedSlot != nil ? self.getRawTime(from: selectedSlot!.startTime) : "",
-                    rawEndTime: selectedSlot != nil ? self.getRawTime(from: selectedSlot!.endTime) : ""
+                    rawStartTime: selectedSlot?.rawStartTime ?? "",
+                    rawEndTime: selectedSlot?.rawEndTime ?? ""
                 ),
                 isActive: $navigateToReviewAndPay
             ) {
@@ -311,12 +313,18 @@ struct AppointmentView: View {
                     let displayStartTime = formatTimeWithAMPM(startTime)
                     let displayEndTime = formatTimeWithAMPM(endTime)
                     
+                    // Store standardized raw times for database (24-hour format)
+                    let rawStartTime = standardizeRawTime(startTime)
+                    let rawEndTime = standardizeRawTime(endTime)
+                    
                     let slot = DoctorAvailabilityModels.AppointmentSlot(
                         id: slotId,
                         doctorId: doctor.id,
                         date: date,
                         startTime: displayStartTime,
                         endTime: displayEndTime,
+                        rawStartTime: rawStartTime,
+                        rawEndTime: rawEndTime,
                         isAvailable: true,
                         remainingSlots: remainingSlots,
                         totalSlots: maxSlots
@@ -327,10 +335,8 @@ struct AppointmentView: View {
             
             // Sort slots by start time
             availableSlots.sort { slot1, slot2 in
-                // Parse time strings to compare
-                let time1 = convertTo24HourFormat(slot1.startTime)
-                let time2 = convertTo24HourFormat(slot2.startTime)
-                return time1 < time2
+                // Parse time strings to compare using raw time values
+                return slot1.rawStartTime < slot2.rawStartTime
             }
             
             self.availableSlots = availableSlots
@@ -433,62 +439,17 @@ struct AppointmentView: View {
         }
     }
     
-    // Helper function to convert time to 24-hour format for sorting
-    private func convertTo24HourFormat(_ timeString: String) -> String {
-        let parts = timeString.split(separator: " ")
-        guard parts.count == 2, 
-              let timePart = parts.first,
-              let ampm = parts.last else {
-            return timeString
-        }
+    // Helper function to standardize raw time to consistent 24-hour format (HH:MM)
+    private func standardizeRawTime(_ timeString: String) -> String {
+        let timeParts = timeString.trimmingCharacters(in: .whitespaces).split(separator: ":")
+        guard !timeParts.isEmpty else { return timeString }
         
-        let timeComponents = timePart.split(separator: ":")
-        guard let hourStr = timeComponents.first,
-              let hour = Int(hourStr) else {
-            return timeString
-        }
+        let hourStr = String(timeParts[0])
+        guard let hour = Int(hourStr) else { return timeString }
         
-        let minutes = timeComponents.count > 1 ? String(timeComponents[1]) : "00"
+        let minute = timeParts.count > 1 ? String(timeParts[1]) : "00"
         
-        if ampm.uppercased() == "PM" && hour < 12 {
-            // Convert PM times to 24-hour (add 12 to hours, except for 12 PM)
-            return String(format: "%02d:%@", hour + 12, minutes)
-        } else if ampm.uppercased() == "AM" && hour == 12 {
-            // Convert 12 AM to 00 hours
-            return String(format: "00:%@", minutes)
-        } else {
-            // Keep AM times as is, just format properly
-            return String(format: "%02d:%@", hour, minutes)
-        }
-    }
-    
-    // Helper function to extract raw time from formatted time string (for database storage)
-    private func getRawTime(from formattedTime: String) -> String {
-        // Split the time string (e.g., "3:00 PM") into components
-        let parts = formattedTime.split(separator: " ")
-        guard parts.count == 2,
-              let timePart = parts.first,
-              let ampm = parts.last else {
-            return formattedTime // Return original if parsing fails
-        }
-        
-        let timeComponents = timePart.split(separator: ":")
-        guard let hourStr = timeComponents.first,
-              let hour = Int(hourStr) else {
-            return formattedTime // Return original if parsing fails
-        }
-        
-        let minute = timeComponents.count > 1 ? String(timeComponents[1]) : "00"
-        
-        // Convert to 24-hour format for database storage
-        var adjustedHour = hour
-        if ampm.uppercased() == "PM" && hour < 12 {
-            adjustedHour += 12
-        } else if ampm.uppercased() == "AM" && hour == 12 {
-            adjustedHour = 0
-        }
-        
-        // Return in database format (HH:MM)
-        return String(format: "%d:%@", adjustedHour, minute)
+        // Ensure consistent format: HH:MM
+        return String(format: "%d:%@", hour, minute)
     }
 }

@@ -485,6 +485,8 @@ struct BookAppointmentView: View {
                         date: date,
                         startTime: formattedStartTime,
                         endTime: formattedEndTime,
+                        rawStartTime: startTime,
+                        rawEndTime: endTime,
                         isAvailable: true,
                         remainingSlots: remainingSlots,
                         totalSlots: maxSlots
