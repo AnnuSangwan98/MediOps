@@ -3,6 +3,10 @@ import SwiftUI
 struct RoleSelectionView: View {
     @State private var selectedRole: Role = .none
     @EnvironmentObject private var navigationState: AppNavigationState
+    @State private var particleOpacity = 0.0
+    
+    // Define the teal color to match the app's color scheme
+    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
     
     enum Role {
         case superAdmin, admin, doctor, lab, patient, none
@@ -10,113 +14,135 @@ struct RoleSelectionView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 40) {
-                // Logo and Welcome Text
-                VStack(spacing: 20) {
-                    // Medical bag logo
-                    ZStack {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 120, height: 120)
-                            .shadow(color: .gray.opacity(0.2), radius: 10)
-                        
-                        Image(systemName: "cross.case.fill")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 60, height: 60)
-                            .foregroundColor(.teal)
-                    }
+            ZStack {
+                // Gradient background
+                LinearGradient(
+                    gradient: Gradient(colors: [Color.white, Color.white.opacity(0.95), Color(white: 0.97)]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                // Particle effects
+                ParticlesView(count: 75)
+                    .opacity(particleOpacity)
+                
+                // Circular glow
+                Circle()
+                    .fill(primaryTeal.opacity(0.1))
+                    .frame(width: 350, height: 450)
+                    .blur(radius: 50)
+                    .opacity(particleOpacity)
+                
+                VStack(spacing: 40) {
                     
-                    // Welcome Text
-                    VStack(spacing: 8) {
-                        Text("Welcome to MediOps")
-                            .font(.system(size: 35, weight: .semibold))
-                            .foregroundColor(.teal)
-                            .multilineTextAlignment(.center)
+                    VStack(spacing: 20) {
                         
-                        Text("Select your role")
-                            .font(.title3)
-                            .foregroundColor(.gray)
+                        ZStack {
+                            Circle()
+                                .fill(.white)
+                                .frame(width: 120, height: 120)
+                                .shadow(color: .gray.opacity(0.2), radius: 10)
+                            
+                            Image(systemName: "person.fill.questionmark")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 60, height: 60)
+                                .foregroundColor(.teal)
+                        }
+                        
+                        // Welcome Text
+                        VStack(spacing: 8) {
+                            Text("Select Your Role")
+                                .font(.system(size: 35, weight: .semibold))
+                                .foregroundColor(.teal)
+                                .multilineTextAlignment(.center)
+                            
+                        }
+                    }
+                    .padding(.top, 60)
+                    
+                    // Role Selection Buttons
+                    VStack(spacing: 20) {
+                        // Super Admin Button
+                        NavigationLink(destination: SuperAdminLoginView()) {
+                            RoleButton(
+                                icon: "person.badge.key",
+                                title: "Super Admin",
+                                isHighlighted: selectedRole == .superAdmin
+                            )
+                        }
+                        .simultaneousGesture(TapGesture().onEnded {
+                            selectedRole = .superAdmin
+                            navigationState.selectRole(.superAdmin)
+                        })
+                        
+                        // Administrator Button
+                        NavigationLink(destination: AdminLoginView()) {
+                            RoleButton(
+                                icon: "person.badge.plus",
+                                title: "Admin",
+                                isHighlighted: selectedRole == .admin
+                            )
+                        }
+                        .simultaneousGesture(TapGesture().onEnded {
+                            selectedRole = .admin
+                        })
+                        
+                        // Doctor Button
+                        NavigationLink(destination: DoctorLoginView()) {
+                            RoleButton(
+                                icon: "stethoscope",
+                                title: "Doctor",
+                                isHighlighted: selectedRole == .doctor
+                            )
+                        }
+                        .simultaneousGesture(TapGesture().onEnded {
+                            selectedRole = .doctor
+                            navigationState.selectRole(.doctor)
+                        })
+                        
+                        // Lab Button
+                        NavigationLink(destination: LabAdminLoginView()) {
+                            RoleButton(
+                                icon: "flask",
+                                title: "Lab Admin",
+                                isHighlighted: selectedRole == .lab
+                            )
+                        }
+                        .simultaneousGesture(TapGesture().onEnded {
+                            selectedRole = .lab
+                            navigationState.selectRole(.labAdmin)
+                        })
+                        
+                        // Patient Button
+                        NavigationLink(destination: PatientLoginView()) {
+                            RoleButton(
+                                icon: "person",
+                                title: "Patient",
+                                isHighlighted: selectedRole == .patient
+                            )
+                        }
+                        .simultaneousGesture(TapGesture().onEnded {
+                            selectedRole = .patient
+                            navigationState.selectRole(.patient)
+                        })
+                    }
+                    .padding(.horizontal, 20)
+                    
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationBarBackButtonHidden(true)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        EmptyView()
                     }
                 }
-                .padding(.top, 60)
-                
-                // Role Selection Buttons
-                VStack(spacing: 20) {
-                    // Super Admin Button
-                    NavigationLink(destination: SuperAdminLoginView()) {
-                        RoleButton(
-                            icon: "person.badge.key",
-                            title: "Super Admin",
-                            isHighlighted: selectedRole == .superAdmin
-                        )
-                    }
-                    .simultaneousGesture(TapGesture().onEnded {
-                        selectedRole = .superAdmin
-                        navigationState.selectRole(.superAdmin)
-                    })
-                    
-                    // Administrator Button
-                    NavigationLink(destination: AdminLoginView()) {
-                        RoleButton(
-                            icon: "person.badge.plus",
-                            title: "Admin",
-                            isHighlighted: selectedRole == .admin
-                        )
-                    }
-                    .simultaneousGesture(TapGesture().onEnded {
-                        selectedRole = .admin
-                    })
-                    
-                    // Doctor Button
-                    NavigationLink(destination: DoctorLoginView()) {
-                        RoleButton(
-                            icon: "stethoscope",
-                            title: "Doctor",
-                            isHighlighted: selectedRole == .doctor
-                        )
-                    }
-                    .simultaneousGesture(TapGesture().onEnded {
-                        selectedRole = .doctor
-                        navigationState.selectRole(.doctor)
-                    })
-                    
-                    // Lab Button
-                    NavigationLink(destination: LabAdminLoginView()) {
-                        RoleButton(
-                            icon: "flask",
-                            title: "Lab Admin",
-                            isHighlighted: selectedRole == .lab
-                        )
-                    }
-                    .simultaneousGesture(TapGesture().onEnded {
-                        selectedRole = .lab
-                        navigationState.selectRole(.labAdmin)
-                    })
-                    
-                    // Patient Button
-                    NavigationLink(destination: PatientLoginView()) {
-                        RoleButton(
-                            icon: "person",
-                            title: "Patient",
-                            isHighlighted: selectedRole == .patient
-                        )
-                    }
-                    .simultaneousGesture(TapGesture().onEnded {
-                        selectedRole = .patient
-                        navigationState.selectRole(.patient)
-                    })
-                }
-                .padding(.horizontal, 20)
-                
-                Spacer()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.white)
-            .navigationBarBackButtonHidden(true)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    EmptyView()
+            .onAppear {
+                withAnimation(.easeIn(duration: 1.0)) {
+                    particleOpacity = 1.0
                 }
             }
         }

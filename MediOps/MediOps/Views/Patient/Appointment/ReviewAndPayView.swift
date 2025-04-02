@@ -15,10 +15,18 @@ struct ReviewAndPayView: View {
     @State private var otherPatientAge = ""
     @State private var otherPatientGender = "Male"
     @State private var healthConcerns = ""
+    @State private var isPremium = false
+    @State private var showPremiumAlert = false
     
     private let bookingFee = 10.0
-    private let consultationFee = 500.0 // Default consultation fee
+    private let consultationFee = 500.0
+    private let premiumFee = 200.0
     private let genderOptions = ["Male", "Female", "Other"]
+    
+    var totalAmount: Double {
+        let baseAmount = consultationFee + bookingFee
+        return isPremium ? baseAmount + premiumFee : baseAmount
+    }
     
     var body: some View {
         ScrollView {
@@ -65,54 +73,6 @@ struct ReviewAndPayView: View {
                     Text("Patient info")
                         .font(.headline)
                     
-                    Button(action: { showPatientSelector.toggle() }) {
-                        HStack {
-                            Circle()
-                                .fill(Color.gray.opacity(0.2))
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .foregroundColor(.gray)
-                                )
-                            
-                            Text(selectedPatient)
-                                .fontWeight(.medium)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.down")
-                                .foregroundColor(.gray)
-                        }
-                    }
-                    .actionSheet(isPresented: $showPatientSelector) {
-                        ActionSheet(
-                            title: Text("Select Patient"),
-                            buttons: [
-                                .default(Text("Myself")) { selectedPatient = "Myself" },
-                                .default(Text("Other")) { selectedPatient = "Other" },
-                                .cancel()
-                            ]
-                        )
-                    }
-                    
-                    if selectedPatient == "Other" {
-                        VStack(spacing: 15) {
-                            TextField("Patient Name", text: $otherPatientName)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                            
-                            TextField("Age", text: $otherPatientAge)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .keyboardType(.numberPad)
-                            
-                            Picker("Gender", selection: $otherPatientGender) {
-                                ForEach(genderOptions, id: \.self) { gender in
-                                    Text(gender).tag(gender)
-                                }
-                            }
-                            .pickerStyle(SegmentedPickerStyle())
-                        }
-                    }
-                    
                     Text("Note: You can describe your health concerns or any relevant details in the text field below.")
                         .font(.caption)
                         .foregroundColor(.gray)
@@ -121,6 +81,34 @@ struct ReviewAndPayView: View {
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                 }
                 .padding()
+                
+                // Premium Switch
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(isOn: $isPremium) {
+                        HStack {
+                            Image(systemName: "star.fill")
+                                .foregroundColor(.yellow)
+                            Text("Premium Appointment")
+                                .fontWeight(.medium)
+                        }
+                    }
+                    .tint(.teal)
+                    .onChange(of: isPremium) { newValue in
+                        if newValue {
+                            showPremiumAlert = true
+                        }
+                    }
+                    
+                    if isPremium {
+                        Text("Priority access for appointments and lab reports")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+                .padding()
+                .background(Color.white)
+                .cornerRadius(12)
+                .shadow(color: .gray.opacity(0.1), radius: 5)
                 
                 // Payment details
                 VStack(alignment: .leading, spacing: 15) {
@@ -140,13 +128,22 @@ struct ReviewAndPayView: View {
                             Text("Rs.\(Int(bookingFee))")
                         }
                         
+                        if isPremium {
+                            HStack {
+                                Text("Premium fee")
+                                Spacer()
+                                Text("Rs.\(Int(premiumFee))")
+                            }
+                            .foregroundColor(.teal)
+                        }
+                        
                         Divider()
                         
                         HStack {
                             Text("Total Pay")
                                 .fontWeight(.bold)
                             Spacer()
-                            Text("Rs.\(Int(consultationFee + bookingFee))")
+                            Text("Rs.\(Int(totalAmount))")
                                 .fontWeight(.bold)
                         }
                     }
@@ -156,11 +153,15 @@ struct ReviewAndPayView: View {
         }
         .navigationTitle("Review & Pay")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                // Back button already provided by navigation automatically
-                EmptyView()
+        .alert("Premium Appointment", isPresented: $showPremiumAlert) {
+            Button("Continue", role: .none) {
+                // Keep premium enabled
             }
+            Button("Cancel", role: .cancel) {
+                isPremium = false
+            }
+        } message: {
+            Text("By enabling it you will get the priority in appointment and lab reports")
         }
         
         // Pay button
@@ -171,11 +172,11 @@ struct ReviewAndPayView: View {
                     return // Add proper validation alert here
                 }
             }
-            showConfirmation.toggle()
+            showConfirmation = true
         }) {
             HStack {
                 Text("Pay")
-                Text("Rs.\(Int(consultationFee + bookingFee))")
+                Text("Rs.\(Int(totalAmount))")
                     .padding(.horizontal, 8)
                     .background(Color.teal.opacity(0.2))
                     .cornerRadius(4)
@@ -188,7 +189,12 @@ struct ReviewAndPayView: View {
         }
         .padding()
         .sheet(isPresented: $showConfirmation) {
-            PaymentFinalView(doctor: doctor, appointmentDate: appointmentDate, appointmentTime: appointmentTime)
+            PaymentFinalView(
+                doctor: doctor,
+                appointmentDate: appointmentDate,
+                appointmentTime: appointmentTime,
+                isPremium: isPremium
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DismissAllModals"))) { _ in
             dismiss()
