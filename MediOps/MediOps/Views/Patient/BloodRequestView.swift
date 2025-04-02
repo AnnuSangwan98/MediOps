@@ -107,11 +107,26 @@ struct BloodRequestView: View {
                 Text(errorMessage)
             }
             .onAppear {
+                print("🏥 Loading patient profile...")
                 // Load patient profile when view appears
-                if let userId = UserDefaults.standard.string(forKey: "userId") {
+                if let userId = UserDefaults.standard.string(forKey: "current_user_id") {
+                    print("🏥 Found user ID in UserDefaults: \(userId)")
                     Task {
-                        await profileController.loadProfile(userId: userId)
+                        do {
+                            await profileController.loadProfile(userId: userId)
+                            if profileController.patient != nil {
+                                print("✅ Successfully loaded patient profile")
+                            } else {
+                                print("❌ Failed to load patient profile - patient is nil")
+                                errorMessage = "Unable to load patient profile"
+                                showError = true
+                            }
+                        }
                     }
+                } else {
+                    print("❌ No user ID found in UserDefaults")
+                    errorMessage = "No user ID found. Please log in again."
+                    showError = true
                 }
             }
         }
@@ -119,41 +134,46 @@ struct BloodRequestView: View {
     
     private func submitRequest() async {
         guard let patient = profileController.patient else {
+            print("❌ No patient profile loaded")
             errorMessage = "Unable to load patient profile"
             showError = true
             return
         }
         
+        print("🩸 Starting blood request submission")
+        print("🩸 Patient ID: \(patient.id)")
+        print("🩸 Blood Group: \(selectedBloodType)")
+        print("🩸 Required Date: \(selectedDate)")
+        
         isLoading = true
         do {
-            // Check if patient already has an active request
-            let hasExisting = try await BloodDonationController.shared.hasActiveRequest(patientId: patient.id)
-            if hasExisting {
-                errorMessage = "You already have an active blood request"
-                showError = true
-                isLoading = false
-                return
+            let success = await BloodDonationController.shared.createBloodDonationRequest(
+                patientId: patient.id,
+                bloodGroup: selectedBloodType
+            )
+            
+            if success {
+                print("✅ Blood request created successfully")
+                await MainActor.run {
+                    isLoading = false
+                    hasActiveRequest = true
+                    dismiss()
+                }
+            } else {
+                print("❌ Failed to create blood request")
+                await MainActor.run {
+                    errorMessage = "Failed to create blood request. Please try again."
+                    showError = true
+                    isLoading = false
+                }
             }
-            
-            let dateFormatter = ISO8601DateFormatter()
-            let requestData: [String: String] = [
-                "id": patient.id,
-                "blood_type": selectedBloodType,
-                "donation_date": dateFormatter.string(from: selectedDate),
-                "created_at": dateFormatter.string(from: Date()),
-                "updated_at": dateFormatter.string(from: Date())
-            ]
-            
-            // Insert into blood_donation table
-            try await SupabaseController.shared.insert(into: "blood_donation", data: requestData)
-            
-            isLoading = false
-            hasActiveRequest = true
-            dismiss()
         } catch {
-            isLoading = false
-            errorMessage = error.localizedDescription
-            showError = true
+            print("❌ Error in submitRequest: \(error)")
+            await MainActor.run {
+                isLoading = false
+                errorMessage = "An error occurred: \(error.localizedDescription)"
+                showError = true
+            }
         }
     }
 }
@@ -197,4 +217,4 @@ struct BloodTypeButton: View {
 
 #Preview {
     BloodRequestView(hasActiveRequest: .constant(false))
-} 
+}

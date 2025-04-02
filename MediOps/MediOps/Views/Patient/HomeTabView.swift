@@ -21,6 +21,7 @@ struct HomeTabView: View {
     @State private var hasActiveBloodRequest = false
     @State private var showCancelRegistrationAlert = false
     @State private var showCancelRequestAlert = false
+    @StateObject private var bloodController = BloodDonationController.shared
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -318,67 +319,20 @@ struct HomeTabView: View {
                 VStack(spacing: 20) {
                     if isRegisteredDonor {
                         // Registered Donor Card
-                        VStack(spacing: 15) {
-                            Image(systemName: "heart.fill")
-                                .font(.system(size: 40))
-                                .foregroundColor(.red)
-                            
-                            Text("Registered Blood Donor")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                            
-                            Text("Thank you for your commitment to saving lives!")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                                .multilineTextAlignment(.center)
-                            
-                            Button(action: {
-                                showCancelRegistrationAlert = true
-                            }) {
-                                Text("Cancel Registration")
-                                    .font(.headline)
-                                    .foregroundColor(.red)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.white)
-                                    .cornerRadius(10)
-                            }
-                            .padding(.top)
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(15)
-                        .padding()
+                        RegisteredDonorCard(onCancelRegistration: { showCancelRegistrationAlert = true })
                     }
                     
                     // Active Blood Request Card (if exists)
                     if hasActiveBloodRequest {
-                        VStack(spacing: 15) {
-                            HStack {
-                                Image(systemName: "drop.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.red)
-                                Text("Active Blood Request")
-                                    .font(.headline)
-                            }
-                            
-                            Text("Your request is being processed. We will notify you when a matching donor is found.")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                                .multilineTextAlignment(.center)
-                            
-                            Button(action: {
-                                showCancelRequestAlert = true
-                            }) {
-                                Text("Cancel Request")
-                                    .font(.subheadline)
-                                    .foregroundColor(.red)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(15)
-                        .padding(.horizontal)
+                        ActiveBloodRequestCard(
+                            bloodRequests: bloodController.bloodRequests,
+                            onCancelRequest: { showCancelRequestAlert = true }
+                        )
+                    }
+                    
+                    // Blood Request History
+                    if !bloodController.bloodRequests.isEmpty {
+                        BloodRequestHistoryView(bloodRequests: bloodController.bloodRequests)
                     }
                     
                     // Main Actions
@@ -453,7 +407,17 @@ struct HomeTabView: View {
             .alert("Cancel Blood Request", isPresented: $showCancelRequestAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Confirm", role: .destructive) {
-                    hasActiveBloodRequest = false
+                    if let activeRequest = bloodController.bloodRequests.first(where: { $0.activityStatus }) {
+                        Task {
+                            if let patientId = UserDefaults.standard.string(forKey: "current_patient_id") {
+                                let success = await bloodController.cancelBloodRequest(requestId: activeRequest.id)
+                                if success {
+                                    hasActiveBloodRequest = false
+                                    await bloodController.fetchBloodRequests(patientId: patientId)
+                                }
+                            }
+                        }
+                    }
                 }
             } message: {
                 Text("Are you sure you want to cancel your blood request? This action cannot be undone.")
@@ -484,6 +448,14 @@ struct HomeTabView: View {
             }
             .sheet(isPresented: $showBloodRequest) {
                 BloodRequestView(hasActiveRequest: $hasActiveBloodRequest)
+            }
+            .onAppear {
+                if let patientId = UserDefaults.standard.string(forKey: "current_patient_id") {
+                    Task {
+                        hasActiveBloodRequest = await bloodController.hasActiveRequest(patientId: patientId)
+                        await bloodController.fetchBloodRequests(patientId: patientId)
+                    }
+                }
             }
         }
     }
@@ -600,45 +572,50 @@ struct HomeTabView: View {
         
         var body: some View {
             GeometryReader { geometry in
-                if geometry.frame(in: coordinateSpace).minY > 50 {
-                    Spacer()
-                        .onAppear {
-                            if !isRefreshing {
-                                isRefreshing = true
-                                onRefresh()
-                                
-                                // Reset after delay
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                                    isRefreshing = false
-                                }
-                            }
-                        }
-                } else if geometry.frame(in: coordinateSpace).minY < 1 {
-                    Spacer()
-                        .onAppear {
-                            isRefreshing = false
-                        }
+                let offset = geometry.frame(in: coordinateSpace).minY
+                VStack {
+                    refreshStatusView(offset: offset)
                 }
-                
-                HStack {
-                    Spacer()
-                    if isRefreshing {
-                        ProgressView()
-                    } else if geometry.frame(in: coordinateSpace).minY > 20 {
-                        Text("Release to refresh")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    } else if geometry.frame(in: coordinateSpace).minY > 5 {
-                        Text("Pull to refresh")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    Spacer()
+                .onChange(of: offset) { newOffset in
+                    checkForRefreshTrigger(offset: newOffset)
                 }
-                .frame(height: geometry.frame(in: coordinateSpace).minY > 0 ? geometry.frame(in: coordinateSpace).minY : 0)
-                .offset(y: -10)
             }
             .frame(height: 50)
+        }
+        
+        @ViewBuilder
+        private func refreshStatusView(offset: CGFloat) -> some View {
+            HStack {
+                Spacer()
+                if isRefreshing {
+                    ProgressView()
+                } else if offset > 20 {
+                    Text("Release to refresh")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                } else if offset > 5 {
+                    Text("Pull to refresh")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                Spacer()
+            }
+            .frame(height: max(0, offset))
+            .offset(y: -10)
+        }
+        
+        private func checkForRefreshTrigger(offset: CGFloat) {
+            if offset > 50 && !isRefreshing {
+                isRefreshing = true
+                onRefresh()
+                
+                // Reset after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    isRefreshing = false
+                }
+            } else if offset < 1 {
+                isRefreshing = false
+            }
         }
     }
 }
@@ -709,5 +686,117 @@ struct HospitalSearchBar: View {
         .background(Color.white)
         .cornerRadius(10)
         .shadow(color: .gray.opacity(0.2), radius: 3)
+    }
+}
+
+struct BloodRequestHistoryView: View {
+    let bloodRequests: [BloodDonationRequest]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Request History")
+                .font(.title2)
+                .fontWeight(.bold)
+                .padding(.horizontal)
+            
+            ForEach(bloodRequests.filter { !$0.activityStatus }) { request in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Blood Group: \(request.bloodGroup)")
+                            .font(.headline)
+                        Spacer()
+                        Text(request.createdAt.formatted(date: .long, time: .shortened))
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Text("Status: Completed")
+                        .font(.subheadline)
+                        .foregroundColor(.green)
+                }
+                .padding()
+                .background(Color.white)
+                .cornerRadius(10)
+                .shadow(color: .gray.opacity(0.1), radius: 5)
+                .padding(.horizontal)
+            }
+        }
+        .padding(.vertical)
+    }
+}
+
+struct ActiveBloodRequestCard: View {
+    let bloodRequests: [BloodDonationRequest]
+    let onCancelRequest: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 15) {
+            HStack {
+                Image(systemName: "drop.fill")
+                    .font(.title2)
+                    .foregroundColor(.red)
+                Text("Active Blood Request")
+                    .font(.headline)
+            }
+            
+            if let activeRequest = bloodRequests.first(where: { $0.activityStatus }) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Blood Group: \(activeRequest.bloodGroup)")
+                    Text("Requested on: \(activeRequest.createdAt.formatted(date: .long, time: .shortened))")
+                }
+                .font(.subheadline)
+                .foregroundColor(.gray)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color.white)
+                .cornerRadius(10)
+            }
+            
+            Button(action: onCancelRequest) {
+                Text("Cancel Request")
+                    .font(.subheadline)
+                    .foregroundColor(.red)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(15)
+        .padding(.horizontal)
+    }
+}
+
+struct RegisteredDonorCard: View {
+    let onCancelRegistration: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 15) {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 40))
+                .foregroundColor(.red)
+            
+            Text("Registered Blood Donor")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Thank you for your commitment to saving lives!")
+                .font(.subheadline)
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+            
+            Button(action: onCancelRegistration) {
+                Text("Cancel Registration")
+                    .font(.headline)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.white)
+                    .cornerRadius(10)
+            }
+            .padding(.top)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(15)
+        .padding()
     }
 }
