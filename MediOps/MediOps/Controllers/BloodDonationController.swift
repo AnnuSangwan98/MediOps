@@ -82,6 +82,21 @@ class BloodDonationController: ObservableObject {
             )
             
             print("✅ Successfully created blood request with ID: \(requestId)")
+            
+            // Update local state immediately
+            await MainActor.run {
+                let newRequest = BloodDonationRequest(
+                    id: requestId,
+                    bloodGroup: bloodGroup,
+                    units: 0,
+                    activityStatus: true,
+                    createdAt: Date()
+                )
+                self.bloodRequests.append(newRequest)
+            }
+            
+            // Refresh the blood requests to ensure consistency
+            await fetchBloodRequests(patientId: patientId)
             return true
         } catch {
             print("❌ Error creating blood request: \(error)")
@@ -108,18 +123,16 @@ class BloodDonationController: ObservableObject {
             
             print("✅ Successfully cancelled blood request")
             
-            // Update local state
+            // Update local state immediately
             await MainActor.run {
                 if let index = bloodRequests.firstIndex(where: { $0.id == requestId }) {
-                    var updatedRequest = bloodRequests[index]
-                    updatedRequest = BloodDonationRequest(
-                        id: updatedRequest.id,
-                        bloodGroup: updatedRequest.bloodGroup,
-                        units: updatedRequest.units,
+                    bloodRequests[index] = BloodDonationRequest(
+                        id: bloodRequests[index].id,
+                        bloodGroup: bloodRequests[index].bloodGroup,
+                        units: bloodRequests[index].units,
                         activityStatus: false,
-                        createdAt: updatedRequest.createdAt
+                        createdAt: bloodRequests[index].createdAt
                     )
-                    bloodRequests[index] = updatedRequest
                 }
             }
             
