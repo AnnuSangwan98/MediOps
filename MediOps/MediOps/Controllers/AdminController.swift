@@ -271,8 +271,8 @@ class AdminController {
         
         // First try to find the admin in the hospital_admins table
         let admins = try await supabase.select(
-            from: "hospital_admins",
-            where: "user_id",
+            from: "hospital_admins", 
+            where: "user_id", 
             equals: userId
         )
         
@@ -619,39 +619,39 @@ class AdminController {
             }
             
             // As a last resort, try to update status (but we prefer actual deletion)
-            struct DoctorStatusUpdate: Encodable {
-                let doctor_status: String
-                let updated_at: String
-            }
-            
-            // Try various possible status values that might be allowed by the check constraint
+        struct DoctorStatusUpdate: Encodable {
+            let doctor_status: String
+            let updated_at: String
+        }
+        
+        // Try various possible status values that might be allowed by the check constraint
             let possibleStatuses = ["inactive", "suspended", "terminated"]
-            
-            for status in possibleStatuses {
-                do {
+        
+        for status in possibleStatuses {
+            do {
                     print("DELETE DOCTOR: Deletion failed, trying status update to '\(status)'")
-                    let doctorData = DoctorStatusUpdate(
-                        doctor_status: status,
-                        updated_at: ISO8601DateFormatter().string(from: Date())
-                    )
-                    
-                    try await supabase.update(
-                        table: "doctors",
-                        data: doctorData,
-                        where: "id",
-                        equals: id
-                    )
-                    
+                let doctorData = DoctorStatusUpdate(
+                    doctor_status: status,
+                    updated_at: ISO8601DateFormatter().string(from: Date())
+                )
+                
+                try await supabase.update(
+                    table: "doctors",
+                    data: doctorData,
+                    where: "id",
+                    equals: id
+                )
+                
                     print("DELETE DOCTOR: Successfully performed soft delete with status: \(status)")
                     return
-                } catch {
-                    print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
-                    // Continue trying other statuses
-                }
+            } catch {
+                print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
+                // Continue trying other statuses
             }
-            
-            // If we reach here, none of our approaches worked
-            throw AdminError.doctorDeleteFailed
+        }
+        
+        // If we reach here, none of our approaches worked
+        throw AdminError.doctorDeleteFailed
         }
     }
     
@@ -1323,7 +1323,7 @@ class AdminController {
             let isoFormatter = ISO8601DateFormatter()
             if let parsedDate = isoFormatter.date(from: createdAtString) {
                 createdAt = parsedDate
-            } else {
+        } else {
                 // Try other formats
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
@@ -1348,7 +1348,7 @@ class AdminController {
             let isoFormatter = ISO8601DateFormatter()
             if let parsedDate = isoFormatter.date(from: updatedAtString) {
                 updatedAt = parsedDate
-            } else {
+        } else {
                 // Try other formats
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
