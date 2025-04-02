@@ -14,6 +14,7 @@ struct Appointment: Identifiable, Codable {
     var status: AppointmentStatus
     let startTime: String?
     let endTime: String?
+    let isPremium: Bool?
     
     init(id: String = UUID().uuidString,
          doctor: Models.Doctor,
@@ -21,7 +22,8 @@ struct Appointment: Identifiable, Codable {
          time: Date,
          status: AppointmentStatus = .upcoming,
          startTime: String? = nil,
-         endTime: String? = nil) {
+         endTime: String? = nil,
+         isPremium: Bool? = nil) {
         self.id = id
         self.doctor = doctor
         self.date = date
@@ -29,6 +31,7 @@ struct Appointment: Identifiable, Codable {
         self.status = status
         self.startTime = startTime
         self.endTime = endTime
+        self.isPremium = isPremium
     }
     
     // Custom CodingKeys
@@ -40,6 +43,7 @@ struct Appointment: Identifiable, Codable {
         case status
         case startTime = "slot_time"
         case endTime = "slot_end_time"
+        case isPremium = "is_premium"
     }
     
     // Custom initializer from decoder
@@ -53,6 +57,7 @@ struct Appointment: Identifiable, Codable {
         status = try container.decode(AppointmentStatus.self, forKey: .status)
         startTime = try container.decodeIfPresent(String.self, forKey: .startTime)
         endTime = try container.decodeIfPresent(String.self, forKey: .endTime)
+        isPremium = try container.decodeIfPresent(Bool.self, forKey: .isPremium)
     }
     
     // Custom encode method
@@ -66,6 +71,7 @@ struct Appointment: Identifiable, Codable {
         try container.encode(status, forKey: .status)
         try container.encodeIfPresent(startTime, forKey: .startTime)
         try container.encodeIfPresent(endTime, forKey: .endTime)
+        try container.encodeIfPresent(isPremium, forKey: .isPremium)
     }
 }
 

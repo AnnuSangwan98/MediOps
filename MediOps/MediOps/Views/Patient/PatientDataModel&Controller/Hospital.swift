@@ -71,6 +71,7 @@ struct AppointmentData: Codable {
     let created_at: String?
     let updated_at: String?
     let reason: String
+    let is_premium: Bool
 }
 
 @MainActor
@@ -383,7 +384,7 @@ class HospitalViewModel: ObservableObject {
     // MARK: - Appointment Methods
     
     /// Book an appointment
-    func bookAppointment(patientId: String, slotId: Int, date: Date, time: Date, reason: String = "Regular checkup") async throws {
+    func bookAppointment(patientId: String, slotId: Int, date: Date, time: Date, reason: String = "Regular checkup", isPremium: Bool = false) async throws {
         guard let doctor = selectedDoctor,
               let hospital = selectedHospital else { 
             throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "No doctor or hospital selected"])
@@ -411,7 +412,8 @@ class HospitalViewModel: ObservableObject {
             status: "upcoming",
             created_at: nil, // Let Supabase set this with CURRENT_TIMESTAMP
             updated_at: nil, // Let Supabase set this with CURRENT_TIMESTAMP
-            reason: reason
+            reason: reason,
+            is_premium: isPremium
         )
         
         do {
@@ -425,7 +427,10 @@ class HospitalViewModel: ObservableObject {
                 doctor: doctor.toModelDoctor(),
                 date: date,
                 time: time,
-                status: .upcoming
+                status: .upcoming,
+                startTime: nil,
+                endTime: nil,
+                isPremium: isPremium
             )
             
             // Add to appointment manager
@@ -594,7 +599,8 @@ class HospitalViewModel: ObservableObject {
                         time: appointmentTime,
                         status: appointmentStatus,
                         startTime: slotStartTime,
-                        endTime: slotEndTime
+                        endTime: slotEndTime,
+                        isPremium: appointmentData["is_premium"] as? Bool ?? false  // Get is_premium from Supabase
                     )
                     
                     let modelAppointment = AppointmentModels.Appointment(
