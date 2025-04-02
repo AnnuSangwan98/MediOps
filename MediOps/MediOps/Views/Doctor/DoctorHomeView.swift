@@ -109,15 +109,15 @@ struct DoctorHomeView: View {
                                     
                                     HStack(spacing: 10) {
                                         Text("Dr.")
-                                            .font(.title)
-                                            .fontWeight(.bold)
+                                    .font(.title)
+                                    .fontWeight(.bold)
                                         ProgressView()
                                             .scaleEffect(0.7)
                                     }
                                 } else {
                                     Text("Welcome ")
                                         .font(.headline)
-                                        .foregroundColor(.gray)
+                                    .foregroundColor(.gray)
                                     
                                     Text(doctorName.isEmpty ? "Dr. Doctor" : doctorName)
                                         .font(.title)
