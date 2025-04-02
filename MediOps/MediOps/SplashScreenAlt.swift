@@ -118,7 +118,7 @@ struct SplashScreenAlt: View {
                     .padding(.bottom, 60)
                     
                     // App name with gradient
-                    Text("MEDIOPS")
+                    Text("MediOps")
                         .font(.system(size: 42, weight: .heavy))
                         .tracking(2)
                         .opacity(textOpacity)

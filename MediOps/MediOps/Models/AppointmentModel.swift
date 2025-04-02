@@ -11,7 +11,7 @@ enum AppointmentModels {
     }
     
     // MARK: - Doctor Availability
-    struct DoctorAvailability: Identifiable, Codable {
+    struct DoctorAvailabilitySlot: Identifiable, Codable {
         let id: Int
         let doctorId: String
         let date: Date

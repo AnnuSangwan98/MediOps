@@ -196,14 +196,20 @@ struct AdminLoginView: View {
                 // Check if admin exists
                 guard let admin = admins.first else {
                     print("Login failed: No admin found with ID \(adminId)")
-                    throw AuthError.userNotFound
+                    errorMessage = "Invalid admin ID or password"
+                    showError = true
+                    isLoading = false
+                    return
                 }
                 
                 // Verify password
                 guard let storedPassword = admin["password"] as? String,
                       storedPassword == password else {
                     print("Login failed: Invalid password for admin \(adminId)")
-                    throw AuthError.invalidCredentials
+                    errorMessage = "Invalid admin ID or password"
+                    showError = true
+                    isLoading = false
+                    return
                 }
                 
                 print("Admin authentication successful for ID: \(adminId)")
@@ -219,16 +225,10 @@ struct AdminLoginView: View {
                     // Navigate to admin dashboard
                     navigateToAdminHome = true
                 }
-            } catch let error as AuthError {
-                await MainActor.run {
-                    isLoading = false
-                    errorMessage = error.localizedDescription
-                    showError = true
-                }
             } catch {
                 await MainActor.run {
                     isLoading = false
-                    errorMessage = "An unexpected error occurred"
+                    errorMessage = "Invalid admin ID or password"
                     showError = true
                 }
             }

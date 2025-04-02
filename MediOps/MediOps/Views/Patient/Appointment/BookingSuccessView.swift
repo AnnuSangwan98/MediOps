@@ -4,6 +4,7 @@ struct BookingSuccessView: View {
     let doctor: HospitalDoctor
     let appointmentDate: Date
     let appointmentTime: Date
+    let isPremium: Bool
     
     @Environment(\.dismiss) private var dismiss
     @StateObject private var appointmentManager = AppointmentManager.shared
@@ -68,7 +69,8 @@ struct BookingSuccessView: View {
             doctor: doctor.toModelDoctor(),
             date: appointmentDate,
             time: appointmentTime,
-            status: .upcoming
+            status: .upcoming,
+            isPremium: isPremium
         )
         
         Task {
@@ -117,7 +119,7 @@ struct BookingSuccessView: View {
                     "status": "upcoming",
                     "reason": "Medical consultation",
                     "isdone": false,
-                    "is_premium": false,
+                    "is_premium": isPremium,
                     "slot_start_time": startTime,
                     "slot_end_time": endTime,
                     "slot": "{\"doctor_id\": \"\(doctor.id)\", \"start_time\": \"\(startTime)\", \"end_time\": \"\(endTime)\"}"
@@ -145,7 +147,7 @@ struct BookingSuccessView: View {
                             slot_start_time, slot_end_time, slot
                         ) VALUES (
                             '\(appointmentId)', '\(patientId)', '\(doctor.id)', '\(doctor.hospitalId)', '\(formattedDate)',
-                            'upcoming', 'Medical consultation', false, false,
+                            'upcoming', 'Medical consultation', false, \(isPremium),
                             '\(startTime)', '\(endTime)', '{"doctor_id": "\(doctor.id)", "start_time": "\(startTime)", "end_time": "\(endTime)"}'
                         )
                     """)
@@ -159,7 +161,8 @@ struct BookingSuccessView: View {
                         doctor: doctor.toModelDoctor(),
                         date: appointmentDate,
                         time: appointmentTime,
-                        status: .upcoming
+                        status: .upcoming,
+                        isPremium: isPremium
                     )
                     AppointmentManager.shared.addAppointment(appointment)
                 }

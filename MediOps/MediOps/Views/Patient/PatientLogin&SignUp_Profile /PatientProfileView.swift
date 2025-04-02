@@ -241,22 +241,7 @@ struct PatientProfileView: View {
             }
             
             if let patient = profileController.patient {
-                Button(action: {
-                    showFamilyMemberSheet = true
-                }) {
-                    Text(profileController.familyMembers.isEmpty ? "Add Family Member" : "View Family Members")
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.teal.opacity(0.8))
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                        .padding(.horizontal)
-                        .padding(.top, 20)
-                }
-                .sheet(isPresented: $showFamilyMemberSheet) {
-                    FamilyMemberListView(profileController: profileController)
-                }
+                // Remove the Add Family Member button
                 
                 // Add logout button
                 Button(action: {

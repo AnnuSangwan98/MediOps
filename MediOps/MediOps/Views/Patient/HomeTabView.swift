@@ -25,15 +25,24 @@ enum ActiveSheet: Identifiable {
 struct HomeTabView: View {
     @ObservedObject var hospitalVM = HospitalViewModel.shared
     @StateObject var appointmentManager = AppointmentManager.shared
+    @StateObject private var labReportManager = LabReportManager.shared
     @State private var showProfile = false
     @State private var showAddVitals = false
     @State private var selectedHospital: HospitalModel?
     @State private var activeSheet: ActiveSheet?
     @State private var coordinateSpace = UUID()
-    @State private var profileController = PatientProfileController()
+    @State private var profileControllers = PatientProfileController()
     @State private var selectedTab = 0
     @AppStorage("current_user_id") private var currentUserId: String?
     @AppStorage("userId") private var userId: String?
+    @StateObject private var profileController = PatientProfileController()
+    @State private var showBloodDonationRegistration = false
+    @State private var isRegisteredDonor = false
+    @State private var showBloodRequest = false
+    @State private var hasActiveBloodRequest = false
+    @State private var showCancelRegistrationAlert = false
+    @State private var showCancelRequestAlert = false
+    @StateObject private var bloodController = BloodDonationController.shared
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -59,12 +68,19 @@ struct HomeTabView: View {
                     }
                     .tag(1)
                 
-                bloodDonateTab
+                labReportsTab
                     .tabItem {
-                        Image(systemName: selectedTab == 2 ? "drop.fill" : "drop")
-                        Text("Blood Donate")
+                        Image(systemName: selectedTab == 2 ? "doc.text.fill" : "doc.text")
+                        Text("Lab Reports")
                     }
                     .tag(2)
+                
+                bloodDonateTab
+                    .tabItem {
+                        Image(systemName: selectedTab == 3 ? "drop.fill" : "drop")
+                        Text("Blood Donate")
+                    }
+                    .tag(3)
             }
             .accentColor(.blue)
             .onAppear {
@@ -96,19 +112,19 @@ struct HomeTabView: View {
                 Task {
                     if let id = userId ?? currentUserId {
                         print("📱 HomeTabView: Loading profile with user ID: \(id)")
-                        await profileController.loadProfile(userId: id)
-                        if let patient = profileController.patient {
+                        await profileControllers.loadProfile(userId: id)
+                        if let patient = profileControllers.patient {
                             print("📱 Successfully loaded profile for: \(patient.name)")
                             
                             // Fix appointment times when profile is loaded
                             print("🔧 Running appointment time fix")
                             try? await fixAppointmentTimes(for: patient.id)
-                        } else if let error = profileController.error {
+                        } else if let error = profileControllers.error {
                             print("📱 Error loading profile: \(error.localizedDescription)")
                             
                             // Try creating a test patient if loading failed
                             print("📱 Attempting to create test patient...")
-                            let success = await profileController.createAndInsertTestPatientInSupabase()
+                            let success = await profileControllers.createAndInsertTestPatientInSupabase()
                             if success {
                                 print("✅ Test patient created and loaded successfully")
                             } else {
@@ -258,9 +274,9 @@ struct HomeTabView: View {
                     try? await hospitalVM.fetchAppointments(for: userId)
                     
                     // Load patient profile data
-                    if profileController.patient == nil {
+                    if profileControllers.patient == nil {
                         print("🔄 Loading patient profile data")
-                        await profileController.loadProfile(userId: userId)
+                        await profileControllers.loadProfile(userId: userId)
                     }
                 }
             }
@@ -270,9 +286,9 @@ struct HomeTabView: View {
                     appointmentManager.refreshAppointments()
                     
                     // Ensure profile data is loaded when tab appears
-                    if profileController.patient == nil {
+                    if profileControllers.patient == nil {
                         Task {
-                            await profileController.loadProfile(userId: userId)
+                            await profileControllers.loadProfile(userId: userId)
                         }
                     }
                 }
@@ -325,58 +341,207 @@ struct HomeTabView: View {
         NavigationStack {
             VStack {
                 List {
-                    if appointmentManager.appointments.filter({ $0.status == .completed || $0.status == .cancelled }).isEmpty {
+                    // Explicitly filter for completed appointments
+                    let completedAppointments = appointmentManager.appointments.filter { 
+                        print("Appointment status: \($0.status.rawValue)") // Debug print
+                        return $0.status == .completed 
+                    }
+                    let cancelledAppointments = appointmentManager.appointments.filter { $0.status == .cancelled }
+                    
+                    if completedAppointments.isEmpty && cancelledAppointments.isEmpty {
                         Text("No appointment history")
                             .foregroundColor(.gray)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding()
-                            .listRowBackground(Color.clear)
                     } else {
-                        Section(header: Text("Completed Appointments")
-                            .font(.headline)
-                            .foregroundColor(.black)
-                            .padding(.top, 10)) {
-                            ForEach(appointmentManager.appointments.filter { $0.status == .completed }, id: \.id) { appointment in
-                                NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
-                                    AppointmentHistoryCard(appointment: appointment)
-                                        .listRowBackground(Color.green.opacity(0.1))
+                        if !completedAppointments.isEmpty {
+                            Section(header: Text("Completed Appointments")) {
+                                ForEach(completedAppointments) { appointment in
+                                    NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
+                                        AppointmentHistoryCard(appointment: appointment)
+                                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                    }
+                                    .listRowBackground(Color.green.opacity(0.1))
                                 }
-                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                             }
                         }
                         
-                        Section(header: Text("Cancelled Appointments")
-                            .font(.headline)
-                            .foregroundColor(.black)
-                            .padding(.top, 10)) {
-                            ForEach(appointmentManager.appointments.filter { $0.status == .cancelled }, id: \.id) { appointment in
-                                AppointmentHistoryCard(appointment: appointment, isCancelled: true)
-                                    .listRowBackground(Color.red.opacity(0.1))
-                                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        if !cancelledAppointments.isEmpty {
+                            Section(header: Text("Cancelled Appointments")) {
+                                ForEach(cancelledAppointments) { appointment in
+                                    AppointmentHistoryCard(appointment: appointment, isCancelled: true)
+                                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                        .listRowBackground(Color.red.opacity(0.1))
+                                }
                             }
                         }
                     }
                 }
                 .listStyle(InsetGroupedListStyle())
-                .scrollContentBackground(.hidden)
-                .background(Color(.systemGray6))
+                .refreshable {
+                    print("🔄 Manually refreshing appointments history")
+                    appointmentManager.refreshAppointments()
+                }
             }
-            .background(Color(.systemGray6))
-            .navigationTitle("Appointment History")
-            .navigationBarTitleDisplayMode(.inline)
-            .refreshable {
-                print("🔃 Manually refreshing appointment history")
+            .navigationTitle("Appointments History")
+            .onAppear {
+                print("📱 History tab appeared - refreshing appointments")
                 appointmentManager.refreshAppointments()
             }
         }
     }
     
+    private var labReportsTab: some View {
+        NavigationStack {
+            labReportsSection
+                .navigationTitle("Lab Reports")
+        }
+    }
+    
     private var bloodDonateTab: some View {
         NavigationStack {
-            Color(.systemGray6)
-                .ignoresSafeArea()
-                .navigationTitle("Blood Donation")
-                .navigationBarTitleDisplayMode(.inline)
+            ScrollView {
+                VStack(spacing: 20) {
+                    if isRegisteredDonor {
+                        // Registered Donor Card
+                        RegisteredDonorCard(onCancelRegistration: { showCancelRegistrationAlert = true })
+                    }
+                    
+                    // Active Blood Request Card (if exists)
+                    if hasActiveBloodRequest {
+                        ActiveBloodRequestCard(
+                            bloodRequests: bloodController.bloodRequests,
+                            onCancelRequest: { showCancelRequestAlert = true }
+                        )
+                    }
+                    
+                    // Blood Request History
+                    if !bloodController.bloodRequests.isEmpty {
+                        BloodRequestHistoryView(bloodRequests: bloodController.bloodRequests)
+                    }
+                    
+                    // Main Actions
+                    VStack(spacing: 15) {
+                        if !isRegisteredDonor {
+                            Text("Blood Donation")
+                                .font(.title)
+                                .fontWeight(.bold)
+                            
+                            Text("Be a lifesaver by donating blood")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            Button(action: {
+                                showBloodDonationRegistration = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "heart.fill")
+                                    Text("Register as Blood Donor")
+                                }
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.teal)
+                                .cornerRadius(10)
+                            }
+                            .padding(.horizontal)
+                        }
+                        
+                        if !hasActiveBloodRequest {
+                            Button(action: {
+                                showBloodRequest = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "drop.fill")
+                                    Text("Request Blood")
+                                }
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.red)
+                                .cornerRadius(10)
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.top)
+            }
+            .navigationTitle("Blood Donation")
+            .alert("Cancel Blood Donor Registration", isPresented: $showCancelRegistrationAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Confirm", role: .destructive) {
+                    if let patient = profileControllers.patient {
+                        Task {
+                            do {
+                                _ = try await PatientController.shared.updateBloodDonorStatus(id: patient.id, isDonor: false)
+                                isRegisteredDonor = false
+                            } catch {
+                                print("Error cancelling registration: \(error.localizedDescription)")
+                            }
+                        }
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to cancel your blood donor registration? This will remove you from the donor list.")
+            }
+            .alert("Cancel Blood Request", isPresented: $showCancelRequestAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Confirm", role: .destructive) {
+                    if let activeRequest = bloodController.bloodRequests.first(where: { $0.activityStatus }) {
+                        Task {
+                            if let patientId = UserDefaults.standard.string(forKey: "current_patient_id") {
+                                let success = await bloodController.cancelBloodRequest(requestId: activeRequest.id)
+                                if success {
+                                    hasActiveBloodRequest = false
+                                    await bloodController.fetchBloodRequests(patientId: patientId)
+                                }
+                            }
+                        }
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to cancel your blood request? This action cannot be undone.")
+            }
+            .sheet(isPresented: $showBloodDonationRegistration) {
+                if let patient = profileControllers.patient {
+                    BloodDonationRegistrationView(isRegistered: $isRegisteredDonor, patientId: patient.id)
+                } else {
+                    // Show error view if patient data is not available
+                    VStack {
+                        Text("Error")
+                            .font(.title)
+                            .foregroundColor(.red)
+                        Text("Unable to load patient data. Please try again later.")
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.gray)
+                        Button("Dismiss") {
+                            showBloodDonationRegistration = false
+                        }
+                        .padding()
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                        .padding(.top)
+                    }
+                    .padding()
+                }
+            }
+            .sheet(isPresented: $showBloodRequest) {
+                BloodRequestView(hasActiveRequest: $hasActiveBloodRequest)
+            }
+            .onAppear {
+                if let patientId = UserDefaults.standard.string(forKey: "current_patient_id") {
+                    Task {
+                        hasActiveBloodRequest = await bloodController.hasActiveRequest(patientId: patientId)
+                        await bloodController.fetchBloodRequests(patientId: patientId)
+                    }
+                }
+            }
         }
     }
     
@@ -402,7 +567,7 @@ struct HomeTabView: View {
     private var headerSection: some View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
-                if let patientName = profileController.patient?.name {
+                if let patientName = profileControllers.patient?.name {
                     Text("Welcome Back, \(patientName)!")
                         .font(.title)
                         .fontWeight(.bold)
@@ -426,13 +591,13 @@ struct HomeTabView: View {
                         
                         // Show the profile after we've attempted to load data
                         DispatchQueue.main.async {
-                            self.profileController = controller
+                            self.profileControllers = controller
                             self.showProfile = true
                         }
                     }
                 } else {
                     // If no user ID, still show the profile with the empty controller
-                    self.profileController = controller
+                    self.profileControllers = controller
                     self.showProfile = true
                 }
             }) {
@@ -442,7 +607,7 @@ struct HomeTabView: View {
                     .foregroundColor(.teal)
             }
             .sheet(isPresented: $showProfile) {
-                PatientProfileView(profileController: profileController)
+                PatientProfileView(profileController: profileControllers)
             }
         }
         .padding()
@@ -509,6 +674,73 @@ struct HomeTabView: View {
         .padding(.vertical)
     }
 
+    private var labReportsSection: some View {
+        List {
+            if labReportManager.isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            } else if let error = labReportManager.error {
+                Text(error.localizedDescription)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            } else if labReportManager.labReports.isEmpty {
+                Text("No lab reports available")
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            } else {
+                ForEach(labReportManager.labReports) { report in
+                    PatientLabReportCard(report: report)
+                        .padding(.vertical, 4)
+                }
+            }
+        }
+        .refreshable {
+            if let userId = userId {
+                Task {
+                    do {
+                        let result = try await SupabaseController.shared.client
+                            .from("patients")
+                            .select("patient_id")
+                            .eq("id", value: userId)
+                            .execute()
+                            .value
+                        
+                        if let patientId = (result as? [[String: Any]])?.first?["patient_id"] as? String {
+                            print("📍 Found patient_id: \(patientId)")
+                            labReportManager.fetchLabReports(for: patientId)
+                        }
+                    } catch {
+                        print("❌ Error getting patient ID: \(error)")
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if let userId = userId {
+                Task {
+                    do {
+                        let result = try await SupabaseController.shared.client
+                            .from("patients")
+                            .select("patient_id")
+                            .eq("id", value: userId)
+                            .execute()
+                            .value
+                        
+                        if let patientId = (result as? [[String: Any]])?.first?["patient_id"] as? String {
+                            print("📍 Found patient_id: \(patientId)")
+                            labReportManager.fetchLabReports(for: patientId)
+                        }
+                    } catch {
+                        print("❌ Error getting patient ID: \(error)")
+                    }
+                }
+            }
+        }
+    }
+    
     // Pull-to-refresh control
     struct RefreshControl: View {
         var coordinateSpace: CoordinateSpace
@@ -518,45 +750,50 @@ struct HomeTabView: View {
         
         var body: some View {
             GeometryReader { geometry in
-                if geometry.frame(in: coordinateSpace).minY > 50 {
-                    Spacer()
-                        .onAppear {
-                            if !isRefreshing {
-                                isRefreshing = true
-                                onRefresh()
-                                
-                                // Reset after delay
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                                    isRefreshing = false
-                                }
-                            }
-                        }
-                } else if geometry.frame(in: coordinateSpace).minY < 1 {
-                    Spacer()
-                        .onAppear {
-                            isRefreshing = false
-                        }
+                let offset = geometry.frame(in: coordinateSpace).minY
+                VStack {
+                    refreshStatusView(offset: offset)
                 }
-                
-                HStack {
-                    Spacer()
-                    if isRefreshing {
-                        ProgressView()
-                    } else if geometry.frame(in: coordinateSpace).minY > 20 {
-                        Text("Release to refresh")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    } else if geometry.frame(in: coordinateSpace).minY > 5 {
-                        Text("Pull to refresh")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    Spacer()
+                .onChange(of: offset) { newOffset in
+                    checkForRefreshTrigger(offset: newOffset)
                 }
-                .frame(height: geometry.frame(in: coordinateSpace).minY > 0 ? geometry.frame(in: coordinateSpace).minY : 0)
-                .offset(y: -10)
             }
             .frame(height: 50)
+        }
+        
+        @ViewBuilder
+        private func refreshStatusView(offset: CGFloat) -> some View {
+            HStack {
+                Spacer()
+                if isRefreshing {
+                    ProgressView()
+                } else if offset > 20 {
+                    Text("Release to refresh")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                } else if offset > 5 {
+                    Text("Pull to refresh")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                Spacer()
+            }
+            .frame(height: max(0, offset))
+            .offset(y: -10)
+        }
+        
+        private func checkForRefreshTrigger(offset: CGFloat) {
+            if offset > 50 && !isRefreshing {
+                isRefreshing = true
+                onRefresh()
+                
+                // Reset after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    isRefreshing = false
+                }
+            } else if offset < 1 {
+                isRefreshing = false
+            }
         }
     }
 
@@ -657,11 +894,12 @@ struct HomeTabView: View {
 struct AppointmentHistoryCard: View {
     let appointment: Appointment
     var isCancelled: Bool = false
+    @State private var isLoading = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading) {
                     Text(appointment.doctor.name)
                         .font(.headline)
                     Text(appointment.doctor.specialization)
@@ -670,43 +908,41 @@ struct AppointmentHistoryCard: View {
                 }
                 Spacer()
                 
-                Text(isCancelled ? "Cancelled" : "Completed")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(isCancelled ? .red : .green)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(isCancelled ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
-                    .cornerRadius(8)
-            }
-            
-            Divider()
-                .padding(.vertical, 4)
-            
-            HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "calendar")
-                        .foregroundColor(.gray)
-                    Text(appointment.date.formatted(date: .long, time: .omitted))
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Text(isCancelled ? "Cancelled" : "Completed")
+                        .font(.caption)
+                        .foregroundColor(isCancelled ? .red : .green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(isCancelled ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
+                        .cornerRadius(8)
                 }
-                .font(.subheadline)
-                
-                Spacer()
             }
             
-            HStack(spacing: 8) {
+            HStack {
+                Image(systemName: "calendar")
+                Text(appointment.date.formatted(date: .long, time: .omitted))
+                Spacer()
                 Image(systemName: "clock")
-                    .foregroundColor(.gray)
                 let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: appointment.time)!
                 Text("\(appointment.time.formatted(date: .omitted, time: .shortened)) to \(endTime.formatted(date: .omitted, time: .shortened))")
-                    .font(.subheadline)
             }
+            .font(.subheadline)
+            .foregroundColor(.gray)
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
+        .padding()
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
+        .onAppear {
+            isLoading = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isLoading = false
+            }
+        }
     }
 }
 
@@ -733,5 +969,142 @@ struct HospitalSearchBar: View {
         .background(Color.white)
         .cornerRadius(10)
         .shadow(color: .gray.opacity(0.2), radius: 3)
+    }
+}
+
+struct BloodRequestHistoryView: View {
+    let bloodRequests: [BloodDonationRequest]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Request History")
+                .font(.title2)
+                .fontWeight(.bold)
+                .padding(.horizontal)
+            
+            ForEach(bloodRequests.filter { !$0.activityStatus }) { request in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Blood Group: \(request.bloodGroup)")
+                            .font(.headline)
+                        Spacer()
+                        Text(request.createdAt.formatted(date: .long, time: .shortened))
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Text("Status: Completed")
+                        .font(.subheadline)
+                        .foregroundColor(.green)
+                }
+                .padding()
+                .background(Color.white)
+                .cornerRadius(10)
+                .shadow(color: .gray.opacity(0.1), radius: 5)
+                .padding(.horizontal)
+            }
+        }
+        .padding(.vertical)
+    }
+}
+
+struct ActiveBloodRequestCard: View {
+    let bloodRequests: [BloodDonationRequest]
+    let onCancelRequest: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 15) {
+            // Header
+            HStack {
+                Image(systemName: "drop.fill")
+                    .font(.title2)
+                    .foregroundColor(.red)
+                Text("Active Blood Request")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding(.bottom, 5)
+            
+            // Request Details
+            if let activeRequest = bloodRequests.first(where: { $0.activityStatus }) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Blood Group:")
+                            .foregroundColor(.gray)
+                        Text(activeRequest.bloodGroup)
+                            .fontWeight(.medium)
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Text("Requested on:")
+                            .foregroundColor(.gray)
+                        Text(activeRequest.createdAt.formatted(date: .long, time: .shortened))
+                            .fontWeight(.medium)
+                        Spacer()
+                    }
+                }
+                .font(.subheadline)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.white)
+                .cornerRadius(10)
+            }
+            
+            // Cancel Button
+            Button(action: onCancelRequest) {
+                HStack {
+                    Image(systemName: "xmark.circle.fill")
+                    Text("Cancel Request")
+                }
+                .font(.subheadline)
+                .foregroundColor(.red)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .background(Color.red.opacity(0.1))
+                .cornerRadius(8)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemGray6))
+        .cornerRadius(15)
+        .padding(.horizontal)
+    }
+}
+
+struct RegisteredDonorCard: View {
+    let onCancelRegistration: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 15) {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 40))
+                .foregroundColor(.red)
+            
+            Text("Registered Blood Donor")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Thank you for your commitment to saving lives!")
+                .font(.subheadline)
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+            
+            Button(action: onCancelRegistration) {
+                Text("Cancel Registration")
+                    .font(.headline)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.white)
+                    .cornerRadius(10)
+            }
+            .padding(.top)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(15)
+        .padding()
     }
 }
