@@ -271,8 +271,8 @@ class AdminController {
         
         // First try to find the admin in the hospital_admins table
         let admins = try await supabase.select(
-            from: "hospital_admins",
-            where: "user_id",
+            from: "hospital_admins", 
+            where: "user_id", 
             equals: userId
         )
         
@@ -1257,7 +1257,7 @@ class AdminController {
             let isoFormatter = ISO8601DateFormatter()
             if let parsedDate = isoFormatter.date(from: createdAtString) {
                 createdAt = parsedDate
-            } else {
+        } else {
                 // Try other formats
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
@@ -1282,7 +1282,7 @@ class AdminController {
             let isoFormatter = ISO8601DateFormatter()
             if let parsedDate = isoFormatter.date(from: updatedAtString) {
                 updatedAt = parsedDate
-            } else {
+        } else {
                 // Try other formats
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
