@@ -30,43 +30,6 @@ struct DoctorsListView: View {
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // iOS-style navigation bar
-                HStack(spacing: 16) {
-                    // Back button
-                    Button(action: {
-                        dismiss()
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 16, weight: .semibold))
-                            Text("Back")
-                        }
-                        .foregroundColor(.blue)
-                    }
-                    
-                    Spacer()
-                    
-                    // Title
-                    Text("Doctors")
-                        .font(.headline)
-                        .foregroundColor(.black)
-                    
-                    Spacer()
-                    
-                    // Invisible placeholder to center the title
-                    Button(action: {}) {
-                        HStack(spacing: 4) {
-                            Text("Back")
-                            Image(systemName: "chevron.left")
-                        }
-                        .opacity(0)
-                    }
-                }
-                .padding(.horizontal)
-                .frame(height: 44)
-                .background(Color.white.opacity(0.9))
-                .shadow(color: .gray.opacity(0.1), radius: 5)
-                
                 // Doctors List
                 ScrollView {
                     VStack(spacing: 20) {
@@ -135,6 +98,8 @@ struct DoctorsListView: View {
                 .padding(.bottom, 20)
             }
         }
+        .navigationTitle("Doctors")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showAddDoctor) {
             AddDoctorView { activity in
                 // Refresh the list after adding a doctor
