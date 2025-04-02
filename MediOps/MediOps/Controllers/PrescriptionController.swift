@@ -14,6 +14,7 @@ class PrescriptionController: ObservableObject {
     func fetchPrescriptionDetails(for appointmentId: String, doctorId: String) async {
         isLoading = true
         error = nil
+        prescription = nil // Reset prescription
         
         do {
             // 1. Fetch prescription
@@ -24,14 +25,34 @@ class PrescriptionController: ObservableObject {
                 equals: appointmentId
             )
             
+            print("📋 Found \(prescriptionResults.count) prescriptions")
+            
             if let prescriptionData = prescriptionResults.first {
-                print("✅ Found prescription data")
-                let jsonData = try JSONSerialization.data(withJSONObject: prescriptionData)
-                let prescription = try JSONDecoder().decode(Prescription.self, from: jsonData)
+                print("✅ Found prescription data: \(prescriptionData)")
+                
+                // Manual mapping to ensure all fields are properly handled
+                let prescription = Prescription(
+                    id: prescriptionData["id"] as? String ?? UUID().uuidString,
+                    appointmentId: prescriptionData["appointment_id"] as? String ?? appointmentId,
+                    doctorId: prescriptionData["doctor_id"] as? String ?? doctorId,
+                    patientId: prescriptionData["patient_id"] as? String ?? "",
+                    prescriptionDate: prescriptionData["prescription_date"] as? String ?? "",
+                    medications: prescriptionData["medications"] as? [String: String] ?? [:],
+                    labTests: prescriptionData["lab_tests"] as? [String: String],
+                    precautions: prescriptionData["precautions"] as? String,
+                    previousPrescriptionURL: prescriptionData["previous_prescription_url"] as? String,
+                    labReportsURL: prescriptionData["lab_reports_url"] as? String,
+                    additionalNotes: prescriptionData["additional_notes"] as? String,
+                    createdAt: prescriptionData["created_at"] as? String ?? ""
+                )
+                
                 self.prescription = prescription
+                print("✅ Successfully mapped prescription data")
+            } else {
+                print("⚠️ No prescription found for appointment: \(appointmentId)")
             }
             
-            // 2. Fetch doctor details using doctorId from appointment
+            // 2. Fetch doctor details
             print("🔍 Fetching doctor details for ID: \(doctorId)")
             let doctorResults = try await supabase.select(
                 from: "doctors",
@@ -43,7 +64,6 @@ class PrescriptionController: ObservableObject {
                 print("✅ Found doctor data")
                 let hospitalId = doctorData["hospital_id"] as? String ?? ""
                 
-                // Create HospitalDoctor manually from the raw data
                 let doctor = HospitalDoctor(
                     id: doctorData["id"] as? String ?? "",
                     hospitalId: doctorData["hospital_id"] as? String ?? "",
@@ -55,13 +75,13 @@ class PrescriptionController: ObservableObject {
                     email: doctorData["email"] as? String ?? "",
                     contactNumber: doctorData["contact_number"] as? String,
                     doctorStatus: doctorData["doctor_status"] as? String ?? "active",
-                    rating: 0.0, // Default value since it's not in the database
-                    consultationFee: 0.0 // Default value since it's not in the database
+                    rating: 0.0,
+                    consultationFee: 0.0
                 )
                 
                 self.doctor = doctor
                 
-                // 3. Fetch hospital details using doctor's hospital_id
+                // 3. Fetch hospital details
                 if !hospitalId.isEmpty {
                     print("🔍 Fetching hospital details for ID: \(hospitalId)")
                     let hospitalResults = try await supabase.select(
@@ -72,8 +92,6 @@ class PrescriptionController: ObservableObject {
                     
                     if let hospitalData = hospitalResults.first {
                         print("✅ Found hospital data")
-                        
-                        // Create HospitalModel manually from the raw data
                         let hospital = HospitalModel(
                             id: hospitalData["id"] as? String ?? "",
                             hospitalName: hospitalData["hospital_name"] as? String ?? "",
@@ -94,7 +112,7 @@ class PrescriptionController: ObservableObject {
                             numberOfDoctors: hospitalData["number_of_doctors"] as? Int ?? 0,
                             numberOfAppointments: hospitalData["number_of_appointments"] as? Int ?? 0,
                             description: hospitalData["description"] as? String,
-                            rating: 0.0 // Default value since it's not in the database
+                            rating: 0.0
                         )
                         
                         self.hospital = hospital
@@ -102,12 +120,11 @@ class PrescriptionController: ObservableObject {
                 }
             }
             
-            self.isLoading = false
-            
         } catch {
-            print("❌ Error fetching details: \(error)")
+            print("❌ Error fetching prescription details: \(error)")
             self.error = error
-            self.isLoading = false
         }
+        
+        self.isLoading = false
     }
 }

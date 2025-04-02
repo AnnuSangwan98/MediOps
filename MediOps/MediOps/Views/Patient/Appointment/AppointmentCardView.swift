@@ -97,73 +97,110 @@ struct AppointmentCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            HStack(spacing: 15) {
-                Circle()
-                    .fill(Color.teal)
-                    .frame(width: 50, height: 50)
-                    .overlay(
-                        Image(systemName: "person.fill")
-                            .foregroundColor(.white)
-                    )
+        NavigationLink(
+            destination: appointment.status == .completed ? PrescriptionDetailView(appointment: appointment) : nil
+        ) {
+            VStack(alignment: .leading, spacing: 15) {
+                HStack(spacing: 15) {
+                    Circle()
+                        .fill(Color.teal)
+                        .frame(width: 50, height: 50)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.white)
+                        )
 
-                VStack(alignment: .leading) {
-                    Text(appointment.doctor.name)
-                        .font(.headline)
-                    Text(appointment.doctor.specialization)
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
+                    VStack(alignment: .leading) {
+                        Text(appointment.doctor.name)
+                            .font(.headline)
+                        Text(appointment.doctor.specialization)
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+
+                    Spacer()
+
+                    Text(appointment.status.rawValue)
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.teal.opacity(0.1))
+                        .foregroundColor(.teal)
+                        .cornerRadius(8)
                 }
 
-                Spacer()
+                Divider()
 
-                Text(appointment.status.rawValue)
-                    .font(.caption)
-                    .padding(.horizontal, 8)
+                HStack {
+                    Image(systemName: "calendar")
+                    Text(appointment.date.formatted(date: .long, time: .omitted))
+                }
+
+                HStack {
+                    Image(systemName: "clock")
+                    Text(formatTimeRange(appointment.time))
+                }
+
+                // Premium badge if applicable
+                if let isPremium = appointment.isPremium, isPremium {
+                    HStack {
+                        Image(systemName: "star.fill")
+                            .foregroundColor(.yellow)
+                        Text("Premium Appointment")
+                            .font(.subheadline)
+                            .foregroundColor(.black)
+                    }
                     .padding(.vertical, 4)
-                    .background(Color.teal.opacity(0.1))
-                    .foregroundColor(.teal)
+                    .padding(.horizontal, 8)
+                    .background(Color.yellow.opacity(0.1))
                     .cornerRadius(8)
-            }
+                }
 
-            Divider()
-
-            HStack {
-                Image(systemName: "calendar")
-                Text(appointment.date.formatted(date: .long, time: .omitted))
-            }
-
-            HStack {
-                Image(systemName: "clock")
-                Text(formatTimeRange(appointment.time))
-            }
-
-            // Centered Cancel Button
-            Button(action: { showCancelAlert = true }) {
-                Text("Cancel Appointment")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.red)
+                // Show Cancel Button only for upcoming appointments
+                if appointment.status == .upcoming {
+                    Button(action: { showCancelAlert = true }) {
+                        Text("Cancel Appointment")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.red)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                    }
+                    .alert(isPresented: $showCancelAlert) {
+                        Alert(
+                            title: Text("Cancel Appointment"),
+                            message: Text("Are you sure you want to cancel this appointment?"),
+                            primaryButton: .destructive(Text("Yes")) {
+                                AppointmentManager.shared.cancelAppointment(appointment.id)
+                            },
+                            secondaryButton: .cancel()
+                        )
+                    }
+                }
+                
+                // Show View Prescription button for completed appointments
+                if appointment.status == .completed {
+                    HStack {
+                        Image(systemName: "doc.text.fill")
+                            .foregroundColor(.teal)
+                        Text("View Prescription")
+                            .font(.subheadline)
+                            .foregroundColor(.teal)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(.gray)
+                    }
                     .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(8)
+                }
             }
-            .alert(isPresented: $showCancelAlert) {
-                Alert(
-                    title: Text("Cancel Appointment"),
-                    message: Text("Are you sure you want to cancel this appointment?"),
-                    primaryButton: .destructive(Text("Yes")) {
-                        AppointmentManager.shared.cancelAppointment(appointment.id)
-                    },
-                    secondaryButton: .cancel()
-                )
-            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
         }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .buttonStyle(PlainButtonStyle()) // This ensures the card doesn't get the default button styling
     }
 }
 

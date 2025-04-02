@@ -11,7 +11,7 @@ class AppointmentManager: ObservableObject {
         // Try to load any appointments from the last session
         if let userId = UserDefaults.standard.string(forKey: "current_user_id") {
             Task {
-                try? await HospitalViewModel.shared.fetchAppointments(for: userId)
+                await refreshAppointmentsAsync()
             }
         }
     }
@@ -143,7 +143,24 @@ class AppointmentManager: ObservableObject {
     
     @MainActor
     func setAppointments(_ newAppointments: [Appointment]) {
-        appointments = newAppointments
+        // Create a set of IDs from new appointments for quick lookup
+        let newAppointmentIds = Set(newAppointments.map { $0.id })
+        
+        // Keep only local appointments that are not in the new set and are upcoming
+        let localOnlyAppointments = appointments.filter { appointment in
+            !newAppointmentIds.contains(appointment.id) && appointment.status == .upcoming
+        }
+        
+        // Combine local-only appointments with new appointments
+        appointments = newAppointments + localOnlyAppointments
+        
+        // Sort appointments by date and time
+        appointments.sort { (a1, a2) -> Bool in
+            if a1.date == a2.date {
+                return a1.time < a2.time
+            }
+            return a1.date < a2.date
+        }
     }
     
     func clearAppointments() {
@@ -158,38 +175,133 @@ class AppointmentManager: ObservableObject {
     
     @MainActor
     private func refreshAppointmentsAsync() async {
-        // If already refreshing, don't start another refresh
         if isRefreshing {
             return
         }
         
         isRefreshing = true
+        print("🔄 Starting appointment refresh")
         
         guard let userId = UserDefaults.standard.string(forKey: "current_user_id") else {
+            print("❌ No user ID found for refresh")
             isRefreshing = false
             return
         }
         
         do {
-            // First, get the patient ID associated with this user ID
             let supabase = SupabaseController.shared
             
-            // Query patients table to get patient ID for current user
+            print("🔍 Looking up patient record for user: \(userId)")
             let patientResults = try await supabase.select(
                 from: "patients",
                 where: "user_id",
                 equals: userId
             )
             
-            if let patientData = patientResults.first, let patientId = patientData["id"] as? String {
-                // Now fetch appointments using the patient ID
-                try await HospitalViewModel.shared.fetchAppointments(for: patientId)
+            guard let patientData = patientResults.first else {
+                print("❌ Could not find patient record for user: \(userId)")
+                isRefreshing = false
+                return
             }
+            
+            let patientId = (patientData["patient_id"] as? String) ?? (patientData["id"] as? String)
+            
+            guard let finalPatientId = patientId else {
+                print("❌ Could not find patient_id for user: \(userId)")
+                isRefreshing = false
+                return
+            }
+            
+            print("✅ Found patient_id: \(finalPatientId)")
+            
+            // Fetch appointments with specific columns
+            let appointmentResults = try await supabase.select(
+                from: "appointments",
+                where: "patient_id",
+                equals: finalPatientId
+            )
+            
+            print("📊 Found \(appointmentResults.count) appointments in total")
+            
+            var newAppointments: [Appointment] = []
+            for appointmentData in appointmentResults {
+                if let appointmentId = appointmentData["id"] as? String,
+                   let doctorId = appointmentData["doctor_id"] as? String,
+                   let statusString = appointmentData["status"] as? String {
+                    
+                    print("🔍 Processing appointment: \(appointmentId)")
+                    print("   Raw status from DB: \(statusString)")
+                    
+                    // Fetch doctor details
+                    let doctorResults = try await supabase.select(
+                        from: "doctors",
+                        where: "id",
+                        equals: doctorId
+                    )
+                    
+                    if let doctorData = doctorResults.first,
+                       let name = doctorData["name"] as? String,
+                       let specialization = doctorData["specialization"] as? String {
+                        
+                        let doctor = Models.Doctor.createSimplifiedDoctor(
+                            id: doctorId,
+                            name: name,
+                            specialization: specialization
+                        )
+                        
+                        // Parse the appointment date
+                        let dateString = appointmentData["appointment_date"] as? String ?? ""
+                        let dateFormatter = DateFormatter()
+                        dateFormatter.dateFormat = "yyyy-MM-dd"
+                        let date = dateFormatter.date(from: dateString) ?? Date()
+                        
+                        // Map the status string to AppointmentStatus
+                        let status: AppointmentStatus
+                        switch statusString.lowercased() {
+                        case "completed":
+                            status = .completed
+                        case "cancelled":
+                            status = .cancelled
+                        default:
+                            status = .upcoming
+                        }
+                        
+                        print("   Mapped status: \(status.rawValue)")
+                        
+                        let appointment = Appointment(
+                            id: appointmentId,
+                            doctor: doctor,
+                            date: date,
+                            time: date,
+                            status: status,
+                            startTime: appointmentData["slot_time"] as? String,
+                            endTime: appointmentData["slot_end_time"] as? String
+                        )
+                        
+                        newAppointments.append(appointment)
+                    }
+                }
+            }
+            
+            // Debug print appointment counts by status
+            let completedCount = newAppointments.filter { $0.status == .completed }.count
+            let upcomingCount = newAppointments.filter { $0.status == .upcoming }.count
+            let cancelledCount = newAppointments.filter { $0.status == .cancelled }.count
+            
+            print("📊 Appointment Status Summary:")
+            print("   Total: \(newAppointments.count)")
+            print("   Completed: \(completedCount)")
+            print("   Upcoming: \(upcomingCount)")
+            print("   Cancelled: \(cancelledCount)")
+            
+            // Update the appointments array
+            self.appointments = newAppointments
+            
+            print("✅ Successfully refreshed appointments")
         } catch {
-            // Error handled silently
+            print("❌ Error refreshing appointments: \(error.localizedDescription)")
         }
         
         isRefreshing = false
     }
 }
-

@@ -1,6 +1,7 @@
 import SwiftUI
 import class MediOps.SupabaseController
 import enum MediOps.SupabaseError
+import SafariServices
 
 struct DoctorAppointmentDetailsView: View {
     let appointment: DoctorAppointmentModel
@@ -19,6 +20,11 @@ struct DoctorAppointmentDetailsView: View {
     @State private var showPrescriptionSuccess = false
     @State private var showPrescriptionList = false
     @State private var prescriptionsList: [PrescriptionViewModel] = []
+    @State private var showLabReports = false
+    @State private var patientLabReports: [PatientLabReport] = []
+    @State private var isLoadingLabReports = false
+    @State private var labReportsError: String? = nil
+    @State private var hasPrescription = false
     
     var body: some View {
         ScrollView {
@@ -301,6 +307,30 @@ struct DoctorAppointmentDetailsView: View {
                                     .font(.body)
                             }
                         }
+                        
+                        Divider()
+                        
+                        // Lab Reports Button
+                        Button(action: {
+                            fetchPatientLabReports()
+                            showLabReports = true
+                        }) {
+                            HStack {
+                                Image(systemName: "doc.text.magnifyingglass")
+                                    .foregroundColor(.teal)
+                                
+                                Text("View Lab Reports")
+                                    .font(.body)
+                                    .foregroundColor(.teal)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.gray)
+                                    .font(.caption)
+                            }
+                            .padding(.vertical, 5)
+                        }
                     }
                 }
                 .padding()
@@ -312,61 +342,153 @@ struct DoctorAppointmentDetailsView: View {
                 // Action Buttons (based on appointment status)
                 if appointment.status == .upcoming {
                     VStack(spacing: 12) {
-                        Button(action: {
-                            showPrescriptionSheet = true
-                        }) {
-                            HStack {
-                                Spacer()
-                                Image(systemName: "prescription")
-                                Text("Write Prescription")
-                                Spacer()
-                            }
-                            .padding()
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
-                        }
-                        
-                        Button(action: {
-                            showCompletionConfirmation = true
-                        }) {
-                            HStack {
-                                Spacer()
-                                if isUpdatingStatus {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        .padding(.trailing, 5)
+                        // Action buttons card
+                        VStack(alignment: .leading, spacing: 15) {
+                            Text("Actions")
+                                .font(.headline)
+                                .padding(.bottom, 5)
+                                
+                            Divider()
+                            
+                            // Write Prescription Button
+                            Button(action: {
+                                if hasPrescription {
+                                    // If prescription exists, load it first for editing
+                                    loadPrescriptionForEdit()
                                 } else {
-                                    Image(systemName: "checkmark.circle.fill")
+                                    // If no prescription, create a new one
+                                    showPrescriptionSheet = true
                                 }
-                                Text("Mark as Completed")
-                                Spacer()
+                            }) {
+                                HStack {
+                                    Image(systemName: "pills.fill")
+                                        .foregroundColor(!isAppointmentTimeReached ? .gray : .blue)
+                                    
+                                    Text(hasPrescription ? "Edit Prescription" : "Write Prescription")
+                                        .font(.body)
+                                        .foregroundColor(!isAppointmentTimeReached ? .gray : .blue)
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(.gray)
+                                        .font(.caption)
+                                }
+                                .padding(.vertical, 8)
                             }
-                            .padding()
-                            .background(isUpdatingStatus ? Color.gray : Color.teal)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
+                            .disabled(!isAppointmentTimeReached)
+                            
+                            Divider()
+                            
+                            // View Prescriptions Button
+                            if hasPrescription {
+                                Button(action: {
+                                    fetchPrescriptions()
+                                    showPrescriptionList = true
+                                }) {
+                                    HStack {
+                                        Image(systemName: "list.clipboard")
+                                            .foregroundColor(.teal)
+                                        
+                                        Text("View Prescriptions")
+                                            .font(.body)
+                                            .foregroundColor(.teal)
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.gray)
+                                            .font(.caption)
+                                    }
+                                    .padding(.vertical, 8)
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            // Mark as Completed Button
+                            Button(action: {
+                                showCompletionConfirmation = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(!isAppointmentTimeReached ? .gray : .teal)
+                                    
+                                    Text("Mark as Completed")
+                                        .font(.body)
+                                        .foregroundColor(!isAppointmentTimeReached ? .gray : .teal)
+                                    
+                                    Spacer()
+                                    
+                                    if isUpdatingStatus {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle())
+                                            .scaleEffect(0.7)
+                                    } else {
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.gray)
+                                            .font(.caption)
+                                    }
+                                }
+                                .padding(.vertical, 8)
+                            }
+                            .disabled(!isAppointmentTimeReached || isUpdatingStatus)
                         }
-                        .disabled(isUpdatingStatus)
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(12)
+                        .shadow(color: Color.gray.opacity(0.1), radius: 5)
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
                     .padding(.top, 10)
+                } else {
+                    // For non-upcoming appointments, only show View Prescriptions if prescriptions exist
+                    if hasPrescription {
+                        VStack(alignment: .leading, spacing: 15) {
+                            Text("Actions")
+                                .font(.headline)
+                                .padding(.bottom, 5)
+                                
+                            Divider()
+                            
+                            // View Prescriptions Button
+                            Button(action: {
+                                fetchPrescriptions()
+                                showPrescriptionList = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "list.clipboard")
+                                        .foregroundColor(.teal)
+                                    
+                                    Text("View Prescriptions")
+                                        .font(.body)
+                                        .foregroundColor(.teal)
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(.gray)
+                                        .font(.caption)
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(12)
+                        .shadow(color: Color.gray.opacity(0.1), radius: 5)
+                        .padding(.horizontal)
+                        .padding(.top, 10)
+                    }
                 }
                 
-                Button(action: {
-                    fetchPrescriptions()
-                    showPrescriptionList = true
-                }) {
-                    HStack {
-                        Spacer()
-                        Image(systemName: "list.bullet.clipboard")
-                        Text("View Prescriptions")
-                        Spacer()
-                    }
-                    .padding()
-                    .background(Color.teal)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+                if !isAppointmentTimeReached {
+                    Text("Actions will be available at the scheduled appointment time")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.top, 4)
+                        .padding(.bottom, 8)
+                        .padding(.leading, 2)
                 }
                 
                 Spacer()
@@ -376,6 +498,13 @@ struct DoctorAppointmentDetailsView: View {
         .background(Color(.systemGray6).opacity(0.5).ignoresSafeArea())
         .onAppear {
             fetchPatientDetails()
+            checkForExistingPrescriptions()
+            
+            // Debug logs
+            print("DEBUG: Appointment date: \(appointment.appointmentDate)")
+            print("DEBUG: Appointment time: \(appointment.slotTime)")
+            print("DEBUG: Current time: \(Date())")
+            print("DEBUG: Is appointment time reached: \(isAppointmentTimeReached)")
         }
         .alert("Appointment Completed", isPresented: $showCompletionSuccess) {
             Button("OK") {
@@ -431,6 +560,14 @@ struct DoctorAppointmentDetailsView: View {
                 prescriptions: prescriptionsList
             )
         }
+        .sheet(isPresented: $showLabReports) {
+            PatientLabReportsView(
+                patientName: appointment.patientName,
+                reports: patientLabReports,
+                isLoading: isLoadingLabReports,
+                errorMessage: labReportsError
+            )
+        }
     }
     
     private func fetchPatientDetails() {
@@ -452,11 +589,11 @@ struct DoctorAppointmentDetailsView: View {
                     // Parse patient data
                     let name = patientData["name"] as? String ?? "Unknown"
                     let email = patientData["email"] as? String ?? "Not provided"
-                    let phone = patientData["phone"] as? String ?? "Not provided"
+                    let phone = patientData["phoneNumber"] as? String ?? "Not provided"
                     let gender = patientData["gender"] as? String ?? "Not specified"
                     let age = patientData["age"] as? Int ?? 0
                     let medicalHistory = patientData["medical_history"] as? String ?? ""
-                    let bloodGroup = patientData["blood_group"] as? String ?? "Not specified"
+                    let bloodGroup = patientData["bloodGroup"] as? String ?? "Not specified"
                     
                     // Create patient details model
                     let patient = PatientDetailModel(
@@ -530,6 +667,100 @@ struct DoctorAppointmentDetailsView: View {
         }
     }
     
+    private func loadPrescriptionForEdit() {
+        Task {
+            do {
+                let supabase = SupabaseController.shared
+                
+                // Fetch the latest prescription for this appointment
+                let result = try await supabase.select(
+                    from: "prescriptions",
+                    columns: "*",
+                    where: "appointment_id",
+                    equals: appointment.id
+                )
+                
+                // Since we can't sort with the API, sort the results here to get the latest
+                let sortedResults = result.sorted { first, second in
+                    guard let firstDate = first["prescription_date"] as? String,
+                          let secondDate = second["prescription_date"] as? String else {
+                        return false
+                    }
+                    return firstDate > secondDate
+                }
+                
+                guard let prescriptionData = sortedResults.first else {
+                    print("ERROR: No prescription found for editing")
+                    return
+                }
+                
+                // Create a new prescription data object to populate
+                var newPrescriptionData = DoctorPrescriptionData()
+                
+                // Parse medications
+                if let medications = prescriptionData["medications"] as? [[String: Any]] {
+                    var medicationList: [DoctorPrescriptionMedication] = []
+                    
+                    for med in medications {
+                        let medicineName = med["medicine_name"] as? String ?? ""
+                        let dosage = med["dosage"] as? String ?? ""
+                        let frequency = med["frequency"] as? String ?? ""
+                        let timing = med["timing"] as? String ?? ""
+                        let brandName = med["brand_name"] as? String ?? ""
+                        
+                        let medication = DoctorPrescriptionMedication(
+                            medicineName: medicineName,
+                            dosage: dosage,
+                            frequency: frequency,
+                            timing: timing,
+                            brandName: brandName
+                        )
+                        
+                        medicationList.append(medication)
+                    }
+                    
+                    newPrescriptionData.medications = medicationList
+                }
+                
+                // Parse lab tests
+                if let labTests = prescriptionData["lab_tests"] as? [[String: Any]] {
+                    var labTestList: [DoctorPrescriptionLabTest] = []
+                    
+                    for test in labTests {
+                        let testName = test["test_name"] as? String ?? ""
+                        let instructions = test["instructions"] as? String ?? ""
+                        
+                        let labTest = DoctorPrescriptionLabTest(
+                            testName: testName,
+                            instructions: instructions
+                        )
+                        
+                        labTestList.append(labTest)
+                    }
+                    
+                    newPrescriptionData.labTests = labTestList
+                }
+                
+                // Parse precautions and notes
+                newPrescriptionData.precautions = prescriptionData["precautions"] as? String ?? ""
+                newPrescriptionData.additionalNotes = prescriptionData["additional_notes"] as? String ?? ""
+                
+                // Update UI on main thread
+                await MainActor.run {
+                    self.prescriptionData = newPrescriptionData
+                    self.showPrescriptionSheet = true
+                }
+            } catch {
+                print("ERROR: Failed to load prescription for editing: \(error)")
+                
+                // If loading fails, just show an empty prescription sheet
+                await MainActor.run {
+                    self.showPrescriptionSheet = true
+                }
+            }
+        }
+    }
+    
     private func savePrescription() async throws {
         isSavingPrescription = true
         
@@ -548,12 +779,31 @@ struct DoctorAppointmentDetailsView: View {
             print("DEBUG: Appointment ID: \(appointment.id)")
             print("DEBUG: Patient ID: \(appointment.patientId)")
             
+            // If we already have a prescription, check if we should update it instead
+            if hasPrescription {
+                // First, fetch the existing prescription
+                let existingPrescriptions = try await supabase.select(
+                    from: "prescriptions",
+                    columns: "id",
+                    where: "appointment_id",
+                    equals: appointment.id
+                )
+                
+                if let existingPrescription = existingPrescriptions.first, let prescriptionId = existingPrescription["id"] as? String {
+                    print("DEBUG: Updating existing prescription ID: \(prescriptionId)")
+                    
+                    // Update the existing prescription
+                    return try await updateExistingPrescription(prescriptionId: prescriptionId)
+                }
+            }
+            
+            // If we reach here, create a new prescription
             // Generate a unique prescription ID (PRSR + 3 digits + 1 letter)
             let randomNum = String(format: "%03d", Int.random(in: 0...999))
             let randomLetter = String(UnicodeScalar(UInt8(65 + Int.random(in: 0...25))))
             let prescriptionId = "PRSR\(randomNum)\(randomLetter)"
             
-            print("DEBUG: Generated Prescription ID: \(prescriptionId)")
+            print("DEBUG: Generated new Prescription ID: \(prescriptionId)")
             
             // Validate medications
             guard !prescriptionData.medications.isEmpty else {
@@ -573,8 +823,6 @@ struct DoctorAppointmentDetailsView: View {
                 ]
             }
             
-            print("DEBUG: Medications JSON: \(medicationsJson)")
-            
             // Convert lab tests to JSON format if present
             let labTestsJson = prescriptionData.labTests.map { test in
                 [
@@ -582,8 +830,6 @@ struct DoctorAppointmentDetailsView: View {
                     "instructions": test.instructions
                 ]
             }
-            
-            print("DEBUG: Lab Tests JSON: \(labTestsJson)")
             
             // Format the current date in ISO8601 format
             let isoFormatter = ISO8601DateFormatter()
@@ -605,10 +851,8 @@ struct DoctorAppointmentDetailsView: View {
                 additional_notes: prescriptionData.additionalNotes.isEmpty ? nil : prescriptionData.additionalNotes
             )
             
-            print("DEBUG: Final Payload: \(payload)")
-            
             // Insert prescription into database
-            print("DEBUG: Attempting to insert prescription...")
+            print("DEBUG: Inserting new prescription...")
             try await supabase.insert(
                 into: "prescriptions",
                 data: payload
@@ -622,6 +866,7 @@ struct DoctorAppointmentDetailsView: View {
                 isSavingPrescription = false
                 showPrescriptionSheet = false
                 showPrescriptionSuccess = true
+                hasPrescription = true
             }
         } catch {
             print("DEBUG: Error saving prescription - Full Error: \(error)")
@@ -635,6 +880,82 @@ struct DoctorAppointmentDetailsView: View {
             }
             throw error
         }
+    }
+    
+    // Add a function to update an existing prescription
+    private func updateExistingPrescription(prescriptionId: String) async throws {
+        // Validate medications
+        guard !prescriptionData.medications.isEmpty else {
+            throw NSError(domain: "MediOps", code: 400, userInfo: [
+                NSLocalizedDescriptionKey: "Please add at least one medication."
+            ])
+        }
+        
+        // Convert medications to JSON format
+        let medicationsJson = prescriptionData.medications.map { med in
+            [
+                "medicine_name": med.medicineName,
+                "dosage": med.dosage,
+                "frequency": med.frequency,
+                "timing": med.timing,
+                "brand_name": med.brandName
+            ]
+        }
+        
+        // Convert lab tests to JSON format if present
+        let labTestsJson = prescriptionData.labTests.map { test in
+            [
+                "test_name": test.testName,
+                "instructions": test.instructions
+            ]
+        }
+        
+        // Format the current date in ISO8601 format for the update timestamp
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        let updateDateString = isoFormatter.string(from: Date())
+        
+        // Create an Encodable struct for the update
+        struct PrescriptionUpdateData: Encodable {
+            let medications: [[String: String]]
+            let lab_tests: [[String: String]]?
+            let precautions: String
+            let additional_notes: String
+            let updated_at: String
+        }
+        
+        // Create update data as an Encodable struct
+        let updateData = PrescriptionUpdateData(
+            medications: medicationsJson,
+            lab_tests: labTestsJson.isEmpty ? nil : labTestsJson,
+            precautions: prescriptionData.precautions,
+            additional_notes: prescriptionData.additionalNotes,
+            updated_at: updateDateString
+        )
+        
+        let supabase = SupabaseController.shared
+        
+        // Update the prescription in the database
+        print("DEBUG: Updating prescription \(prescriptionId)...")
+        try await supabase.update(
+            table: "prescriptions",
+            data: updateData,
+            where: "id",
+            equals: prescriptionId
+        )
+        
+        print("DEBUG: Prescription updated successfully!")
+        
+        // Clear the prescription data after successful update
+        await MainActor.run {
+            prescriptionData = DoctorPrescriptionData()
+            isSavingPrescription = false
+            showPrescriptionSheet = false
+            showPrescriptionSuccess = true
+            hasPrescription = true
+        }
+        
+        return
     }
     
     private func fetchPrescriptions() {
@@ -665,21 +986,47 @@ struct DoctorAppointmentDetailsView: View {
                     displayDateFormatter.dateStyle = .medium
                     displayDateFormatter.timeStyle = .short
                     
-                    // Parse medications
-                    var medicationsList: [String] = []
+                    // Parse medications with complete details
+                    var medicationsList: [MedicationViewModel] = []
                     if let medications = data["medications"] as? [[String: Any]] {
                         for med in medications {
-                            if let name = med["medicine_name"] as? String {
-                                medicationsList.append(name)
+                            let name = med["medicine_name"] as? String ?? ""
+                            let dosage = med["dosage"] as? String ?? ""
+                            let frequency = med["frequency"] as? String ?? ""
+                            let timing = med["timing"] as? String ?? ""
+                            let brandName = med["brand_name"] as? String ?? ""
+                            
+                            medicationsList.append(MedicationViewModel(
+                                name: name,
+                                dosage: dosage,
+                                frequency: frequency,
+                                timing: timing,
+                                brandName: brandName
+                            ))
+                        }
+                    }
+                    
+                    // Parse lab tests
+                    var labTestsList: [String] = []
+                    if let labTests = data["lab_tests"] as? [[String: Any]] {
+                        for test in labTests {
+                            if let name = test["test_name"] as? String {
+                                labTestsList.append(name)
                             }
                         }
                     }
                     
+                    // Parse precautions and notes
+                    let precautions = data["precautions"] as? String ?? ""
+                    let additionalNotes = data["additional_notes"] as? String ?? ""
+                    
                     let prescription = PrescriptionViewModel(
                         id: id,
                         date: displayDateFormatter.string(from: date),
-                        medicationCount: medicationsList.count,
-                        medications: medicationsList
+                        medications: medicationsList,
+                        labTests: labTestsList,
+                        precautions: precautions,
+                        additionalNotes: additionalNotes
                     )
                     
                     prescriptions.append(prescription)
@@ -692,6 +1039,142 @@ struct DoctorAppointmentDetailsView: View {
                 print("ERROR: Failed to fetch prescriptions: \(error)")
             }
         }
+    }
+    
+    private func fetchPatientLabReports() {
+        isLoadingLabReports = true
+        labReportsError = nil
+        patientLabReports = []
+        
+        Task {
+            do {
+                let supabase = SupabaseController.shared
+                
+                // Fetch patient lab reports
+                let result = try await supabase.select(
+                    from: "pat_reports",
+                    columns: "*",
+                    where: "patient_id",
+                    equals: appointment.patientId
+                )
+                
+                // Parse the results
+                var reports: [PatientLabReport] = []
+                
+                for reportData in result {
+                    guard let idString = reportData["id"] as? String,
+                          let id = UUID(uuidString: idString),
+                          let patientName = reportData["patient_name"] as? String,
+                          let patientId = reportData["patient_id"] as? String,
+                          let fileUrl = reportData["file_url"] as? String,
+                          let uploadedAtString = reportData["uploaded_at"] as? String else {
+                        continue
+                    }
+                    
+                    // Parse date
+                    let dateFormatter = ISO8601DateFormatter()
+                    let uploadedAt = dateFormatter.date(from: uploadedAtString) ?? Date()
+                    
+                    // Optional fields
+                    let summary = reportData["summary"] as? String
+                    let labId = reportData["lab_id"] as? String
+                    
+                    let report = PatientLabReport(
+                        id: id,
+                        patientName: patientName,
+                        patientId: patientId,
+                        summary: summary,
+                        fileUrl: fileUrl,
+                        uploadedAt: uploadedAt,
+                        labId: labId
+                    )
+                    
+                    reports.append(report)
+                }
+                
+                // Sort reports by date (newest first)
+                reports.sort { $0.uploadedAt > $1.uploadedAt }
+                
+                await MainActor.run {
+                    self.patientLabReports = reports
+                    self.isLoadingLabReports = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.isLoadingLabReports = false
+                    self.labReportsError = "Failed to load lab reports: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func checkForExistingPrescriptions() {
+        Task {
+            do {
+                let supabase = SupabaseController.shared
+                
+                let result = try await supabase.select(
+                    from: "prescriptions",
+                    columns: "id",
+                    where: "appointment_id",
+                    equals: appointment.id
+                )
+                
+                await MainActor.run {
+                    self.hasPrescription = !result.isEmpty
+                    if !result.isEmpty {
+                        print("DEBUG: Found \(result.count) existing prescriptions")
+                    }
+                }
+            } catch {
+                print("ERROR: Failed to check for existing prescriptions: \(error)")
+            }
+        }
+    }
+    
+    private var isAppointmentTimeReached: Bool {
+        let now = Date()
+        let calendar = Calendar.current
+        
+        // First check if appointment date is in the past
+        if calendar.compare(appointment.appointmentDate, to: now, toGranularity: .day) == .orderedAscending {
+            // If appointment date is in the past, enable the buttons
+            return true
+        }
+        
+        // If appointment is today, check if current time is past the slot_start_time
+        if calendar.isDateInToday(appointment.appointmentDate) {
+            // Create a date by combining today's date with the appointment time
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "h:mm a"
+            
+            // Try to parse the time
+            guard let timeDate = timeFormatter.date(from: appointment.slotTime) else {
+                print("DEBUG: Failed to parse time: \(appointment.slotTime)")
+                return false // If can't parse time, disable by default
+            }
+            
+            // Get time components
+            let timeComponents = calendar.dateComponents([.hour, .minute], from: timeDate)
+            
+            // Create datetime by combining today's date with appointment time
+            guard let appointmentDateTime = calendar.date(bySettingHour: timeComponents.hour ?? 0,
+                                                         minute: timeComponents.minute ?? 0,
+                                                         second: 0,
+                                                         of: Date()) else {
+                print("DEBUG: Failed to create appointment datetime")
+                return false
+            }
+            
+            print("DEBUG: Current time: \(now)")
+            print("DEBUG: Appointment time: \(appointmentDateTime)")
+            
+            // Enable if current time is at or past appointment time
+            return now >= appointmentDateTime
+        }
+        
+        // For future dates, disable buttons
+        return false
     }
 }
 
@@ -1038,8 +1521,14 @@ struct PrescriptionPayload: Encodable {
 struct PrescriptionViewModel: Identifiable {
     let id: String
     let date: String
-    let medicationCount: Int
-    let medications: [String]
+    let medications: [MedicationViewModel]
+    let labTests: [String]
+    let precautions: String
+    let additionalNotes: String
+    
+    var medicationCount: Int {
+        return medications.count
+    }
 }
 
 // Add this view at the end of the file
@@ -1060,31 +1549,13 @@ struct DoctorPrescriptionListView: View {
                         description: Text("No prescriptions have been added for this appointment yet.")
                     )
                 } else {
-                    List {
-                        ForEach(prescriptions) { prescription in
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text(prescription.date)
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                    
-                                    Spacer()
-                                    
-                                    Text("ID: \(prescription.id)")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                Text("Medications (\(prescription.medicationCount))")
-                                    .font(.headline)
-                                
-                                ForEach(prescription.medications, id: \.self) { medication in
-                                    Text("• \(medication)")
-                                        .font(.subheadline)
-                                }
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            ForEach(prescriptions) { prescription in
+                                PrescriptionCard(prescription: prescription)
                             }
-                            .padding(.vertical, 4)
                         }
+                        .padding()
                     }
                 }
             }
@@ -1094,7 +1565,277 @@ struct DoctorPrescriptionListView: View {
                     dismiss()
                 }
             )
+            .background(Color(.systemGray6).opacity(0.5).ignoresSafeArea())
         }
+    }
+}
+
+// Add this new PrescriptionCard view
+struct PrescriptionCard: View {
+    let prescription: PrescriptionViewModel
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Date and ID header
+            HStack {
+                Text(prescription.date)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Text("ID: \(prescription.id)")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            
+            Divider()
+            
+            // Medications section
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Medications (\(prescription.medicationCount))")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(prescription.medications) { medication in
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(alignment: .center, spacing: 8) {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 6, height: 6)
+                                Text(medication.name)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                            }
+                            
+                            if !medication.brandName.isEmpty {
+                                Text("Brand Name: \(medication.brandName)")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .padding(.leading, 14)
+                            }
+                            
+                            if !medication.dosage.isEmpty {
+                                Text("\(medication.dosage) - \(medication.frequency)")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .padding(.leading, 14)
+                            }
+                            
+                            if !medication.timing.isEmpty {
+                                Text(medication.timing)
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .padding(.leading, 14)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Lab Tests section (if any)
+            if !prescription.labTests.isEmpty {
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Lab Tests (\(prescription.labTests.count))")
+                        .font(.headline)
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(prescription.labTests, id: \.self) { test in
+                            HStack(alignment: .center, spacing: 8) {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 6, height: 6)
+                                Text(test)
+                                    .font(.subheadline)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Precautions section (if any)
+            if !prescription.precautions.isEmpty {
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Precautions")
+                        .font(.headline)
+                    
+                    Text(prescription.precautions)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+            }
+            
+            // Additional Notes section (if any)
+            if !prescription.additionalNotes.isEmpty {
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Additional Notes")
+                        .font(.headline)
+                    
+                    Text(prescription.additionalNotes)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+            }
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+    }
+}
+
+// Update the MedicationViewModel struct
+struct MedicationViewModel: Identifiable, Hashable {
+    let id = UUID()
+    let name: String
+    let dosage: String
+    let frequency: String
+    let timing: String
+    let brandName: String
+}
+
+// Add this model for lab reports
+struct PatientLabReport: Identifiable {
+    let id: UUID
+    let patientName: String
+    let patientId: String
+    let summary: String?
+    let fileUrl: String
+    let uploadedAt: Date
+    let labId: String?
+}
+
+// Add this view for lab reports
+struct PatientLabReportsView: View {
+    let patientName: String
+    let reports: [PatientLabReport]
+    let isLoading: Bool
+    let errorMessage: String?
+    
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedReport: PatientLabReport? = nil
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                if isLoading {
+                    ProgressView("Loading lab reports...")
+                } else if let error = errorMessage {
+                    ContentUnavailableView(
+                        "Error Loading Reports",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(error)
+                    )
+                } else if reports.isEmpty {
+                    ContentUnavailableView(
+                        "No Lab Reports",
+                        systemImage: "doc.text.magnifyingglass",
+                        description: Text("No lab reports found for this patient.")
+                    )
+                } else {
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            ForEach(reports) { report in
+                                LabReportCard(report: report)
+                                    .onTapGesture {
+                                        selectedReport = report
+                                    }
+                            }
+                        }
+                        .padding()
+                    }
+                }
+            }
+            .navigationTitle("Lab Reports")
+            .navigationBarItems(
+                trailing: Button("Done") {
+                    dismiss()
+                }
+            )
+            .background(Color(.systemGray6).opacity(0.5).ignoresSafeArea())
+            .sheet(item: $selectedReport) { report in
+                SafariView(url: URL(string: report.fileUrl)!)
+            }
+        }
+    }
+}
+
+struct LabReportCard: View {
+    let report: PatientLabReport
+    
+    var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: report.uploadedAt)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Lab Report")
+                        .font(.headline)
+                    Text(formattedDate)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+//                Image(systemName: "doc.text")
+//                    .font(.system(size: 24))
+//                    .foregroundColor(.teal)
+            }
+            
+            Divider()
+            
+            // Summary (if available)
+            if let summary = report.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(.body)
+                    .foregroundColor(.primary)
+                    .padding(.bottom, 4)
+            }
+            
+            // Lab info (if available)
+            if let labId = report.labId, !labId.isEmpty {
+                HStack {
+                    Image(systemName: "flask")
+                        .foregroundColor(.teal)
+                    Text("Lab ID: \(labId)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+    }
+}
+
+// Add this view for opening Safari links
+struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+    
+    func makeUIViewController(context: UIViewControllerRepresentableContext<SafariView>) -> SFSafariViewController {
+        return SFSafariViewController(url: url)
+    }
+    
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: UIViewControllerRepresentableContext<SafariView>) {
+        // No update needed
     }
 }
 
