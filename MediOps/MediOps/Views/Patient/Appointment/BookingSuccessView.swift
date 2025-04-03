@@ -19,7 +19,6 @@ struct BookingSuccessView: View {
     @State private var appointmentId = "" // Store the appointment ID to avoid regenerating it
     @AppStorage("current_user_id") private var userId: String?
     @ObservedObject private var translationManager = TranslationManager.shared
-    @ObservedObject private var themeManager = ThemeManager.shared
     
     private func formatTime() -> String {
         // Use the saved formatted times directly
@@ -189,11 +188,10 @@ struct BookingSuccessView: View {
                 Text("booking_confirmed".localized)
                     .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(themeManager.colors.text)
                     .multilineTextAlignment(.center)
                 
                 Text("email_receipt".localized)
-                    .foregroundColor(themeManager.colors.subtext)
+                    .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             }
             .padding(.horizontal)
@@ -204,7 +202,7 @@ struct BookingSuccessView: View {
                     // Doctor avatar and info
                     HStack(spacing: 15) {
                         Circle()
-                            .fill(themeManager.colors.primary)
+                            .fill(Color.teal)
                             .frame(width: 50, height: 50)
                             .overlay(
                                 Image(systemName: "person.fill")
@@ -214,35 +212,34 @@ struct BookingSuccessView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(doctor.name)
                                 .font(.headline)
-                                .foregroundColor(themeManager.colors.text)
                             Text(doctor.specialization)
                                 .font(.subheadline)
-                                .foregroundColor(themeManager.colors.subtext)
+                                .foregroundColor(.gray)
                         }
                     }
                     
                     // Date and time
                     HStack {
                         Image(systemName: "calendar")
-                            .foregroundColor(themeManager.colors.primary)
+                            .foregroundColor(.teal)
                         
                         Text(appointmentDate, style: .date)
-                            .foregroundColor(themeManager.colors.text)
+                            .foregroundColor(.black)
                     }
                     
                     HStack {
                         Image(systemName: "clock")
-                            .foregroundColor(themeManager.colors.primary)
+                            .foregroundColor(.teal)
                         
                         Text(formatTime())
-                            .foregroundColor(themeManager.colors.text)
+                            .foregroundColor(.black)
                     }
                 }
             }
             .padding()
             .background(Color.white)
             .cornerRadius(12)
-            .shadow(color: themeManager.colors.primary.opacity(0.1), radius: 5)
+            .shadow(color: .gray.opacity(0.2), radius: 5)
             
             Spacer()
             
@@ -273,8 +270,8 @@ struct BookingSuccessView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemGray6).ignoresSafeArea())
         .localizedLayout()
-        .navigationBarBackButtonHidden(true)
-        .navigationBarItems(leading: EmptyView())
+        .navigationBarBackButtonHidden(true) // Hide the back button
+        .navigationBarItems(leading: EmptyView()) // Empty view for leading item to remove back button
         .alert(isPresented: $showError) {
             Alert(
                 title: Text("error".localized),

@@ -14,7 +14,6 @@ struct AppointmentView: View {
     @State private var errorMessage: String? = nil
     @State private var doctorAvailability: DoctorAvailabilityModels.EfficientAvailability? = nil
     @ObservedObject private var translationManager = TranslationManager.shared
-    @ObservedObject private var themeManager = ThemeManager.shared
     
     // Maximum date is 7 days from today
     private var maxDate: Date {
@@ -79,11 +78,12 @@ struct AppointmentView: View {
                          in: Date()...maxDate,
                          displayedComponents: [.date])
                     .datePickerStyle(.graphical)
-                    .tint(themeManager.colors.primary)
                     .padding()
                     .background(Color.white)
                     .onChange(of: selectedDate) { newDate in
+                        // Reset selected time when date changes
                         selectedSlot = nil
+                        // Fetch available slots for the new date
                         Task {
                             await fetchAvailableSlots(for: newDate)
                         }
@@ -92,15 +92,14 @@ struct AppointmentView: View {
                 // Time slots
                 if isLoading {
                     ProgressView("loading_slots".localized)
-                        .progressViewStyle(CircularProgressViewStyle(tint: themeManager.colors.primary))
                         .padding()
                 } else if let error = errorMessage {
                     Text(error)
-                        .foregroundColor(themeManager.colors.error)
+                        .foregroundColor(.red)
                         .padding()
                 } else if availableSlots.isEmpty {
                     Text("no_available_slots".localized)
-                        .foregroundColor(themeManager.colors.subtext)
+                        .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
                         .padding()
                 } else {
@@ -113,6 +112,8 @@ struct AppointmentView: View {
                                 
                                 Button(action: {
                                     if !isPast && !isFullyBooked {
+                                        print("🕒 SELECTED SLOT - Display: \(slot.startTime) to \(slot.endTime)")
+                                        print("🕒 SELECTED SLOT - Raw: \(slot.rawStartTime) to \(slot.rawEndTime)")
                                         selectedSlot = slot
                                     }
                                 }) {
@@ -124,21 +125,21 @@ struct AppointmentView: View {
                                         
                                         Text("\(slot.remainingSlots)/\(slot.totalSlots) slots".localized)
                                             .font(.system(size: 11))
-                                            .foregroundColor(isFullyBooked ? themeManager.colors.error : themeManager.colors.subtext)
+                                            .foregroundColor(isFullyBooked ? .red : .secondary)
                                     }
                                     .padding(.vertical, 12)
                                     .padding(.horizontal, 8)
                                     .frame(maxWidth: .infinity)
-                                    .background(isSelected ? themeManager.colors.primary : Color.white)
-                                    .foregroundColor(isSelected ? .white : (isFullyBooked ? themeManager.colors.subtext : themeManager.colors.text))
+                                    .background(isSelected ? Color.teal : Color.white)
+                                    .foregroundColor(isSelected ? .white : (isFullyBooked ? .gray : .black))
                                     .cornerRadius(8)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8)
-                                            .stroke(isFullyBooked ? themeManager.colors.subtext : themeManager.colors.primary, lineWidth: 1)
+                                            .stroke(isFullyBooked ? Color.gray : Color.teal, lineWidth: 1)
                                     )
-                                    .opacity(isPast || isFullyBooked ? 0.5 : 1.0)
+                                    .opacity(isPast || isFullyBooked ? 0.5 : 1.0) // Blur effect for past or fully booked slots
                                 }
-                                .disabled(isPast || isFullyBooked)
+                                .disabled(isPast || isFullyBooked) // Disable past or fully booked slots
                             }
                         }
                         .padding()
@@ -156,7 +157,7 @@ struct AppointmentView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(selectedSlot != nil ? themeManager.colors.primary : themeManager.colors.subtext)
+                        .background(selectedSlot != nil ? Color.teal : Color.gray)
                         .cornerRadius(10)
                 }
                 .disabled(selectedSlot == nil)
@@ -183,7 +184,9 @@ struct AppointmentView: View {
         .navigationTitle("book_appointment".localized)
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            // Initial fetch of doctor availability
             await fetchDoctorAvailability()
+            // Fetch available slots for the initial date
             await fetchAvailableSlots(for: selectedDate)
         }
     }
