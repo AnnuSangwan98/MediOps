@@ -1222,6 +1222,10 @@ struct DoctorPrescriptionSheet: View {
     
     @State private var showValidationAlert = false
     @State private var validationMessage = ""
+    @State private var showNewMedicationView = false
+    @State private var showNewLabTestView = false
+    @State private var tempMedication = DoctorPrescriptionMedication(medicineName: "", dosage: "", frequency: "", timing: "")
+    @State private var tempLabTest = DoctorPrescriptionLabTest(testName: "")
     
     private var isValid: Bool {
         // Check if there are any medications
@@ -1266,23 +1270,25 @@ struct DoctorPrescriptionSheet: View {
             Form {
                 Section(header: Text("Medications")) {
                     ForEach($prescriptionData.medications) { $medication in
-                        NavigationLink(destination: DoctorMedicationEditView(medication: $medication)) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(medication.medicineName.isEmpty ? "New Medication" : medication.medicineName)
-                                    .font(.headline)
-                                if !medication.dosage.isEmpty || !medication.frequency.isEmpty {
-                                    Text("\(medication.dosage) - \(medication.frequency)")
-                                        .font(.subheadline)
-                                }
-                                if !medication.timing.isEmpty {
-                                    Text(medication.timing)
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                }
-                                if !medication.brandName.isEmpty {
-                                    Text("Brand: \(medication.brandName)")
-                                        .font(.caption2)
-                                        .foregroundColor(.gray)
+                        if !medication.medicineName.isEmpty {
+                            NavigationLink(destination: DoctorMedicationEditView(medication: $medication)) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(medication.medicineName)
+                                        .font(.headline)
+                                    if !medication.dosage.isEmpty || !medication.frequency.isEmpty {
+                                        Text("\(medication.dosage) - \(medication.frequency)")
+                                            .font(.subheadline)
+                                    }
+                                    if !medication.timing.isEmpty {
+                                        Text(medication.timing)
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
+                                    if !medication.brandName.isEmpty {
+                                        Text("Brand: \(medication.brandName)")
+                                            .font(.caption2)
+                                            .foregroundColor(.gray)
+                                    }
                                 }
                             }
                         }
@@ -1292,29 +1298,25 @@ struct DoctorPrescriptionSheet: View {
                     }
                     
                     Button(action: {
-                        prescriptionData.medications.append(
-                            DoctorPrescriptionMedication(
-                                medicineName: "",
-                                dosage: "",
-                                frequency: "",
-                                timing: ""
-                            )
-                        )
+                        showNewMedicationView = true
                     }) {
-                        Label("Add Medication", systemImage: "plus.circle")
+                        Label("Add New Medication", systemImage: "plus.circle")
+                            .foregroundColor(.blue)
                     }
                 }
                 
                 Section(header: Text("Lab Tests")) {
                     ForEach($prescriptionData.labTests) { $test in
-                        NavigationLink(destination: DoctorLabTestEditView(labTest: $test)) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(test.testName.isEmpty ? "New Lab Test" : test.testName)
-                                    .font(.headline)
-                                if !test.instructions.isEmpty {
-                                    Text(test.instructions)
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
+                        if !test.testName.isEmpty {
+                            NavigationLink(destination: DoctorLabTestEditView(labTest: $test)) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(test.testName)
+                                        .font(.headline)
+                                    if !test.instructions.isEmpty {
+                                        Text(test.instructions)
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
                                 }
                             }
                         }
@@ -1324,11 +1326,10 @@ struct DoctorPrescriptionSheet: View {
                     }
                     
                     Button(action: {
-                        prescriptionData.labTests.append(
-                            DoctorPrescriptionLabTest(testName: "")
-                        )
+                        showNewLabTestView = true
                     }) {
-                        Label("Add Lab Test", systemImage: "plus.circle")
+                        Label("Add New Lab Test", systemImage: "plus.circle")
+                            .foregroundColor(.blue)
                     }
                 }
                 
@@ -1370,6 +1371,26 @@ struct DoctorPrescriptionSheet: View {
                 Text(validationMessage)
             }
             .interactiveDismissDisabled(isSavingPrescription)
+            .sheet(isPresented: $showNewMedicationView, onDismiss: {
+                if !tempMedication.medicineName.isEmpty {
+                    prescriptionData.medications.append(tempMedication)
+                }
+                tempMedication = DoctorPrescriptionMedication(medicineName: "", dosage: "", frequency: "", timing: "")
+            }) {
+                NavigationView {
+                    DoctorMedicationEditView(medication: $tempMedication)
+                }
+            }
+            .sheet(isPresented: $showNewLabTestView, onDismiss: {
+                if !tempLabTest.testName.isEmpty {
+                    prescriptionData.labTests.append(tempLabTest)
+                }
+                tempLabTest = DoctorPrescriptionLabTest(testName: "")
+            }) {
+                NavigationView {
+                    DoctorLabTestEditView(labTest: $tempLabTest)
+                }
+            }
         }
     }
 }
@@ -1460,21 +1481,8 @@ struct DoctorLabTestEditView: View {
     var body: some View {
         Form {
             Section(header: Text("Lab Test Details")) {
-                Picker("Test Name *", selection: $labTest.testName) {
-                    Text("Select").tag("")
-                    Text("Complete Blood Count (CBC)").tag("Complete Blood Count (CBC)")
-                    Text("Blood Sugar (Fasting & PP)").tag("Blood Sugar (Fasting & PP)")
-                    Text("Lipid Profile").tag("Lipid Profile")
-                    Text("Liver Function Test").tag("Liver Function Test")
-                    Text("Kidney Function Test").tag("Kidney Function Test")
-                    Text("Thyroid Profile").tag("Thyroid Profile")
-                    Text("Urine Analysis").tag("Urine Analysis")
-                    Text("ECG").tag("ECG")
-                    Text("X-Ray").tag("X-Ray")
-                    Text("Ultrasound").tag("Ultrasound")
-                    Text("CT Scan").tag("CT Scan")
-                    Text("MRI").tag("MRI")
-                }
+                TextField("Test Name *", text: $labTest.testName)
+                    .textInputAutocapitalization(.words)
                 
                 TextField("Special Instructions (Optional)", text: $labTest.instructions)
                     .textInputAutocapitalization(.sentences)
@@ -1497,7 +1505,7 @@ struct DoctorLabTestEditView: View {
         .alert("Missing Information", isPresented: $showValidationAlert) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("Please select a test name")
+            Text("Please enter a test name")
         }
     }
 }
@@ -1754,11 +1762,11 @@ struct PatientLabReportsView: View {
                 }
             }
             .navigationTitle("Lab Reports")
-            .navigationBarItems(
-                trailing: Button("Done") {
-                    dismiss()
-                }
-            )
+//            .navigationBarItems(
+//                trailing: Button("Done") {
+//                    dismiss()
+//                }
+//            )
             .background(Color(.systemGray6).opacity(0.5).ignoresSafeArea())
             .sheet(item: $selectedReport) { report in
                 SafariView(url: URL(string: report.fileUrl)!)
@@ -1860,3 +1868,4 @@ struct SafariView: UIViewControllerRepresentable {
     
     DoctorAppointmentDetailsView(appointment: sampleAppointment)
 } 
+

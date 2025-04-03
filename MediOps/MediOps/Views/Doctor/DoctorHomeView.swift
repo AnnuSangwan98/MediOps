@@ -87,7 +87,6 @@ struct DoctorHomeView: View {
     @State private var error: String? = nil
     @State private var doctorName: String = ""
     @State private var isLoadingDoctorInfo = true
-    @State private var autoRefreshTimer: Timer? = nil
     
     // Stats counters
     @State private var todayCount = 0
@@ -108,9 +107,9 @@ struct DoctorHomeView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 8) {
                                 if isLoadingDoctorInfo {
-                                    Text("Welcome, ")
-                                        .font(.title)
-                                        .fontWeight(.bold)
+                                    Text("Welcome ")
+                                        .font(.headline)
+                                        .foregroundColor(.gray)
                                     
                                     HStack(spacing: 10) {
                                         Text("Dr.")
@@ -121,13 +120,12 @@ struct DoctorHomeView: View {
                                             .scaleEffect(0.7)
                                     }
                                 } else {
-                                    Text("Welcome, ")
+                                    Text("Welcome ")
+                                        .font(.headline)
+                                        .foregroundColor(.gray)
+                                    Text(doctorName.isEmpty ? "Dr. Doctor" : doctorName)
                                         .font(.title)
                                         .fontWeight(.bold)
-                                    
-                                    Text(doctorName.isEmpty ? "Dr. Doctor" : doctorName)
-                                    .font(.title)
-                                    .fontWeight(.bold)
                                 }
                             }
                             Spacer()
@@ -236,7 +234,9 @@ struct DoctorHomeView: View {
                         }
                         .refreshable {
                             // Refresh data when pulled down
-                            await refreshData()
+                            Task {
+                                await refreshData()
+                            }
                         }
                         .frame(maxHeight: .infinity)
                     }
@@ -249,32 +249,8 @@ struct DoctorHomeView: View {
             .onAppear {
                 fetchDoctorData()
                 fetchDoctorAppointments()
-                startAutoRefreshTimer()
-            }
-            .onDisappear {
-                stopAutoRefreshTimer()
             }
         }
-    }
-    
-    // Start a timer to periodically check for missed appointments
-    private func startAutoRefreshTimer() {
-        // Cancel any existing timer
-        stopAutoRefreshTimer()
-        
-        // Start a new timer that fires every 60 seconds
-        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
-            Task {
-                print("🔄 Auto-refresh timer fired - checking for missed appointments")
-                await refreshData()
-            }
-        }
-    }
-    
-    // Stop the auto-refresh timer
-    private func stopAutoRefreshTimer() {
-        autoRefreshTimer?.invalidate()
-        autoRefreshTimer = nil
     }
     
     // Add a new async function to refresh all data

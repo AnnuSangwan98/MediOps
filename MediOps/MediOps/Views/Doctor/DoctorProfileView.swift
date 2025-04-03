@@ -1502,6 +1502,14 @@ struct ChangePasswordView: View {
     private func updatePassword() {
         isLoading = true
         
+        // Check if new password is same as current password
+        if newPassword == currentPassword {
+            isLoading = false
+            errorMessage = "New password cannot be the same as current password"
+            showError = true
+            return
+        }
+        
         Task {
             do {
                 // Call Supabase to verify current password

@@ -62,7 +62,7 @@ struct DoctorLoginView: View {
                             .font(.subheadline)
                             .foregroundColor(.gray)
                         
-                        TextField("Enter doctor ID (e.g. DOC001)", text: $doctorId)
+                        TextField("Enter doctor ID (e.g. DOCXXX)", text: $doctorId)
                             .textFieldStyle(CustomTextFieldStyle())
                             .onChange(of: doctorId) { _, newValue in
                                 // Automatically format to uppercase for "HOS" part
