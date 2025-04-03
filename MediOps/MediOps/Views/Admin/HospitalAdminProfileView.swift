@@ -324,8 +324,6 @@ struct HospitalAdminProfileView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             ) {
                                 VStack(spacing: 0) {
-                                    ProfileInfoRow(title: "Admin ID", value: admin.id)
-                                    Divider()
                                     ProfileInfoRow(title: "Hospital ID", value: admin.hospitalId)
                                     
                                     // Address section (if available)
