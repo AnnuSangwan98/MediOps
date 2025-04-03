@@ -6,6 +6,7 @@ struct DoctorListView: View {
     @State private var searchText = ""
     @State private var selectedSpeciality: String?
     @ObservedObject private var translationManager = TranslationManager.shared
+    @ObservedObject private var themeManager = ThemeManager.shared
     
     var specialities: [String] {
         Array(Set(viewModel.doctors.map { $0.specialization })).sorted()
@@ -18,47 +19,46 @@ struct DoctorListView: View {
                 // Search bar
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.colors.subtext)
                     TextField("search_by_doctor".localized, text: $searchText)
                         .textFieldStyle(PlainTextFieldStyle())
+                        .foregroundColor(themeManager.colors.text)
                 }
                 .padding()
                 .background(Color.white)
                 .cornerRadius(10)
-                .shadow(color: .gray.opacity(0.1), radius: 5)
+                .shadow(color: themeManager.colors.primary.opacity(0.1), radius: 5)
                 
-                // Only show speciality filter if we have doctors
-                if !viewModel.doctors.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(["All"] + specialities, id: \.self) { speciality in
-                                Button(action: {
-                                    if speciality == "All" {
-                                        selectedSpeciality = nil
-                                    } else {
-                                        selectedSpeciality = speciality
-                                    }
-                                }) {
-                                    Text(speciality)
-                                        .font(.subheadline)
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 8)
-                                        .background(
-                                            (selectedSpeciality == speciality || 
-                                             (speciality == "All" && selectedSpeciality == nil)) ?
-                                                Color.teal : Color.gray.opacity(0.1)
-                                        )
-                                        .foregroundColor(
-                                            (selectedSpeciality == speciality || 
-                                             (speciality == "All" && selectedSpeciality == nil)) ?
-                                                .white : .black
-                                        )
-                                        .cornerRadius(20)
-                                }
+                // Speciality filter
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        Button(action: {
+                            selectedSpeciality = nil
+                        }) {
+                            Text("All")
+                                .font(.subheadline)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(selectedSpeciality == nil ? themeManager.colors.primary : Color.gray.opacity(0.1))
+                                .foregroundColor(selectedSpeciality == nil ? .white : themeManager.colors.text)
+                                .cornerRadius(20)
+                        }
+                        
+                        ForEach(specialities, id: \.self) { speciality in
+                            Button(action: {
+                                selectedSpeciality = speciality
+                            }) {
+                                Text(speciality)
+                                    .font(.subheadline)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(selectedSpeciality == speciality ? themeManager.colors.primary : Color.gray.opacity(0.1))
+                                    .foregroundColor(selectedSpeciality == speciality ? .white : themeManager.colors.text)
+                                    .cornerRadius(20)
                             }
                         }
-                        .padding(.horizontal)
                     }
+                    .padding(.horizontal)
                 }
             }
             .padding(.horizontal)
@@ -66,12 +66,13 @@ struct DoctorListView: View {
             Text("doctors".localized)
                 .font(.title2)
                 .fontWeight(.bold)
+                .foregroundColor(themeManager.colors.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
             
             if viewModel.isLoading {
                 ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle())
+                    .progressViewStyle(CircularProgressViewStyle(tint: themeManager.colors.primary))
                     .scaleEffect(1.5)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.vertical, 100)
@@ -79,15 +80,15 @@ struct DoctorListView: View {
                 VStack(spacing: 15) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 50))
-                        .foregroundColor(.orange)
+                        .foregroundColor(themeManager.colors.error)
                     
                     Text("error".localized)
                         .font(.headline)
-                        .foregroundColor(.red)
+                        .foregroundColor(themeManager.colors.error)
                     
                     Text(error.localizedDescription)
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.colors.subtext)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                     
@@ -100,7 +101,7 @@ struct DoctorListView: View {
                             .foregroundColor(.white)
                             .padding(.vertical, 8)
                             .padding(.horizontal, 20)
-                            .background(Color.teal)
+                            .background(themeManager.colors.primary)
                             .cornerRadius(8)
                     }
                     .padding(.top, 10)
@@ -111,15 +112,15 @@ struct DoctorListView: View {
                 VStack(spacing: 15) {
                     Image(systemName: "person.fill.questionmark")
                         .font(.system(size: 50))
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.colors.subtext)
                     
                     Text("no_active_doctors".localized)
                         .font(.headline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.colors.text)
                     
                     Text("There are currently no active doctors at \(hospital.hospitalName).")
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.colors.subtext)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
@@ -129,15 +130,15 @@ struct DoctorListView: View {
                 VStack(spacing: 15) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 50))
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.colors.subtext)
                     
                     Text("no_matching_doctors".localized)
                         .font(.headline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.colors.text)
                     
                     Text("try_adjusting_search".localized)
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.colors.subtext)
                 }
                 .padding(.vertical, 100)
                 .frame(maxWidth: .infinity)
@@ -194,13 +195,14 @@ struct DoctorCard: View {
     let doctor: HospitalDoctor
     @State private var showAppointment = false
     @ObservedObject private var translationManager = TranslationManager.shared
+    @ObservedObject private var themeManager = ThemeManager.shared
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 15) {
                 // Doctor avatar
                 Circle()
-                    .fill(Color.teal)
+                    .fill(themeManager.colors.primary)
                     .frame(width: 60, height: 60)
                     .overlay(
                         Image(systemName: "person.fill")
@@ -211,18 +213,19 @@ struct DoctorCard: View {
                     Text(doctor.name)
                         .font(.title3)
                         .fontWeight(.semibold)
+                        .foregroundColor(themeManager.colors.text)
                     
                     Text("\(doctor.specialization) (\(doctor.experience) years Exp)")
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.colors.subtext)
                     
                     HStack {
                         Text("Rs.\(Int(doctor.consultationFee))")
                             .font(.headline)
-                            .foregroundColor(.black)
+                            .foregroundColor(themeManager.colors.text)
                         Text("consultation_fee".localized)
                             .font(.caption)
-                            .foregroundColor(.gray)
+                            .foregroundColor(themeManager.colors.subtext)
                     }
                 }
                 
@@ -241,7 +244,7 @@ struct DoctorCard: View {
                     .fontWeight(.medium)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color.teal)
+                    .background(themeManager.colors.primary)
                     .foregroundColor(.white)
                     .cornerRadius(8)
             }
@@ -249,6 +252,6 @@ struct DoctorCard: View {
         .padding()
         .background(Color.white)
         .cornerRadius(12)
-        .shadow(color: .gray.opacity(0.2), radius: 5)
+        .shadow(color: themeManager.colors.primary.opacity(0.2), radius: 5)
     }
 }

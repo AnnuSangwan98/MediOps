@@ -18,6 +18,7 @@ struct PaymentFinalView: View {
     @State private var isProcessing = false
     @State private var bookingError: String? = nil
     @ObservedObject private var translationManager = TranslationManager.shared
+    @ObservedObject private var themeManager = ThemeManager.shared
     
     private let maxSliderOffset: CGFloat = 300 // Adjust this value based on your needs
     private let consultationFee = 500.0 // Default consultation fee
@@ -34,23 +35,27 @@ struct PaymentFinalView: View {
             VStack(spacing: 20) {
                 Text("confirm_payment".localized)
                     .font(.title2)
+                    .foregroundColor(themeManager.colors.text)
                     .padding(.top)
                 
                 VStack(alignment: .leading, spacing: 15) {
                     HStack {
                         Image(systemName: "person.fill")
-                            .foregroundColor(.teal)
+                            .foregroundColor(themeManager.colors.primary)
                         Text("pay_with".localized)
+                            .foregroundColor(themeManager.colors.text)
                         Spacer()
                         Text("•••• 5941")
+                            .foregroundColor(themeManager.colors.text)
                         Button("change".localized) {}
-                            .foregroundColor(.teal)
+                            .foregroundColor(themeManager.colors.primary)
                     }
                     
                     Divider()
                     
                     Text("bill_details".localized)
                         .font(.headline)
+                        .foregroundColor(themeManager.colors.text)
                     
                     Group {
                         HStack {
@@ -58,28 +63,28 @@ struct PaymentFinalView: View {
                             Spacer()
                             Text("Rs.\(Int(consultationFee))")
                         }
+                        .foregroundColor(themeManager.colors.subtext)
                         
                         HStack {
                             Text("booking_fee".localized)
                             Spacer()
                             Text("Rs.\(Int(bookingFee))")
                         }
+                        .foregroundColor(themeManager.colors.subtext)
                         
                         if isPremium {
                             HStack {
                                 Text("premium_fee".localized)
-                                    .foregroundColor(.teal)
                                 Spacer()
                                 Text("Rs.\(Int(premiumFee))")
-                                    .foregroundColor(.teal)
                             }
+                            .foregroundColor(themeManager.colors.primary)
                         }
                     }
-                    .foregroundColor(.gray)
                     
                     Text("This booking will be charged in USD (USD 207) Contact the bank directly for their policies regarding currency conversion and applicable foreign transaction fees.")
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.colors.subtext)
                         .padding(.vertical)
                     
                     HStack {
@@ -87,35 +92,36 @@ struct PaymentFinalView: View {
                             .font(.headline)
                         Text("(Incl. VAT)")
                             .font(.caption)
-                            .foregroundColor(.gray)
+                            .foregroundColor(themeManager.colors.subtext)
                         Spacer()
                         Text("Rs.\(Int(totalAmount))")
                             .font(.headline)
                     }
+                    .foregroundColor(themeManager.colors.text)
                 }
                 .padding()
                 .background(Color.white)
                 .cornerRadius(12)
-                .shadow(color: .gray.opacity(0.1), radius: 5)
+                .shadow(color: themeManager.colors.primary.opacity(0.1), radius: 5)
                 .padding()
                 
                 Spacer()
                 
                 if let error = bookingError {
                     Text(error)
-                        .foregroundColor(.red)
+                        .foregroundColor(themeManager.colors.error)
                         .padding()
                 }
                 
                 // Sliding confirmation button
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 30)
-                        .fill(Color.gray.opacity(0.2))
+                        .fill(themeManager.colors.subtext.opacity(0.2))
                         .frame(height: 60)
                     
                     HStack {
                         Circle()
-                            .fill(Color.teal)
+                            .fill(themeManager.colors.primary)
                             .frame(width: 50, height: 50)
                             .padding(.leading, 5)
                             .offset(x: sliderOffset)
@@ -158,7 +164,7 @@ struct PaymentFinalView: View {
                     }
                     
                     Text(isProcessing ? "processing".localized : "swipe_to_pay".localized)
-                        .foregroundColor(.teal)
+                        .foregroundColor(themeManager.colors.primary)
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
@@ -166,7 +172,8 @@ struct PaymentFinalView: View {
                 .padding()
                 .disabled(isProcessing)
             }
-            .navigationBarItems(trailing: Button("✕") { dismiss() })
+            .navigationBarItems(trailing: Button("✕") { dismiss() }
+                .foregroundColor(themeManager.colors.text))
             .navigationDestination(isPresented: $navigateToSuccess) {
                 BookingSuccessView(
                     doctor: doctor,
