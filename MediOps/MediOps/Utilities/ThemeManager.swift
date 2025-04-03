@@ -87,7 +87,7 @@ enum AppTheme {
     var accentColor: Color {
         switch self {
         case .standard:
-            return Color.accentColor
+            return Color.teal
         case .highContrast:
             return Color(hex: "004488") // Deep Blue for highlights
         case .colorblindFriendly:

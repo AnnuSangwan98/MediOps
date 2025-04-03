@@ -74,7 +74,7 @@ struct HomeTabView: View {
                         Image(systemName: selectedTab == 2 ? "doc.text.fill" : "doc.text")
                         Text("Lab Reports")
                     }
-                    .tag(2)
+                        .tag(2)
                 
                 bloodDonateTab
                     .tabItem {
@@ -90,6 +90,12 @@ struct HomeTabView: View {
                 
                 // Apply tab bar theme
                 updateTabBarAppearance()
+                
+                // Setup theme change listener
+                setupThemeChangeListener()
+                
+                // Setup return to home tab notification listener
+                setupReturnToHomeListener()
                 
                 print("📱 HomeTabView appeared with currentUserId: \(currentUserId ?? "nil") and userId: \(userId ?? "nil")")
                 
@@ -143,9 +149,6 @@ struct HomeTabView: View {
                 
                 // Initial refresh of appointments
                 appointmentManager.refreshAppointments()
-                
-                // Set up theme change observer
-                setupThemeChangeListener()
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
@@ -227,6 +230,7 @@ struct HomeTabView: View {
                                         ForEach(hospitalVM.hospitals) { hospital in
                                             NavigationLink {
                                                 DoctorListView(hospital: hospital)
+                                                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                                             } label: {
                                                 HospitalCard(hospital: hospital)
                                             }
@@ -347,7 +351,11 @@ struct HomeTabView: View {
                             Section(header: Text("Completed Appointments")
                                 .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)) {
                                 ForEach(completedAppointments) { appointment in
-                                    NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
+                                    NavigationLink(destination: 
+                                        PrescriptionDetailView(appointment: appointment)
+                                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                                            .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
+                                    ) {
                                         AppointmentHistoryCard(appointment: appointment)
                                     }
                                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -554,52 +562,34 @@ struct HomeTabView: View {
 
     // Simplified search and filter section
     private var searchAndFilterSection: some View {
-        HStack {
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.teal)
-                TextField("Search hospitals...", text: $hospitalVM.searchText)
-                    .foregroundColor(.primary)
-                
-                if !hospitalVM.searchText.isEmpty {
-                    Button(action: {
-                        hospitalVM.searchText = ""
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.teal)
-                    }
-                }
-            }
-            .padding(10)
-            .background(Color.white)
-            .cornerRadius(8)
+        VStack(spacing: 16) {
+            // Themed search bar
+            SearchBarView(text: $hospitalVM.searchText)
             
-            // Simple city filter button
-            Menu {
-                ForEach(hospitalVM.availableCities, id: \.self) { city in
-                    Button(action: {
-                        hospitalVM.selectedCity = hospitalVM.selectedCity == city ? nil : city
-                    }) {
-                        HStack {
-                            Text(city)
-                            if hospitalVM.selectedCity == city {
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.teal)
-                            }
+            // City filter buttons
+            if !hospitalVM.availableCities.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        // "All" filter button
+                        FilterButton(
+                            title: "All",
+                            isSelected: hospitalVM.selectedCity == nil,
+                            action: { hospitalVM.selectedCity = nil }
+                        )
+                        
+                        // City filter buttons
+                        ForEach(hospitalVM.availableCities, id: \.self) { city in
+                            FilterButton(
+                                title: city,
+                                isSelected: hospitalVM.selectedCity == city,
+                                action: { hospitalVM.selectedCity = city }
+                            )
                         }
                     }
+                    .padding(.horizontal)
                 }
-                Button("Clear Filter", action: { hospitalVM.selectedCity = nil })
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundColor(.teal)
-                    .font(.title3)
-                    .frame(width: 40, height: 40)
-                    .background(Color.white)
-                    .clipShape(Circle())
             }
         }
-        .padding(.horizontal)
     }
 
     // Simplified upcoming appointments section
@@ -672,6 +662,7 @@ struct HomeTabView: View {
                 ForEach(hospitalVM.filteredHospitals) { hospital in
                     NavigationLink {
                         DoctorListView(hospital: hospital)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                     } label: {
                         HospitalCard(hospital: hospital)
                     }
@@ -931,6 +922,31 @@ struct HomeTabView: View {
         // Set these properties for both cases
         UITabBar.appearance().backgroundImage = UIImage()
         UITabBar.appearance().shadowImage = UIImage() // Remove shadow line for cleaner look
+    }
+
+    // Setup return to home tab notification listener
+    private func setupReturnToHomeListener() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ReturnToHomeTab"),
+            object: nil,
+            queue: .main) { _ in
+                // Ensure we're on the main thread
+                DispatchQueue.main.async {
+                    // Force selected tab to home (0)
+                    self.selectedTab = 0
+                    
+                    // Refresh data
+                    self.appointmentManager.refreshAppointments()
+                    Task {
+                        await self.refreshHospitals()
+                    }
+                    
+                    // Force UI refresh
+                    self.tabViewRefreshID = UUID()
+                    
+                    print("📱 Returned to Home Tab via notification")
+                }
+            }
     }
 }
 

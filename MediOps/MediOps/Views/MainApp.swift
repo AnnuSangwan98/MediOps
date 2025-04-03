@@ -1,24 +1,23 @@
 import SwiftUI
 
-// Utility for integrating localization into the main app
-struct LocalizationHelper {
-    // Get shared instance of translation manager
-    static var translationManager: TranslationManager {
-        return TranslationManager.shared
+// Utility for integrating theming into the main app
+struct ThemingHelper {
+    // Get shared instance of theme manager
+    static var themeManager: ThemeManager {
+        return ThemeManager.shared
     }
     
-    // Apply localization to any view
-    static func applyLocalization<T: View>(to view: T) -> some View {
+    // Apply theming to any view
+    static func applyTheming<T: View>(to view: T) -> some View {
         return view
-            .environmentObject(translationManager)
-            .modifier(LocalizedViewModifier())
+            .environmentObject(themeManager)
     }
 }
 
-// Renamed to LocalizedRootView for clarity
-struct LocalizedRootView: View {
+// Renamed to ThemedRootView for clarity
+struct ThemedRootView: View {
     @EnvironmentObject var navigationState: AppNavigationState
-    @EnvironmentObject var translationManager: TranslationManager
+    @EnvironmentObject var themeManager: ThemeManager
     
     var body: some View {
         ZStack {
@@ -27,7 +26,6 @@ struct LocalizedRootView: View {
                 case .patient:
                     HomeTabView()
                         .transition(.opacity)
-                        .localizedLayout()
                 case .doctor:
                     DoctorLoginView()
                 case .superAdmin:

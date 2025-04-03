@@ -16,8 +16,10 @@ struct AccessibilitySettingsView: View {
                 }
             }
             .navigationTitle("Accessibility")
-            .background(themeManager.currentTheme.background)
+            .background(Color.white.ignoresSafeArea())
             .foregroundColor(themeManager.currentTheme.primaryText)
+            .toolbarBackground(Color.white, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Close") {

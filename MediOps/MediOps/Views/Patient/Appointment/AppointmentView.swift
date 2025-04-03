@@ -138,8 +138,12 @@ struct AppointmentView: View {
                 .padding()
             }
             
-            NavigationLink(
-                destination: ReviewAndPayView(
+            // Replace the NavigationLink with a sheet presentation
+            .sheet(isPresented: $navigateToReviewAndPay) {
+                // Reset state when sheet is dismissed
+                navigateToReviewAndPay = false
+            } content: {
+                ReviewAndPayView(
                     doctor: doctor,
                     appointmentDate: selectedDate,
                     appointmentTime: selectedSlot?.date ?? Date(),
@@ -148,12 +152,12 @@ struct AppointmentView: View {
                     endTime: selectedSlot?.endTime ?? "",
                     rawStartTime: selectedSlot?.rawStartTime ?? "",
                     rawEndTime: selectedSlot?.rawEndTime ?? ""
-                ),
-                isActive: $navigateToReviewAndPay
-            ) {
-                EmptyView()
+                )
+                // Apply theme to the sheet
+                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                .background(themeManager.isPatient ? themeManager.currentTheme.background : Color(.systemBackground))
+                .environmentObject(themeManager) // Pass theme manager as environment object
             }
-            .opacity(0)
         }
         .navigationTitle("Book Appointment")
         .navigationBarTitleDisplayMode(.inline)
@@ -289,7 +293,7 @@ struct AppointmentView: View {
             var slotCounts: [String: Int] = [:]
             for appointment in existingAppointments {
                 if let startTime = appointment["slot_start_time"] as? String {
-                    slotCounts[startTime, default: 0] += 1
+                    slotCounts[startTime] = (slotCounts[startTime] ?? 0) + 1
                 }
             }
             

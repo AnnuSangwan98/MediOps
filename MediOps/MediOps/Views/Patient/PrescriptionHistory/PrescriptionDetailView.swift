@@ -45,16 +45,11 @@ struct PrescriptionDetailView: View {
             }
             .padding()
         }
-        .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        )
+        .background(Color.white.ignoresSafeArea())
         .navigationTitle("Prescription")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.white, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: {

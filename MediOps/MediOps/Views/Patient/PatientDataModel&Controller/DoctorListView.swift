@@ -260,26 +260,32 @@ struct DoctorCard: View {
                 Spacer()
             }
             
-            NavigationLink(destination: AppointmentView(doctor: doctor), isActive: $showAppointment) {
+            NavigationLink(destination: 
+                AppointmentView(doctor: doctor)
+                    // Apply theme to destination
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                    .environmentObject(themeManager),
+                isActive: $showAppointment
+            ) {
                 EmptyView()
             }
             .hidden()
             
             Button(action: {
-                showAppointment.toggle()
+                showAppointment = true
             }) {
                 Text("Book Appointment")
                     .fontWeight(.medium)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(themeManager.isPatient ? themeManager.currentTheme.accentColor : Color.teal)
                     .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(themeManager.isPatient ? themeManager.currentTheme.accentColor : Color.teal)
                     .cornerRadius(8)
             }
         }
         .padding()
         .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
-        .cornerRadius(12)
-        .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.2) : .gray.opacity(0.2), radius: 5)
+        .cornerRadius(10)
+        .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.1) : .gray.opacity(0.1), radius: 5)
     }
 }
