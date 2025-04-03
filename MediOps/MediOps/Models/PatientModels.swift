@@ -986,8 +986,8 @@ class PatientProfileController: ObservableObject {
                     print("✅ SCHEMA INSPECTION: Found blood group field in schema")
                 } else {
                     print("⚠️ SCHEMA INSPECTION: No blood group field found in schema")
-                }
-            } else {
+                    }
+                } else {
                 print("❌ SCHEMA INSPECTION: Failed to get schema information")
             }
         } catch {
@@ -1004,7 +1004,7 @@ class PatientProfileController: ObservableObject {
             print("🔍 PATIENT OBJECT: Blood Group value: '\(patient.bloodGroup)'")
             print("🔍 PATIENT OBJECT: Blood Group empty? \(patient.bloodGroup.isEmpty)")
             print("🔍 PATIENT OBJECT: Blood Group 'Not specified'? \(patient.bloodGroup == "Not specified")")
-        } else {
+            } else {
             print("❌ PATIENT OBJECT: No patient object available")
         }
     }
@@ -1123,7 +1123,7 @@ class PatientProfileController: ObservableObject {
                 }
                 
                 return true
-            } else {
+                        } else {
                 print("❌ FIX BLOOD GROUP ERROR: Failed with status code \(httpResponse.statusCode)")
                 print("❌ FIX BLOOD GROUP ERROR: Response: \(responseString)")
                 return false
@@ -1195,7 +1195,7 @@ class PatientProfileController: ObservableObject {
                         patientId: realPatientId,
                         updateData: updateData
                     )
-                } else {
+        } else {
                     print("⚠️ ROBUST UPDATE: No patient found with this user_id either. Creating new patient.")
                     
                     // Create completely new patient
@@ -1232,7 +1232,7 @@ class PatientProfileController: ObservableObject {
                     
                     return true
                 }
-            } else {
+        } else {
                 print("✅ ROBUST UPDATE: Patient exists with ID: \(patientId), proceeding with update")
                 
                 // Patient exists, continue with direct update

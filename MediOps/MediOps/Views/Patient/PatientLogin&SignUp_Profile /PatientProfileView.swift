@@ -22,43 +22,43 @@ struct PatientProfileView: View {
         NavigationStack {
             ScrollView (.vertical, showsIndicators: false) {
                 VStack(spacing: 20) {
-                    if profileController.isLoading || isLoading {
+                if profileController.isLoading || isLoading {
                         ProgressView("Loading profile...".localized)
-                            .padding(.vertical, 100)
-                    } else if let patient = profileController.patient {
-                        // Profile header with patient image
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .frame(width: 120, height: 120)
-                            .foregroundColor(.teal)
-                            .padding(.top, 15)
-                        
-                        Text(patient.name)
-                            .font(.title)
-                            .fontWeight(.semibold)
-                            .padding(.top, 5)
-                        
-                        HStack(spacing: 70) {
-                            VStack {
-                                Image(systemName: "person.fill")
-                                Text(patient.gender)
-                                    .padding(.horizontal)
+                        .padding(.vertical, 100)
+                } else if let patient = profileController.patient {
+                            // Profile header with patient image
+                            Image(systemName: "person.crop.circle.fill")
+                                .resizable()
+                                .frame(width: 120, height: 120)
+                                .foregroundColor(.teal)
+                                .padding(.top, 15)
+                            
+                            Text(patient.name)
+                                .font(.title)
+                                .fontWeight(.semibold)
+                                .padding(.top, 5)
+                            
+                            HStack(spacing: 70) {
+                                VStack {
+                                    Image(systemName: "person.fill")
+                                    Text(patient.gender)
+                                        .padding(.horizontal)
+                                }
+                                VStack {
+                                    Image(systemName: "calendar")
+                                    Text("\(patient.age)")
+                                }
                             }
-                            VStack {
-                                Image(systemName: "calendar")
-                                Text("\(patient.age)")
-                            }
-                        }
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                        .padding(.bottom, 20)
-                        
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                            .padding(.bottom, 20)
+                            
                         // Blood group card - displayed as a separate card for better visibility
-                        CardView {
+                                CardView {
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text("blood_group".localized)
-                                        .font(.headline)
+                                            .font(.headline)
                                         .padding(.bottom, 2)
                                     
                                     HStack {
@@ -66,9 +66,9 @@ struct PatientProfileView: View {
                                             .foregroundColor(.red)
                                             .font(.title2)
                                         
-                                        if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
+                                            if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
                                             Text("unknown".localized)
-                                                .foregroundColor(.orange)
+                                                        .foregroundColor(.orange)
                                                 .font(.title3)
                                                 .fontWeight(.semibold)
                                                 .onTapGesture {
@@ -80,33 +80,33 @@ struct PatientProfileView: View {
                                                 }
                                             
                                             // Add fix button
-                                            Menu {
-                                                ForEach(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], id: \.self) { group in
-                                                    Button(group) {
-                                                        Task {
+                                                    Menu {
+                                                        ForEach(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], id: \.self) { group in
+                                                            Button(group) {
+                                                                Task {
                                                             // Fix blood group
-                                                            let success = await profileController.fixBloodGroup(
-                                                                patientId: patient.id,
-                                                                bloodGroup: group
-                                                            )
-                                                            
-                                                            if success {
+                                                                    let success = await profileController.fixBloodGroup(
+                                                                        patientId: patient.id,
+                                                                        bloodGroup: group
+                                                                    )
+                                                                    
+                                                                    if success {
                                                                 // Reload profile
-                                                                await profileController.loadProfile(userId: patient.userId)
+                                                                        await profileController.loadProfile(userId: patient.userId)
+                                                                    }
+                                                                }
                                                             }
                                                         }
-                                                    }
+                                                    } label: {
+                                                        Text("Fix")
+                                                            .padding(.horizontal, 8)
+                                                            .padding(.vertical, 3)
+                                                            .background(Color.blue)
+                                                            .foregroundColor(.white)
+                                                            .cornerRadius(4)
                                                 }
-                                            } label: {
-                                                Text("Fix")
-                                                    .padding(.horizontal, 8)
-                                                    .padding(.vertical, 3)
-                                                    .background(Color.blue)
-                                                    .foregroundColor(.white)
-                                                    .cornerRadius(4)
-                                            }
-                                        } else {
-                                            Text(patient.bloodGroup)
+                                            } else {
+                                                Text(patient.bloodGroup)
                                                 .font(.title3)
                                                 .fontWeight(.semibold)
                                         }
@@ -120,11 +120,11 @@ struct PatientProfileView: View {
                         .padding(.bottom, 10)
                         
                         VStack(spacing: 16) {
-                            CardView {
-                                VStack(alignment: .leading, spacing: 10) {
+                                CardView {
+                                    VStack(alignment: .leading, spacing: 10) {
                                     Text("personal_information".localized)
-                                        .font(.headline)
-                                        .padding(.bottom, 5)
+                                            .font(.headline)
+                                            .padding(.bottom, 5)
                                     InfoRow(title: "address".localized, value: patient.address ?? "not_provided".localized)
                                     InfoRow(title: "phone_number".localized, value: patient.phoneNumber)
                                 }
@@ -143,8 +143,8 @@ struct PatientProfileView: View {
                                             Text(translationManager.currentLanguage.displayName)
                                                 .foregroundColor(.gray)
                                         }
-                                        
-                                        Spacer()
+                            
+                            Spacer()
                                         
                                         Image(systemName: "chevron.right")
                                             .foregroundColor(.gray)
@@ -157,23 +157,23 @@ struct PatientProfileView: View {
                         .padding(.horizontal)
                         
                         Spacer()
-                    } else if let error = profileController.error {
-                        // Error view
-                        VStack(spacing: 20) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.system(size: 50))
-                                .foregroundColor(.orange)
-                            
-                            Text("Could not load profile")
-                                .font(.title3)
-                                .fontWeight(.medium)
-                            
-                            Text(error.localizedDescription)
-                                .multilineTextAlignment(.center)
-                                .foregroundColor(.gray)
-                                .padding(.horizontal)
-                            
-                            Button("Try Again") {
+                } else if let error = profileController.error {
+                    // Error view
+                    VStack(spacing: 20) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 50))
+                            .foregroundColor(.orange)
+                        
+                        Text("Could not load profile")
+                            .font(.title3)
+                            .fontWeight(.medium)
+                        
+                        Text(error.localizedDescription)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.gray)
+                            .padding(.horizontal)
+                        
+                        Button("Try Again") {
                                 Task {
                                     isLoading = true
                                     if let userId = UserDefaults.standard.string(forKey: "userId") ?? 
@@ -185,15 +185,15 @@ struct PatientProfileView: View {
                                     }
                                     isLoading = false
                                 }
-                            }
-                            .padding()
-                            .background(Color.teal)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
                         }
                         .padding()
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 100)
+                        .background(Color.teal)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 100)
                     } else if isLoading {
                         // Show a spinner when actively loading
                         ProgressView("Loading profile data...")
@@ -241,13 +241,13 @@ struct PatientProfileView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("cancel".localized) {
-                        dismiss()
+                    dismiss()
                     }
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("edit".localized) {
-                        isEditing = true
+                    isEditing = true
                     }
                     .disabled(profileController.patient == nil)
                 }
@@ -257,25 +257,25 @@ struct PatientProfileView: View {
                 // Remove the Add Family Member button
                 
                 // Add logout button
-                Button(action: {
+                    Button(action: {
                     showLogoutAlert = true
-                }) {
+                    }) {
                     Text("logout".localized)
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity)
-                        .padding()
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding()
                         .background(Color.red.opacity(0.8))
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                        .padding(.horizontal)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                            .padding(.horizontal)
                         .padding(.top, 10)
                         .padding(.bottom, 20)
                 }
             }
         }
         .sheet(isPresented: $isEditing) {
-            EditProfileView(profileController: profileController, isPresented: $isEditing)
-        }
+                EditProfileView(profileController: profileController, isPresented: $isEditing)
+            }
         .sheet(isPresented: $showLanguageSelection) {
             LanguageSelectionView()
         }
@@ -326,8 +326,8 @@ struct PatientProfileView: View {
                         isLoading = true
                     }
                     
-                    if let userId = UserDefaults.standard.string(forKey: "userId") ?? 
-                               UserDefaults.standard.string(forKey: "current_user_id") {
+            if let userId = UserDefaults.standard.string(forKey: "userId") ??
+                       UserDefaults.standard.string(forKey: "current_user_id") {
                         print("🔄 DEBUG: Loading profile for userId: \(userId)")
                         
                         // Load the patient profile using userId
@@ -343,7 +343,7 @@ struct PatientProfileView: View {
                                 await profileController.checkBloodGroupField(patientId: patient.id)
                                 
                                 // Reload profile after fixing blood group
-                                await profileController.loadProfile(userId: userId)
+                await profileController.loadProfile(userId: userId)
                             }
                         } else {
                             print("⚠️ DEBUG: Failed to load patient data")
@@ -435,7 +435,7 @@ struct PatientProfileView: View {
             NavigationStack {
                 Form {
                     Section(header: Text("Personal Information")) {
-                        TextField("Name", text: $name)
+                            TextField("Name", text: $name)
                         
                         Stepper("Age: \(age)", value: $age, in: 1...120)
                         
@@ -451,9 +451,9 @@ struct PatientProfileView: View {
                             }
                         }
                         
-                        TextField("Email", text: $email)
-                            .keyboardType(.emailAddress)
-                            .autocapitalization(.none)
+                            TextField("Email", text: $email)
+                                .keyboardType(.emailAddress)
+                                .autocapitalization(.none)
                     }
                     
                     Section(header: Text("Contact Information")) {
@@ -479,7 +479,7 @@ struct PatientProfileView: View {
                     }
                     
                     Section(header: Text("Emergency Contact")) {
-                        TextField("Name", text: $emergencyContactName)
+                            TextField("Name", text: $emergencyContactName)
                         
                         TextField("Phone Number (10 digits)", text: $emergencyContactNumber)
                             .keyboardType(.phonePad)
@@ -499,7 +499,7 @@ struct PatientProfileView: View {
                                 .foregroundColor(.red)
                         }
                         
-                        TextField("Relationship", text: $emergencyRelationship)
+                            TextField("Relationship", text: $emergencyRelationship)
                     }
                     
                     if !errorMessage.isEmpty {
