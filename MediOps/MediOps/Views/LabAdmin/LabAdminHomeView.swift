@@ -129,6 +129,25 @@ struct LabAdminHomeView: View {
                                 let contactNumber = labAdminData["contact_number"] as? String ?? ""
                                 let address = labAdminData["Address"] as? String ?? ""
                                 
+                                // Parse the date of birth if it exists
+                                var dateOfBirth: Date? = nil
+                                if let dobString = labAdminData["dob"] as? String {
+                                    let dateFormatter = ISO8601DateFormatter()
+                                    dateOfBirth = dateFormatter.date(from: dobString)
+                                    
+                                    // If ISO8601 fails, try other formats
+                                    if dateOfBirth == nil {
+                                        let pgFormatter = DateFormatter()
+                                        pgFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+                                        dateOfBirth = pgFormatter.date(from: dobString)
+                                        
+                                        if dateOfBirth == nil {
+                                            pgFormatter.dateFormat = "yyyy-MM-dd"
+                                            dateOfBirth = pgFormatter.date(from: dobString)
+                                        }
+                                    }
+                                }
+                                
                                 self.labAdmin = LabAdmin(
                                     id: id,
                                     hospitalId: hospitalId,
@@ -137,6 +156,10 @@ struct LabAdminHomeView: View {
                                     contactNumber: contactNumber,
                                     department: department,
                                     address: address,
+                                    qualification: ["MLT"],
+                                    licenseNo: labAdminData["license_no"] as? String,
+                                    dateOfBirth: dateOfBirth,
+                                    experience: (labAdminData["experience"] as? Int) ?? 0,
                                     createdAt: Date(),  // Using current date as fallback
                                     updatedAt: Date()   // Using current date as fallback
                                 )

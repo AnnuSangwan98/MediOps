@@ -23,6 +23,7 @@ struct LocalDoctor: Identifiable, Codable {
     let isFirstTimeLogin: Bool
     let rating: Double // This is not in the database but useful for UI
     let consultationFee: Double // This is not in the database but useful for UI
+    let maxAppointments: Int
     
     // Convert this LocalDoctor to Models.Doctor for use in appointments
     func toModelDoctor() -> Models.Doctor {
@@ -43,8 +44,10 @@ struct LocalDoctor: Identifiable, Codable {
             contactNumber: contactNumber,
             emergencyContactNumber: emergencyContactNumber,
             doctorStatus: doctorStatus,
+            dateOfBirth: nil,
             createdAt: createdAt ?? Date(),
-            updatedAt: updatedAt ?? Date()
+            updatedAt: updatedAt ?? Date(),
+            maxAppointments: maxAppointments
         )
     }
 }
@@ -127,6 +130,16 @@ class DoctorViewModel: ObservableObject {
                         updatedAt = dateFormatter.date(from: updatedString) ?? Date()
                     }
                     
+                    // Parse max appointments with fallback
+                    let maxAppointments: Int
+                    if let max = data["max_appointments"] as? Int {
+                        maxAppointments = max
+                    } else if let maxString = data["max_appointments"] as? String, let max = Int(maxString) {
+                        maxAppointments = max
+                    } else {
+                        maxAppointments = 8 // Default value if not found
+                    }
+                    
                     // Use model defaults for optional fields
                     let doctor = LocalDoctor(
                         id: id,
@@ -148,7 +161,8 @@ class DoctorViewModel: ObservableObject {
                         updatedAt: updatedAt,
                         isFirstTimeLogin: data["is_first_time_login"] as? Bool ?? true,
                         rating: 4.5, // Default rating since not in DB
-                        consultationFee: 500.0 // Default fee since not in DB
+                        consultationFee: 500.0, // Default fee since not in DB
+                        maxAppointments: maxAppointments
                     )
                     
                     return doctor

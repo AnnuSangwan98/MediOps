@@ -31,6 +31,9 @@ struct AddDoctorView: View {
     @State private var selectedTimeSlots: [String: [String: Bool]] = [:]
     @State private var selectedDays: Set<String> = []
     
+    // Add state variables for max appointments at the top with other @State declarations
+    @State private var maxAppointments = 8
+    
     private let weekdays = [
         "monday": "Mon",
         "tuesday": "Tue",
@@ -160,43 +163,22 @@ struct AddDoctorView: View {
                     .padding(.vertical, 5)
                     
                     // Updated license field with more general format hint
-                    TextField("License Number", text: $license)
+                    TextField("License Number (e.g. AB12345)", text: $license)
                         .onChange(of: license) { _, newValue in
-                            // Format license to uppercase and validate format
-                            let uppercased = newValue.uppercased()
-                            if uppercased != newValue {
-                                license = uppercased
-                            }
-                            
-                            // If length is more than 7, truncate
-                            if uppercased.count > 7 {
-                                license = String(uppercased.prefix(7))
-                            }
-                            
-                            // If we have 2 or more characters, ensure first two are letters
-                            if uppercased.count >= 2 {
-                                let prefix = String(uppercased.prefix(2))
-                                if !prefix.allSatisfy({ $0.isLetter }) {
-                                    license = String(license.prefix(1))
-                                }
-                            }
-                            
-                            // For characters after position 2, ensure they are numbers
-                            if uppercased.count > 2 {
-                                let numbers = String(uppercased.dropFirst(2))
-                                if !numbers.allSatisfy({ $0.isNumber }) {
-                                    license = String(uppercased.prefix(2))
-                                }
-                            }
+                            license = newValue.uppercased()
                         }
                     
+                    if !license.isEmpty && !isValidLicense(license) {
+                        Text("License must be 2 letters followed by 5 numbers")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                    
                     Stepper("Experience: \(experience) years", value: $experience, in: 0...maximumExperience)
-                        .onChange(of: experience) { _, newValue in
-                            // Enforce the maximum experience constraint
-                            if newValue > maximumExperience {
-                                experience = maximumExperience
-                            }
-                        }
+                    
+                    // Add max appointments stepper
+                    Stepper("Max Appointments: \(maxAppointments)", value: $maxAppointments, in: 1...50)
+                        .help("Maximum number of daily appointments the doctor can handle")
                 }
                 
                 Section(header: Text("Contact Information")) {
@@ -420,13 +402,13 @@ struct AddDoctorView: View {
                     return
                 }
                 
-                // Generate a valid password
-                let generatedPassword = generateValidPassword()
+                // Create a secure password that meets constraints
+                let securePassword = generateSecurePassword()
                 
                 // Create the doctor
                 let (doctor, _) = try await adminController.createDoctor(
                     email: email,
-                    password: generatedPassword,
+                    password: securePassword, // Using secure password instead of phone number
                     name: fullName,
                     specialization: specialization.rawValue,
                     hospitalId: hospitalId,
@@ -434,10 +416,13 @@ struct AddDoctorView: View {
                     licenseNo: license,
                     experience: experience,
                     addressLine: address,
-                    state: "",
-                    city: "",
+                    state: "", // Empty value since we don't have a field for it
+                    city: "", // Empty value since we don't have a field for it
                     pincode: pincode,
-                    contactNumber: phoneNumber
+                    contactNumber: phoneNumber,
+                    emergencyContactNumber: nil,
+                    doctorStatus: "active",
+                    maxAppointments: maxAppointments
                 )
                 
                 // Create weekly schedule using the helper function
@@ -464,7 +449,8 @@ struct AddDoctorView: View {
                     experience: experience,
                     qualification: Array(selectedQualifications).joined(separator: ", "),
                     license: license,
-                    address: address
+                    address: address,
+                    maxAppointments: maxAppointments
                 )
                 
                 let activity = UIActivity(
@@ -508,7 +494,7 @@ struct AddDoctorView: View {
         pincode = ""
         selectedTimeSlots = [:]
         selectedDays = []
-//        password = ""
+        maxAppointments = 8
     }
     
     private func isValidEmail(_ email: String) -> Bool {
@@ -574,26 +560,16 @@ struct AddDoctorView: View {
         return daySchedule
     }
     
-    private func generateValidPassword() -> String {
-        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
-        let numbers = "0123456789"
-        let specialCharacters = "@$!%*?&"
+    // Create a secure password that meets constraints
+    private func generateSecurePassword() -> String {
+        // Create password with at least 8 chars including uppercase, lowercase, number and special char
+        let uppercaseLetter = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".randomElement()!
+        let lowercaseLetter = "abcdefghijklmnopqrstuvwxyz".randomElement()!
+        let number = "0123456789".randomElement()!
+        let specialChar = "!@#$%^&*".randomElement()!
         
-        // Ensure at least one of each required character type
-        var password = String(uppercaseLetters.randomElement()!)
-        password += String(lowercaseLetters.randomElement()!)
-        password += String(numbers.randomElement()!)
-        password += String(specialCharacters.randomElement()!)
-        
-        // Add additional random characters to meet minimum length
-        let allCharacters = uppercaseLetters + lowercaseLetters + numbers + specialCharacters
-        while password.count < 12 { // Using 12 characters for better security
-            password += String(allCharacters.randomElement()!)
-        }
-        
-        // Shuffle the password to make it more random
-        return String(password.shuffled())
+        // Basic info plus random chars to make 8+ length
+        return "Doc\(uppercaseLetter)\(lowercaseLetter)\(number)\(specialChar)\(phoneNumber.suffix(4))"
     }
 }
 

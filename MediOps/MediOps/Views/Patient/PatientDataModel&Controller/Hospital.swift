@@ -1025,8 +1025,10 @@ extension HospitalDoctor {
             contactNumber: contactNumber,
             emergencyContactNumber: nil,
             doctorStatus: doctorStatus,
+            dateOfBirth: nil,
             createdAt: Date(),
-            updatedAt: Date()
+            updatedAt: Date(),
+            maxAppointments: 10
         )
     }
 }

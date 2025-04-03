@@ -22,6 +22,9 @@ struct EditDoctorView: View {
     @State private var maxNormalPatients: Int = 5
     @State private var maxPremiumPatients: Int = 2
     
+    // Update the state variables to include maxAppointments
+    @State private var maxAppointments: Int
+    
     private let weekdays = [
         "monday": "Mon",
         "tuesday": "Tue",
@@ -75,6 +78,7 @@ struct EditDoctorView: View {
         _qualification = State(initialValue: doctor.qualification)
         _license = State(initialValue: doctor.license)
         _address = State(initialValue: doctor.address)
+        _maxAppointments = State(initialValue: doctor.maxAppointments)
     }
     
     private var isFormValid: Bool {
@@ -106,10 +110,10 @@ struct EditDoctorView: View {
                         }
                     }
                     
-                    DatePicker("Date of Birth",
-                              selection: $dateOfBirth,
-                              in: ...Date(),
-                              displayedComponents: .date)
+//                    DatePicker("Date of Birth",
+//                              selection: $dateOfBirth,
+//                              in: ...Date(),
+//                              displayedComponents: .date)
                 }
                 
                 Section(header: Text("Professional Information")) {
@@ -120,7 +124,17 @@ struct EditDoctorView: View {
                             license = newValue.uppercased()
                         }
                     
-                    Stepper("Experience: \(experience) years", value: $experience, in: 0...maximumExperience)
+                    // Display experience as text instead of stepper
+                    HStack {
+                        Text("Experience:")
+                            .foregroundColor(.primary)
+                        Text("\(experience) years")
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    // Add max appointments stepper
+                    Stepper("Max Appointments: \(maxAppointments)", value: $maxAppointments, in: 1...50)
+                        .help("Maximum number of daily appointments the doctor can handle")
                 }
                 
                 Section(header: Text("Contact Information")) {
@@ -313,7 +327,8 @@ struct EditDoctorView: View {
             experience: experience,
             qualification: qualification,
             license: license,
-            address: address
+            address: address,
+            maxAppointments: maxAppointments
         )
         
         // Save to Supabase
@@ -334,7 +349,8 @@ struct EditDoctorView: View {
                     experience: experience,
                     addressLine: address,
                     email: email,
-                    contactNumber: phoneNumber
+                    contactNumber: phoneNumber,
+                    maxAppointments: maxAppointments
                 )
                 
                 // Update doctor availability

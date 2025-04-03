@@ -282,13 +282,13 @@ struct BloodDonationRequestView: View {
                 
                 if donor.id != availableDonors().last?.id {
                     Divider()
-                        .padding(.leading)
+                        .padding(.horizontal, 16)
                 }
             }
         }
         .background(Color.white)
-        .cornerRadius(10)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
         .padding(.horizontal)
     }
     
@@ -337,71 +337,101 @@ struct BloodDonationRequestView: View {
                 
                 if donor.id != activeDonors().last?.id {
                     Divider()
-                        .padding(.leading)
+                        .padding(.horizontal, 16)
                 }
             }
         }
         .background(Color.white)
-        .cornerRadius(10)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
         .padding(.horizontal)
     }
     
     private func donorRow(donor: BloodDonor, isSelectable: Bool) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Name section
                 Text(donor.name)
                     .font(.headline)
+                    .lineLimit(1)
+                    .padding(.bottom, 2)
                 
+                // Blood group with label in a fixed-width layout
                 HStack(spacing: 8) {
-                    Text("Blood: \(donor.bloodGroup)")
+                    Text("Blood Group:")
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(.secondary)
+                        .frame(width: 100, alignment: .leading)
                     
-                    // Show date if there's a pending request
-                    if donor.hasPendingRequest {
-                        Circle()
-                            .fill(Color.orange)
-                            .frame(width: 6, height: 6)
-                        
-                        Text("Pending Request")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    }
+                    Text(donor.bloodGroup)
+                        .font(.subheadline.bold())
+                        .foregroundColor(.primary)
                 }
                 
-                if let status = donor.requestStatus, status != "Rejected", status != "Cancelled" {
-                    statusBadge(for: status)
-                        .padding(.top, 2)
+                // Request status section
+                if donor.hasPendingRequest || donor.requestStatus != nil {
+                    HStack(spacing: 8) {
+                        Text("Status:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .frame(width: 100, alignment: .leading)
+                        
+                        // Show status indicators
+                        if donor.hasPendingRequest {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 6, height: 6)
+                                
+                                Text("Pending Request")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                        } else if let status = donor.requestStatus, status != "Rejected", status != "Cancelled" {
+                            statusBadge(for: status)
+                        }
+                    }
                 }
             }
             
             Spacer()
             
+            // Selection indicator or action indicator
             if isSelectable {
                 if donor.canBeRequested {
                     if selectedDonors.contains(donor.id) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.blue)
                             .font(.title2)
+                            .frame(width: 40)
                     } else {
                         Image(systemName: "circle")
                             .foregroundColor(.gray)
                             .font(.title2)
+                            .frame(width: 40)
                     }
                 } else {
-                    // Cannot be selected - show a lock icon
-                    Image(systemName: "lock.fill")
-                        .foregroundColor(.orange)
-                        .font(.body)
+                    // Cannot be selected - show a lock icon with reason
+                    VStack(alignment: .center, spacing: 2) {
+                        Image(systemName: "lock.fill")
+                            .foregroundColor(.orange)
+                            .font(.body)
+                        
+                        Text("Unavailable")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+                    .frame(width: 40)
                 }
             } else {
                 Image(systemName: "chevron.right")
                     .foregroundColor(.gray)
                     .font(.callout)
+                    .frame(width: 40)
             }
         }
-        .padding()
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
         .opacity(donor.canBeRequested || !isSelectable ? 1.0 : 0.7)
     }
     
@@ -921,38 +951,80 @@ struct HistoryCard: View {
     let request: [String: Any]
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(getDonorName())
-                        .font(.headline)
-                    
-                    Text("Blood Group: \(getBloodGroup())")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                }
+        VStack(alignment: .leading, spacing: 12) {
+            // Header row with name and status
+            HStack(alignment: .top) {
+                Text(getDonorName())
+                    .font(.headline)
+                    .lineLimit(1)
                 
                 Spacer()
                 
                 statusBadge
             }
             
-            if let date = getRequestDate() {
-                HStack {
-                    Image(systemName: "calendar")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
+            // Blood group information row with fixed-width label
+            HStack(spacing: 8) {
+                Text("Blood Group:")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(width: 100, alignment: .leading)
+                
+                HStack(spacing: 4) {
+                    Image(systemName: "drop.fill")
+                        .font(.caption)
+                        .foregroundColor(.red.opacity(0.8))
                     
-                    Text(formatDate(date))
-                        .font(.caption2)
-                        .foregroundColor(.gray)
+                    Text(getBloodGroup())
+                        .font(.subheadline.bold())
+                        .foregroundColor(.primary)
+                }
+            }
+            
+            // Date information with fixed-width label
+            if let date = getRequestDate() {
+                HStack(spacing: 8) {
+                    Text("Requested:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .frame(width: 100, alignment: .leading)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        
+                        Text(formatDate(date))
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+            }
+            
+            // Hospital information with fixed-width label if available
+            if let hospitalId = request["hospital_id"] as? String {
+                HStack(spacing: 8) {
+                    Text("Hospital:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .frame(width: 100, alignment: .leading)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "building.2")
+                            .font(.caption)
+                            .foregroundColor(.blue.opacity(0.8))
+                        
+                        Text(hospitalId)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
                 }
             }
         }
-        .padding()
+        .padding(16)
         .background(Color.white)
         .cornerRadius(10)
-        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .shadow(color: Color.black.opacity(0.08), radius: 3, x: 0, y: 2)
     }
     
     private var statusBadge: some View {

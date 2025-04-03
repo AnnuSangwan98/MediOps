@@ -28,7 +28,7 @@ struct AddLabAdminView: View {
     private let adminController = AdminController.shared
     
     // Add allowed qualifications
-    private let availableQualifications = ["MBBS", "MD", "MS"]
+    private let availableQualifications = ["MLT", "DMLT", "M.Sc"]
     
     // Calculate maximum experience based on age
     private var maximumExperience: Int {
@@ -276,26 +276,26 @@ struct AddLabAdminView: View {
                 // Generate a secure password
                 let password = generateSecurePassword()
                 
-                // Get hospital ID from UserDefaults
+                // Get hospital ID from UserDefaults (saved during login)
                 guard let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") else {
-                    await MainActor.run {
-                        isLoading = false
-                        alertMessage = "Failed to save lab admin: Hospital ID not found. Please login again."
-                        showAlert = true
-                    }
+                    alertMessage = "Failed to save lab admin: Hospital ID not found"
+                    showAlert = true
+                    isLoading = false
                     return
                 }
                 
-                // Save to database using AdminController
+                // Save to database using AdminController - send qualifications as array
                 do {
                     let (labAdminResult, _) = try await adminController.createLabAdmin(
-                        email: labAdmin.email,
+                        email: email,
                         password: password,
-                        name: labAdmin.fullName,
-                        labName: labAdmin.qualification,
+                        name: fullName,
+                        qualification: Array(selectedQualifications),
                         hospitalAdminId: hospitalId,
-                        contactNumber: phoneWithoutCountryCode,
-                        department: "Pathology & Laboratory"
+                        contactNumber: phoneNumber,
+                        license: license,
+                        dateOfBirth: dateOfBirth,
+                        experience: experience
                     )
                     
                     // If successful, immediately update UI and dismiss
@@ -390,9 +390,9 @@ struct AddLabAdminView: View {
                 "fullName": fullName,
                 "email": email,
                 "phone": "+91\(phoneNumber)",
-                "qualification": selectedQualifications.joined(separator: ", "),
+                "qualification": Array(selectedQualifications),
                 "license": license,
-                "labName": selectedQualifications.joined(separator: ", "),
+                "labName": "Pathology & Laboratory",
                 "labId": "LAB001",
                 "password": password
             ]
