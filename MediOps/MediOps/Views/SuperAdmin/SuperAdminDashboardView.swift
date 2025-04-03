@@ -25,6 +25,7 @@ struct SuperAdminDashboardView: View {
     @State private var showDeleteConfirmation = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var successMessage = ""
     @State private var showLogoutConfirmation = false
     @State private var navigateToRoleSelection = false
     @State private var showProfileSheet = false
@@ -259,7 +260,7 @@ struct SuperAdminDashboardView: View {
             .alert("Success", isPresented: $showSuccessAlert) {
                 Button("OK", role: .cancel) { clearForm() }
             } message: {
-                Text("Hospital added successfully!")
+                Text(successMessage)
             }
             .alert("Delete Hospital", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) { }
@@ -307,6 +308,7 @@ struct SuperAdminDashboardView: View {
         Task {
             await refreshData()
         }
+        successMessage = "Hospital added successfully!"
         showSuccessAlert = true
         showHospitalForm = false
         clearForm()
@@ -325,8 +327,8 @@ struct SuperAdminDashboardView: View {
                     // Update UI state on success
                     showEditForm = false
                     isLoadingAction = false
-                    errorMessage = "Hospital updated successfully"
-                    showError = true
+                    successMessage = "Hospital updated successfully!"
+                    showSuccessAlert = true
                 }
             } catch {
                 await MainActor.run {
@@ -426,16 +428,7 @@ struct HospitalListItem: View {
                             .foregroundColor(.black)
                         Spacer()
                         
-                        Text(hospital.status.rawValue)
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(statusColor)
-                                    .opacity(0.2)
-                            )
-                            .foregroundColor(statusColor)
+                        
                         
                         // Three-dot menu
                         Menu {

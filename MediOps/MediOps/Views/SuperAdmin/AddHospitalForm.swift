@@ -895,12 +895,12 @@ struct EditHospitalForm: View {
                                 .keyboardType(.numberPad)
                         }
                         
-                        Picker("Hospital Status", selection: $editedHospital.status) {
-                            Text("Active").tag(HospitalStatus.active)
-                            Text("Pending").tag(HospitalStatus.pending)
-                            Text("Inactive").tag(HospitalStatus.inactive)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
+//                        Picker("Hospital Status", selection: $editedHospital.status) {
+//                            Text("Active").tag(HospitalStatus.active)
+//                            Text("Pending").tag(HospitalStatus.pending)
+//                            Text("Inactive").tag(HospitalStatus.inactive)
+//                        }
+//                        .pickerStyle(SegmentedPickerStyle())
                     },
                     label: {
                         HStack {

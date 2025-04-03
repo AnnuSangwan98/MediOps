@@ -142,7 +142,7 @@ class HospitalController {
     func deleteHospital(id: String) async throws {
         try await supabase.delete(
             from: "hospitals",
-            where: "id",
+            where: "hospital_id",
             equals: id
         )
     }
