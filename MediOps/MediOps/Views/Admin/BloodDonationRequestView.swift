@@ -43,11 +43,6 @@ struct BloodDonationRequestView: View {
                         case 0: // Available Donors
                             requestDetailsSection
                             availableDonorsSection
-                            if requestStatus == .sent {
-                                sentRequestSection
-                            } else if !selectedDonors.isEmpty && requestStatus == .notSent {
-                                sendRequestButton
-                            }
                         case 1: // Active Requests
                             activeRequestsContent
                         case 2: // History
@@ -194,26 +189,45 @@ struct BloodDonationRequestView: View {
             if isLoadingDonors {
                 loadingIndicator
             } else if availableDonors().isEmpty {
-                emptyStateView(
-                    title: "No donors available",
-                    message: "No registered donors found for \(selectedBloodGroup) blood type",
-                    icon: "person.slash"
-                )
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    if !hasAvailableDonorsForSelection() {
-                        HStack {
-                            Image(systemName: "info.circle")
-                                .foregroundColor(.orange)
-                            Text("All donors have pending requests")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                        }
-                        .padding(.horizontal)
-                    }
-                    
-                    availableDonorsList
+                // Check if there are ANY donors for this blood group, even unavailable ones
+                let anyDonorsWithMatchingBloodGroup = registeredDonors.contains { donor in
+                    return selectedBloodGroup.isEmpty || donor.bloodGroup == selectedBloodGroup
                 }
+                
+                if anyDonorsWithMatchingBloodGroup {
+                    emptyStateView(
+                        title: "No available donors",
+                        message: "All donors with \(selectedBloodGroup) blood type already have pending requests",
+                        icon: "person.fill.questionmark"
+                    )
+                } else {
+                    emptyStateView(
+                        title: "No donors found",
+                        message: "No registered donors found for \(selectedBloodGroup) blood type",
+                        icon: "person.slash"
+                    )
+                }
+            } else {
+                availableDonorsList
+            }
+            
+            // Request button should only be active when there are donors who can be requested
+            if !availableDonors().isEmpty {
+                Button(action: sendBloodDonationRequest) {
+                    HStack {
+                        Image(systemName: "paperplane")
+                        Text("Send Request to \(selectedDonors.count) Donors")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+                    .padding(.bottom)
+                }
+                .disabled(selectedDonors.isEmpty || isLoading)
+                .opacity(selectedDonors.isEmpty || isLoading ? 0.6 : 1)
             }
         }
         .background(Color.white)
@@ -271,12 +285,10 @@ struct BloodDonationRequestView: View {
                     )
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        if donor.canBeRequested {
-                            if selectedDonors.contains(donor.id) {
-                                selectedDonors.remove(donor.id)
-                            } else {
-                                selectedDonors.insert(donor.id)
-                            }
+                        if selectedDonors.contains(donor.id) {
+                            selectedDonors.remove(donor.id)
+                        } else {
+                            selectedDonors.insert(donor.id)
                         }
                     }
                 
@@ -411,15 +423,16 @@ struct BloodDonationRequestView: View {
                             .frame(width: 40)
                     }
                 } else {
-                    // Cannot be selected - show a lock icon with reason
+                    // Cannot be selected - show more specific information
                     VStack(alignment: .center, spacing: 2) {
                         Image(systemName: "lock.fill")
                             .foregroundColor(.orange)
                             .font(.body)
                         
-                        Text("Unavailable")
+                        Text("In-use")
                             .font(.caption2)
                             .foregroundColor(.orange)
+                            .multilineTextAlignment(.center)
                     }
                     .frame(width: 40)
                 }
@@ -679,12 +692,33 @@ struct BloodDonationRequestView: View {
     // MARK: - Helper Methods
     
     private func availableDonors() -> [BloodDonor] {
-        // Include donors with pending requests but show them as locked
-        // Only filter out those that are in history (completed, cancelled, rejected)
+        // Include only donors that can be requested and match blood group
         let filteredDonors = registeredDonors.filter { donor in
-            donor.requestStatus != "Completed" && 
-            donor.requestStatus != "Cancelled" && 
-            donor.requestStatus != "Rejected"
+            // First check immediate status - filter out completed, cancelled, rejected
+            if donor.requestStatus == "Completed" || 
+               donor.requestStatus == "Cancelled" || 
+               donor.requestStatus == "Rejected" {
+                return false
+            }
+            
+            // Then check history - filter out donors in completed or cancelled history
+            let isDonorInCompletedHistory = requestHistory.contains { historyItem in
+                guard let donorId = historyItem["donor_id"] as? String,
+                      let status = historyItem["request_status"] as? String else {
+                    return false
+                }
+                return donorId == donor.id && (status == "Completed" || status == "Cancelled")
+            }
+            
+            // Match blood group if one is selected
+            let matchesBloodGroup = selectedBloodGroup.isEmpty || 
+                                   donor.bloodGroup == selectedBloodGroup
+            
+            // Filter out donors with pending or accepted requests (they're not available)
+            let isAvailable = !donor.hasActiveRequest
+            
+            // Only include donor if they're available, not in completed history, and match blood group
+            return isAvailable && !isDonorInCompletedHistory && matchesBloodGroup
         }
         
         // Sort by name
@@ -701,16 +735,24 @@ struct BloodDonationRequestView: View {
     }
     
     private func refreshAllData() async {
+        isLoading = true
+        
+        // Always fetch history first, so we have the latest completed requests data
+        await fetchRequestHistory()
+        
         switch activeTab {
         case 0:
             await fetchRegisteredDonors(bloodGroup: selectedBloodGroup)
         case 1:
             await fetchRegisteredDonors(bloodGroup: nil)
         case 2:
-            await fetchRequestHistory()
+            // Already fetched history above
+            break
         default:
             break
         }
+        
+        isLoading = false
     }
     
     private func fetchRegisteredDonors(bloodGroup: String? = nil) async {
@@ -720,11 +762,14 @@ struct BloodDonationRequestView: View {
         defer { isLoadingDonors = false }
         
         do {
+            // Always fetch history data first to ensure we have up-to-date history
+            await fetchRequestHistory()
+            
             registeredDonors = try await adminController.getRegisteredBloodDonors(bloodGroup: bloodGroup)
             
-            // Auto-select only donors that can be requested
+            // Auto-select only donors that can be requested AND match the selected blood group
             for donor in registeredDonors {
-                if donor.canBeRequested {
+                if donor.canBeRequested && (bloodGroup == nil || donor.bloodGroup == bloodGroup) {
                     selectedDonors.insert(donor.id)
                 }
             }
@@ -893,13 +938,17 @@ struct BloodDonationRequestView: View {
                 requestStatus = .completed
                 showSuccess = true
                 
-                // Refresh all data and switch to history tab
+                // Refresh request history first to ensure our completed requests are visible
                 Task {
-                    await refreshAllData()
+                    await fetchRequestHistory()
                     
+                    // Then switch to history tab
                     withAnimation {
                         activeTab = 2
                     }
+                    
+                    // Finally refresh all data
+                    await refreshAllData()
                 }
             }
         } catch {

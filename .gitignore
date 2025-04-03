@@ -30,3 +30,4 @@ Podfile.lock
 *.extension
 *.pbxproj
 
+*.xcuserstate
