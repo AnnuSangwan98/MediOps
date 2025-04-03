@@ -476,6 +476,7 @@ struct AddHospitalForm: View {
                             }
                             
                             TextField("Hospital Name", text: $hospitalName)
+                                .textCase(.uppercase)
                             
                             TextField("Hospital ID (HOSXXX)", text: $hospitalID)
                                 .onChange(of: hospitalID) { _, newValue in
@@ -853,7 +854,7 @@ struct EditHospitalForm: View {
                     isExpanded: $hospitalInfoExpanded,
                     content: {
                         TextField("Hospital Name", text: $editedHospital.name)
-                        
+                            .textCase(.uppercase)
                         // Display hospital ID as non-editable text
                         HStack {
                             Text("Hospital ID")

@@ -66,7 +66,7 @@ struct AdminLoginView: View {
                             .font(.subheadline)
                             .foregroundColor(.gray)
                         
-                        TextField("Enter admin ID (e.g. HOS001)", text: $adminId)
+                        TextField("Enter admin ID (e.g. HOSXXX)", text: $adminId)
                             .textFieldStyle(CustomTextFieldStyles())
                             .onChange(of: adminId) { _, newValue in
                                 // Automatically format to uppercase for "HOS" part
