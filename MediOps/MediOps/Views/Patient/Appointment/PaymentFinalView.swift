@@ -214,16 +214,10 @@ struct PaymentFinalView: View {
                 
                 print("Found \(patientResults.count) patient records")
                 
-                // Check if we have patients data and extract patient ID
-                var patientId: String? = nil
-                
-                if let patientData = patientResults.first {
-                    // Try different possible keys for patient ID
-                    patientId = patientData["id"] as? String ?? patientData["patient_id"] as? String
-                }
-                
-                guard let patientId = patientId else {
-                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not find patient record"])
+                // Extract the PAT format patient_id
+                guard let patientData = patientResults.first,
+                      let patientId = patientData["patient_id"] as? String else {
+                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not find patient_id"])
                 }
                 
                 print("📝 Creating appointment for patient: \(patientId)")
@@ -284,7 +278,7 @@ struct PaymentFinalView: View {
                 // Create appointment in database
                 let appointmentData: [String: Any] = [
                     "id": appointmentId,
-                    "patient_id": patientId,
+                    "patient_id": patientId,  // Using PAT format ID from patients table
                     "doctor_id": doctor.id,
                     "hospital_id": doctor.hospitalId,
                     "appointment_date": dateString,
