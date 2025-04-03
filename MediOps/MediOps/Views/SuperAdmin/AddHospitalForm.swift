@@ -334,17 +334,49 @@ struct AddHospitalForm: View {
     
     // Helper function to generate a secure password locally
     private func generateSecurePassword() -> String {
-        let length = 12
-        let characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()"
-        var password = ""
+        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
+        let numbers = "0123456789"
+        let specialChars = "@$!%*?&" // Only allowed special characters per constraint
         
-        for _ in 0..<length {
-            let randomIndex = Int.random(in: 0..<characters.count)
-            let character = characters[characters.index(characters.startIndex, offsetBy: randomIndex)]
-            password.append(character)
+        // Start with a guaranteed set of characters to meet all requirements
+        var passwordChars: [String] = []
+        passwordChars.append(String(uppercaseLetters.randomElement()!)) // Guarantee uppercase
+        passwordChars.append(String(lowercaseLetters.randomElement()!)) // Guarantee lowercase
+        passwordChars.append(String(numbers.randomElement()!))          // Guarantee digit
+        passwordChars.append(String(specialChars.randomElement()!))     // Guarantee special char
+        
+        // Add more random characters to reach at least 12 characters for better security
+        let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
+        let additionalLength = 8 // Results in a 12-character password (4 guaranteed + 8 additional)
+        
+        for _ in 0..<additionalLength {
+            passwordChars.append(String(allChars.randomElement()!))
         }
         
-        return password
+        // Shuffle and join the characters
+        let shuffled = passwordChars.shuffled().joined()
+        
+        // Double check that the password meets all requirements before returning
+        let meetsRequirements = 
+            shuffled.count >= 8 &&
+            shuffled.range(of: "[A-Z]", options: .regularExpression) != nil &&
+            shuffled.range(of: "[a-z]", options: .regularExpression) != nil &&
+            shuffled.range(of: "[0-9]", options: .regularExpression) != nil &&
+            shuffled.range(of: "[@$!%*?&]", options: .regularExpression) != nil
+        
+        // Verify password matches the database constraint pattern
+        let passwordConstraintRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$"
+        let matchesConstraint = shuffled.range(of: passwordConstraintRegex, options: .regularExpression) != nil
+        
+        if meetsRequirements && matchesConstraint {
+            print("Generated password meets all requirements (length: \(shuffled.count))")
+            return shuffled
+        } else {
+            // If by some chance we didn't meet requirements, generate again
+            print("Generated password did not meet all requirements. Regenerating...")
+            return generateSecurePassword()
+        }
     }
     
     // Helper function to send credentials email

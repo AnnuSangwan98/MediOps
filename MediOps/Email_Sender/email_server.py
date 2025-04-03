@@ -136,7 +136,7 @@ def handle_send_email():
                 return jsonify({"status": "success", "message": "Email already sent recently"}), 200
 
         # Load OTP template
-        template_path = os.path.join(os.path.dirname(__file__), '../templates/email_template.html')
+        template_path = os.path.join(os.path.dirname(__file__), 'templates/email_template.html')
         print(f"Loading template from {os.path.abspath(template_path)}")
         with open(template_path, 'r') as file:
             html_content = file.read()
@@ -192,7 +192,7 @@ def handle_send_credentials():
             doctor_id = generate_doctor_id()
             specialization = details.get('specialization')
             license_num = details.get('license')
-            template_path = os.path.join(os.path.dirname(__file__), '../templates/doctor_credentials.html')
+            template_path = os.path.join(os.path.dirname(__file__), 'templates/doctor_credentials.html')
             print(f"Loading template from {os.path.abspath(template_path)}")
             subject = "MediOps - Your Doctor Account Credentials"
             placeholders = {
@@ -214,7 +214,7 @@ def handle_send_credentials():
             state = details.get('state')
             zip_code = details.get('zipCode')
             license_number = details.get('licenseNumber')
-            template_path = os.path.join(os.path.dirname(__file__), '../templates/hospital_admin.html')
+            template_path = os.path.join(os.path.dirname(__file__), 'templates/hospital_admin.html')
             print(f"Loading template from {os.path.abspath(template_path)}")
             subject = "MediOps - Your Hospital Admin Account Credentials"
             placeholders = {
@@ -235,7 +235,7 @@ def handle_send_credentials():
             admin_id = generate_lab_admin_id()
             lab_name = details.get('labName', 'Main Laboratory')
             lab_id = details.get('labId', 'LAB001')
-            template_path = os.path.join(os.path.dirname(__file__), '../templates/lab_admin.html')
+            template_path = os.path.join(os.path.dirname(__file__), 'templates/lab_admin.html')
             print(f"Loading template from {os.path.abspath(template_path)}")
             subject = "MediOps - Your Lab Admin Account Credentials"
             placeholders = {
