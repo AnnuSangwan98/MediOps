@@ -5,9 +5,9 @@ struct Prescription: Codable {
     let appointmentId: String
     let doctorId: String
     let patientId: String
-    let prescriptionDate: String 
-    let medications: [String: String]
-    let labTests: [String: String]?
+    let prescriptionDate: String
+    let medications: [MedicationItem]
+    let labTests: [LabTestItem]?
     let precautions: String?
     let previousPrescriptionURL: String?
     let labReportsURL: String?
@@ -32,22 +32,46 @@ struct Prescription: Codable {
 
 extension Prescription {
     var medicationsArray: [MedicationItem] {
-        medications.map { MedicationItem(name: $0.key, details: $0.value) }
+        medications
     }
     
     var labTestsArray: [LabTestItem] {
-        (labTests ?? [:]).map { LabTestItem(name: $0.key, description: $0.value) }
+        labTests ?? []
     }
 }
 
-struct MedicationItem: Identifiable {
+struct MedicationItem: Codable, Identifiable {
     let id = UUID()
-    let name: String
-    let details: String
+    let medicineName: String
+    let brandName: String
+    let dosage: String
+    let frequency: String
+    let timing: String
+    
+    init(medicineName: String, brandName: String, dosage: String, frequency: String, timing: String) {
+        self.medicineName = medicineName
+        self.brandName = brandName
+        self.dosage = dosage
+        self.frequency = frequency
+        self.timing = timing
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case medicineName = "medicine_name"
+        case brandName = "brand_name"
+        case dosage
+        case frequency
+        case timing
+    }
 }
 
-struct LabTestItem: Identifiable {
+struct LabTestItem: Codable, Identifiable {
     let id = UUID()
-    let name: String
-    let description: String
+    let testName: String
+    let instructions: String
+    
+    enum CodingKeys: String, CodingKey {
+        case testName = "test_name"
+        case instructions
+    }
 }
