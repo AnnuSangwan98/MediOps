@@ -59,9 +59,12 @@ struct PrescriptionDetailView: View {
                 }
                 .padding()
             }
+            .padding()
         }
         .navigationTitle("Prescription Details")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.white, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: {

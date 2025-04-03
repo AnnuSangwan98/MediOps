@@ -12,11 +12,13 @@ struct PaymentFinalView: View {
     let isPremium: Bool
     
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var navigateToSuccess = false
     @State private var sliderOffset: CGFloat = 0
     @State private var isDragging = false
     @State private var isProcessing = false
     @State private var bookingError: String? = nil
+    @State private var refreshID = UUID() // For UI refresh on theme change
     
     private let maxSliderOffset: CGFloat = 300 // Adjust this value based on your needs
     private let consultationFee = 500.0 // Default consultation fee
@@ -30,140 +32,113 @@ struct PaymentFinalView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                Text("Confirm Payment")
-                    .font(.title2)
-                    .padding(.top)
+            ZStack {
+                // Apply themed background
+                if themeManager.isPatient {
+                    themeManager.currentTheme.background
+                        .ignoresSafeArea()
+                }
                 
-                VStack(alignment: .leading, spacing: 15) {
-                    HStack {
-                        Image(systemName: "person.fill")
-                            .foregroundColor(.teal)
-                        Text("Pay with")
-                        Spacer()
-                        Text("•••• 5941")
-                        Button("Change") {}
-                            .foregroundColor(.teal)
-                    }
+                VStack(spacing: 20) {
+                    Text("Confirm Payment")
+                        .font(.title2)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                        .padding(.top)
                     
-                    Divider()
-                    
-                    Text("Bill Details")
-                        .font(.headline)
-                    
-                    Group {
+                    VStack(alignment: .leading, spacing: 15) {
                         HStack {
-                            Text("Consultation fees:")
+                            Image(systemName: "person.fill")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                            Text("Pay with")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                             Spacer()
-                            Text("Rs.\(Int(consultationFee))")
+                            Text("•••• 5941")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                            Button("Change") {}
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                         }
                         
-                        HStack {
-                            Text("Booking fee")
-                            Spacer()
-                            Text("Rs.\(Int(bookingFee))")
-                        }
+                        Divider()
                         
-                        if isPremium {
+                        Text("Bill Details")
+                            .font(.headline)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                        
+                        Group {
                             HStack {
-                                Text("Premium fee")
-                                    .foregroundColor(.teal)
+                                Text("Consultation fees:")
                                 Spacer()
-                                Text("Rs.\(Int(premiumFee))")
-                                    .foregroundColor(.teal)
+                                Text("Rs.\(Int(consultationFee))")
+                            }
+                            
+                            HStack {
+                                Text("Booking fee")
+                                Spacer()
+                                Text("Rs.\(Int(bookingFee))")
+                            }
+                            
+                            if isPremium {
+                                HStack {
+                                    Text("Premium fee")
+                                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                                    Spacer()
+                                    Text("Rs.\(Int(premiumFee))")
+                                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                                }
                             }
                         }
-                    }
-                    .foregroundColor(.gray)
-                    
-                    Text("This booking will be charged in USD (USD 207) Contact the bank directly for their policies regarding currency conversion and applicable foreign transaction fees.")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .padding(.vertical)
-                    
-                    HStack {
-                        Text("Total")
-                            .font(.headline)
-                        Text("(Incl. VAT)")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        Spacer()
-                        Text("Rs.\(Int(totalAmount))")
-                            .font(.headline)
-                    }
-                }
-                .padding()
-                .background(Color.white)
-                .cornerRadius(12)
-                .shadow(color: .gray.opacity(0.1), radius: 5)
-                .padding()
-                
-                Spacer()
-                
-                if let error = bookingError {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .padding()
-                }
-                
-                // Sliding confirmation button
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 30)
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(height: 60)
-                    
-                    HStack {
-                        Circle()
-                            .fill(Color.teal)
-                            .frame(width: 50, height: 50)
-                            .padding(.leading, 5)
-                            .offset(x: sliderOffset)
-                            .gesture(
-                                DragGesture()
-                                    .onChanged { value in
-                                        if isProcessing { return }
-                                        isDragging = true
-                                        let newOffset = value.translation.width
-                                        sliderOffset = min(max(0, newOffset), maxSliderOffset - 60)
-                                    }
-                                    .onEnded { value in
-                                        if isProcessing { return }
-                                        isDragging = false
-                                        if sliderOffset > maxSliderOffset * 0.6 {
-                                            withAnimation {
-                                                sliderOffset = maxSliderOffset - 60
-                                                processPayment()
-                                            }
-                                        } else {
-                                            withAnimation {
-                                                sliderOffset = 0
-                                            }
-                                        }
-                                    }
-                            )
-                            .overlay(
-                                Group {
-                                    if isProcessing {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    } else {
-                                        Image(systemName: "chevron.right")
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                            )
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                         
-                        Spacer()
+                        Text("This booking will be charged in USD (USD 207) Contact the bank directly for their policies regarding currency conversion and applicable foreign transaction fees.")
+                            .font(.caption)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
+                            .padding(.vertical)
+                        
+                        HStack {
+                            Text("Total")
+                                .font(.headline)
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                            Text("(Incl. VAT)")
+                                .font(.caption)
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
+                            Spacer()
+                            Text("Rs.\(Int(totalAmount))")
+                                .font(.headline)
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                        }
+                    }
+                    .padding()
+                    .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
+                    .cornerRadius(12)
+                    .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.1) : .gray.opacity(0.1), radius: 5)
+                    .padding()
+                    
+                    Spacer()
+                    
+                    if let error = bookingError {
+                        Text(error)
+                            .foregroundColor(.red)
+                            .padding()
                     }
                     
-                    Text(isProcessing ? "Processing..." : "Swipe to Pay")
-                        .foregroundColor(.teal)
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
+                    // Replace slider with a direct button for easier booking
+                    Button(action: {
+                        if !isProcessing {
+                            processPayment()
+                        }
+                    }) {
+                        Text(isProcessing ? "Processing..." : "Book Now")
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(themeManager.isPatient ? themeManager.currentTheme.accentColor : Color.teal)
+                            .cornerRadius(10)
+                            .padding(.horizontal)
+                    }
+                    .disabled(isProcessing)
+                    .padding(.bottom, 20)
                 }
-                .frame(height: 60)
-                .padding()
-                .disabled(isProcessing)
             }
             .navigationBarItems(trailing: Button("✕") { dismiss() })
             .navigationDestination(isPresented: $navigateToSuccess) {
@@ -181,6 +156,19 @@ struct PaymentFinalView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DismissAllModals"))) { _ in
             dismiss()
         }
+        .onAppear {
+            // Setup theme change listener
+            setupThemeChangeListener()
+        }
+        .id(refreshID) // Force refresh when ID changes
+    }
+    
+    // Setup listener for theme changes
+    private func setupThemeChangeListener() {
+        NotificationCenter.default.addObserver(forName: .themeChanged, object: nil, queue: .main) { _ in
+            // Generate new ID to force view refresh
+            refreshID = UUID()
+        }
     }
     
     private func processPayment() {
@@ -196,9 +184,6 @@ struct PaymentFinalView: View {
     }
     
     private func createAppointment() {
-        // Use the rawStartTime and rawEndTime for creating the appointment in database
-        // This ensures consistency between what's displayed and what's stored
-        
         Task {
             do {
                 guard let userId = UserDefaults.standard.string(forKey: "current_user_id") else {
@@ -216,108 +201,71 @@ struct PaymentFinalView: View {
                 
                 print("Found \(patientResults.count) patient records")
                 
-                // Check if we have patients data and extract patient ID
-                var patientId: String? = nil
-                
-                if let patientData = patientResults.first {
-                    // Try patient_id first
-                    if let pid = patientData["patient_id"] as? String, !pid.isEmpty {
-                        patientId = pid
-                        print("Using patient_id: \(pid)")
-                    } 
-                    // Fall back to id field if patient_id is not available
-                    else if let pid = patientData["id"] as? String {
-                        patientId = pid
-                        print("Using id as patient_id: \(pid)")
-                    }
+                // Extract the PAT format patient_id
+                guard let patientData = patientResults.first,
+                      let patientId = patientData["patient_id"] as? String else {
+                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not find patient_id"])
                 }
                 
-                // If we don't have a patient ID from the first query, try direct SQL
-                if patientId == nil {
-                    print("No patient ID found, attempting to query by id directly")
-                    // Try one more fallback - get patient records by direct user_id match
-                    let directResults = try await SupabaseController.shared.select(
-                        from: "patients", 
-                        where: "user_id", 
-                        equals: userId
-                    )
-                    
-                    if let firstRecord = directResults.first,
-                       let id = firstRecord["id"] as? String {
-                        patientId = id
-                        print("Found patient ID via direct SQL: \(id)")
-                    }
-                }
+                print("📝 Creating appointment for patient: \(patientId)")
                 
-                // Final check to ensure we have a patient ID
-                if patientId == nil {
-                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not find patient record for this user"])
-                }
-                
-                // Generate appointment ID in the format APPT[0-9]{3}[A-Z]
-                let randomNum = String(format: "%03d", Int.random(in: 0...999))
-                let randomLetter = String(UnicodeScalar(UInt8(65 + Int.random(in: 0...25))))
-                let appointmentId = "APPT\(randomNum)\(randomLetter)"
-                
+                // Format date for database
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd"
                 let dateString = dateFormatter.string(from: appointmentDate)
                 
-                // Format times properly for database storage - 24-hour format
+                // Format times consistently for database storage
                 let timeFormatter = DateFormatter()
                 timeFormatter.dateFormat = "HH:mm:ss"
                 
-                // Initialize with default values
-                var formattedStartTime = "12:00:00"
-                var formattedEndTime = "13:00:00"
+                // Ensure we have proper time formats for database
+                var formattedStartTime = rawStartTime
+                var formattedEndTime = rawEndTime
                 
-                // If rawTimes are in the correct format, use them directly
-                if let date = timeFormatter.date(from: rawStartTime) {
-                    formattedStartTime = rawStartTime
-                } else {
-                    // Try to convert from any other format to HH:mm:ss
-                    let displayFormatter = DateFormatter()
-                    // Try different formats
-                    for format in ["h:mm a", "HH:mm", "h:mm", "hh:mm a"] {
-                        displayFormatter.dateFormat = format
-                        if let date = displayFormatter.date(from: rawStartTime) {
-                            formattedStartTime = timeFormatter.string(from: date)
-                            break
-                        }
-                    }
-                    print("⚠️ Using formatted start time: \(formattedStartTime)")
+                // Add seconds if needed
+                if !formattedStartTime.contains(":") {
+                    formattedStartTime += ":00"
+                } else if formattedStartTime.components(separatedBy: ":").count == 2 {
+                    formattedStartTime += ":00"
                 }
                 
-                // Same for end time
-                if let date = timeFormatter.date(from: rawEndTime) {
-                    formattedEndTime = rawEndTime
-                } else {
-                    // Try to convert from any other format to HH:mm:ss
-                    let displayFormatter = DateFormatter()
-                    // Try different formats
-                    for format in ["h:mm a", "HH:mm", "h:mm", "hh:mm a"] {
-                        displayFormatter.dateFormat = format
-                        if let date = displayFormatter.date(from: rawEndTime) {
-                            formattedEndTime = timeFormatter.string(from: date)
-                            break
-                        }
-                    }
-                    print("⚠️ Using formatted end time: \(formattedEndTime)")
+                if !formattedEndTime.contains(":") {
+                    formattedEndTime += ":00"
+                } else if formattedEndTime.components(separatedBy: ":").count == 2 {
+                    formattedEndTime += ":00"
                 }
                 
-                // Log the before/after for debugging
-                print("Time conversion: Raw start=\(rawStartTime) → Database format=\(formattedStartTime)")
-                print("Time conversion: Raw end=\(rawEndTime) → Database format=\(formattedEndTime)")
+                // Create slot JSON for database
+                let slotData: [String: String] = [
+                    "start_time": formattedStartTime,
+                    "end_time": formattedEndTime
+                ]
                 
-                // Format the slot JSON properly - ensure it uses the same formatted times
-                let slotJson = """
-                {"doctor_id": "\(doctor.id)", "start_time": "\(formattedStartTime)", "end_time": "\(formattedEndTime)"}
-                """
+                let jsonData = try JSONSerialization.data(withJSONObject: slotData)
+                let slotJson = String(data: jsonData, encoding: .utf8) ?? ""
                 
-                // Create appointment data with all required fields
+                // Generate appointment ID
+                let randomNum = String(format: "%03d", Int.random(in: 0...999))
+                let randomLetter = String(UnicodeScalar(UInt8(65 + Int.random(in: 0...25))))
+                let appointmentId = "APPT\(randomNum)\(randomLetter)"
+                
+                // First, get the current filled_slots count
+                let doctorResults = try await SupabaseController.shared.select(
+                    from: "doctors",
+                    where: "id",
+                    equals: doctor.id
+                )
+                
+                guard let doctorData = doctorResults.first else {
+                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not find doctor record"])
+                }
+                
+                let currentFilledSlots = doctorData["filled_slots"] as? Int ?? 0
+                
+                // Create appointment in database
                 let appointmentData: [String: Any] = [
                     "id": appointmentId,
-                    "patient_id": patientId!,
+                    "patient_id": patientId,  // Using PAT format ID from patients table
                     "doctor_id": doctor.id,
                     "hospital_id": doctor.hospitalId,
                     "appointment_date": dateString,
@@ -333,6 +281,16 @@ struct PaymentFinalView: View {
                 // Use the insert method (which uses REST API)
                 try await SupabaseController.shared.insert(into: "appointments", values: appointmentData)
                 print("✅ Successfully inserted appointment")
+                
+                // Update the filled_slots count in the doctors table
+                let updatedFilledSlots = currentFilledSlots + 1
+                try await SupabaseController.shared.update(
+                    table: "doctors",
+                    data: ["filled_slots": updatedFilledSlots],
+                    where: "id",
+                    equals: doctor.id
+                )
+                print("✅ Updated filled_slots count to \(updatedFilledSlots)")
                 
                 // Create and add local appointment object for state management
                 // Convert formatted database times to display format
@@ -364,7 +322,7 @@ struct PaymentFinalView: View {
                 // Refresh appointments from database
                 if let userId = UserDefaults.standard.string(forKey: "current_user_id") {
                     print("🔄 Refreshing appointments after booking with user ID: \(userId)")
-                    try await HospitalViewModel.shared.fetchAppointments(for: patientId!)
+                    try await HospitalViewModel.shared.fetchAppointments(for: patientId)
                 }
                 
             } catch {

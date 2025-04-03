@@ -6,6 +6,7 @@ struct AppointmentView: View {
     var onUpdateAppointment: ((Appointment) -> Void)? = nil
     
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var selectedDate = Date()
     @State private var selectedSlot: DoctorAvailabilityModels.AppointmentSlot? = nil
     @State private var navigateToReviewAndPay = false
@@ -13,6 +14,7 @@ struct AppointmentView: View {
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
     @State private var doctorAvailability: DoctorAvailabilityModels.EfficientAvailability? = nil
+    @State private var refreshID = UUID() // For UI refresh on theme change
     
     // Maximum date is 7 days from today
     private var maxDate: Date {
@@ -33,6 +35,15 @@ struct AppointmentView: View {
     
     var body: some View {
         ZStack {
+            // Apply themed background
+            if themeManager.isPatient {
+                themeManager.currentTheme.background
+                    .ignoresSafeArea()
+            } else {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
+            }
+            
             VStack(spacing: 0) {
                 // Calendar
                 DatePicker("Select Date", 
@@ -41,7 +52,8 @@ struct AppointmentView: View {
                          displayedComponents: [.date])
                     .datePickerStyle(.graphical)
                     .padding()
-                    .background(Color.white)
+                    .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
+                    .tint(themeManager.isPatient ? themeManager.currentTheme.accentColor : nil)
                     .onChange(of: selectedDate) { newDate in
                         // Reset selected time when date changes
                         selectedSlot = nil
@@ -54,6 +66,8 @@ struct AppointmentView: View {
                 // Time slots
                 if isLoading {
                     ProgressView("Loading available slots...")
+                        .tint(themeManager.isPatient ? themeManager.currentTheme.accentColor : nil)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                         .padding()
                 } else if let error = errorMessage {
                     Text(error)
@@ -61,7 +75,7 @@ struct AppointmentView: View {
                         .padding()
                 } else if availableSlots.isEmpty {
                     Text("No available slots for this date. Please select another date or doctor.")
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                         .multilineTextAlignment(.center)
                         .padding()
                 } else {
@@ -83,17 +97,19 @@ struct AppointmentView: View {
                                         
                                         Text("\(slot.remainingSlots)/\(slot.totalSlots) slots")
                                             .font(.system(size: 11))
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(isSelected ? .white : (themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .secondary))
                                     }
                                     .padding(.vertical, 12)
                                     .padding(.horizontal, 8)
                                     .frame(maxWidth: .infinity)
-                                    .background(isSelected ? Color.teal : Color.white)
-                                    .foregroundColor(isSelected ? .white : .black)
+                                    .background(isSelected ? 
+                                        (themeManager.isPatient ? themeManager.currentTheme.accentColor : Color.teal) : 
+                                        (themeManager.isPatient ? themeManager.currentTheme.background : Color.white))
+                                    .foregroundColor(isSelected ? .white : (themeManager.isPatient ? themeManager.currentTheme.primaryText : .black))
                                     .cornerRadius(8)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8)
-                                            .stroke(Color.teal, lineWidth: 1)
+                                            .stroke(themeManager.isPatient ? themeManager.currentTheme.accentColor : Color.teal, lineWidth: 1)
                                     )
                                 }
                             }
@@ -113,15 +129,21 @@ struct AppointmentView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(selectedSlot != nil ? Color.teal : Color.gray)
+                        .background(selectedSlot != nil ? 
+                            (themeManager.isPatient ? themeManager.currentTheme.accentColor : Color.teal) : 
+                            Color.gray)
                         .cornerRadius(10)
                 }
                 .disabled(selectedSlot == nil)
                 .padding()
             }
             
-            NavigationLink(
-                destination: ReviewAndPayView(
+            // Replace the NavigationLink with a sheet presentation
+            .sheet(isPresented: $navigateToReviewAndPay) {
+                // Reset state when sheet is dismissed
+                navigateToReviewAndPay = false
+            } content: {
+                ReviewAndPayView(
                     doctor: doctor,
                     appointmentDate: selectedDate,
                     appointmentTime: selectedSlot?.date ?? Date(),
@@ -130,20 +152,34 @@ struct AppointmentView: View {
                     endTime: selectedSlot?.endTime ?? "",
                     rawStartTime: selectedSlot?.rawStartTime ?? "",
                     rawEndTime: selectedSlot?.rawEndTime ?? ""
-                ),
-                isActive: $navigateToReviewAndPay
-            ) {
-                EmptyView()
+                )
+                // Apply theme to the sheet
+                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                .background(themeManager.isPatient ? themeManager.currentTheme.background : Color(.systemBackground))
+                .environmentObject(themeManager) // Pass theme manager as environment object
             }
-            .opacity(0)
         }
         .navigationTitle("Book Appointment")
         .navigationBarTitleDisplayMode(.inline)
+        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
         .task {
             // Initial fetch of doctor availability
             await fetchDoctorAvailability()
             // Fetch available slots for the initial date
             await fetchAvailableSlots(for: selectedDate)
+        }
+        .onAppear {
+            // Setup theme change listener
+            setupThemeChangeListener()
+        }
+        .id(refreshID) // Force refresh when ID changes
+    }
+    
+    // Setup listener for theme changes
+    private func setupThemeChangeListener() {
+        NotificationCenter.default.addObserver(forName: .themeChanged, object: nil, queue: .main) { _ in
+            // Generate new ID to force view refresh
+            refreshID = UUID()
         }
     }
     
@@ -257,7 +293,7 @@ struct AppointmentView: View {
             var slotCounts: [String: Int] = [:]
             for appointment in existingAppointments {
                 if let startTime = appointment["slot_start_time"] as? String {
-                    slotCounts[startTime, default: 0] += 1
+                    slotCounts[startTime] = (slotCounts[startTime] ?? 0) + 1
                 }
             }
             

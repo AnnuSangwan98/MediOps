@@ -311,8 +311,8 @@ struct LabAdminsListView: View {
                         email: labAdmin.email,
                         phone: labAdmin.contactNumber.isEmpty ? "" : "+91\(labAdmin.contactNumber)", // Add +91 prefix for UI
                         gender: .male, // Default gender
-                        dateOfBirth: Date(), // Default date
-                        experience: 0, // Default experience
+                        dateOfBirth: labAdmin.dateOfBirth ?? Date(), // Use actual DOB from Supabase with fallback
+                        experience: labAdmin.experience, // Use actual experience from Supabase
                         qualification: labAdmin.department, // Use department instead of labName
                         address: labAdmin.address
                     )
@@ -363,7 +363,7 @@ struct LabAdminsListView: View {
                     email: labAdmin.email,
                     password: password,
                     name: labAdmin.fullName,
-                    labName: labAdmin.qualification, // Maps to department field
+                    qualification: [labAdmin.qualification], // Pass as a single-item array
                     hospitalAdminId: hospitalId,
                     contactNumber: labAdmin.phone.replacingOccurrences(of: "+91", with: ""), // Remove country code for 10-digit format
                     department: "Pathology & Laboratory" // Fixed to match the constraint
@@ -435,6 +435,10 @@ struct LabAdminsListView: View {
                     contactNumber: labAdmin.phone,
                     department: labAdmin.qualification,
                     address: labAdmin.address,
+                    qualification: ["MLT"],
+                    licenseNo: labAdmin.license,
+                    dateOfBirth: labAdmin.dateOfBirth,
+                    experience: labAdmin.experience,
                     createdAt: Date(),
                     updatedAt: Date()
                 )
@@ -651,10 +655,11 @@ struct LabAdminsListView: View {
                 email: testEmail,
                 password: password,
                 name: name,
-                labName: "Pathology & Laboratory",
+                qualification: ["MLT"], // Use one of the allowed values
                 hospitalAdminId: hospitalId,
                 contactNumber: "1234567890",
-                department: "Pathology & Laboratory"
+                department: "Pathology & Laboratory",
+                experience: 5 // Add some experience years
             )
             
             await MainActor.run {

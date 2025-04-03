@@ -8,6 +8,8 @@ struct PatientLabReportCard: View {
     @State private var isGeneratingPDF = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @ObservedObject private var themeManager = ThemeManager.shared
+    @State private var refreshID = UUID() // For UI refresh on theme change
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -15,21 +17,22 @@ struct PatientLabReportCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(report.patientName)
                         .font(.headline)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                     Text("Patient ID: \(report.patientId)")
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                 }
                 Spacer()
                 
                 Text(formatDate(report.uploadedAt))
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
             }
             
             if let summary = report.summary, !summary.isEmpty {
                 Text(summary)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .secondary)
                     .lineLimit(2)
                     .padding(.top, 4)
             }
@@ -39,10 +42,10 @@ struct PatientLabReportCard: View {
             }) {
                 HStack {
                     Image(systemName: "doc.text")
-                        .foregroundColor(.blue)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .blue)
                     Text("View Report")
                         .font(.caption)
-                        .foregroundColor(.blue)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .blue)
                     if isGeneratingPDF {
                         Spacer()
                         ProgressView()
@@ -56,9 +59,9 @@ struct PatientLabReportCard: View {
             .disabled(isGeneratingPDF)
         }
         .padding()
-        .background(Color.white)
+        .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
         .cornerRadius(12)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.1) : .gray.opacity(0.1), radius: 5)
         .sheet(isPresented: $showPdfViewer) {
             if let pdfData = pdfData {
                 PDFViewerSheet(pdfData: pdfData, report: report)
@@ -69,6 +72,11 @@ struct PatientLabReportCard: View {
         } message: {
             Text(errorMessage)
         }
+        .onAppear {
+            // Listen for theme changes
+            setupThemeChangeListener()
+        }
+        .id(refreshID) // Force refresh when ID changes
     }
     
     private func handleViewReport() {
@@ -124,6 +132,14 @@ struct PatientLabReportCard: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+    
+    // Setup listener for theme changes
+    private func setupThemeChangeListener() {
+        NotificationCenter.default.addObserver(forName: .themeChanged, object: nil, queue: .main) { _ in
+            // Generate new ID to force view refresh
+            refreshID = UUID()
+        }
     }
 }
 

@@ -26,6 +26,7 @@ struct HomeTabView: View {
     @ObservedObject var hospitalVM = HospitalViewModel.shared
     @StateObject var appointmentManager = AppointmentManager.shared
     @StateObject private var labReportManager = LabReportManager.shared
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var showProfile = false
     @State private var showAddVitals = false
     @State private var selectedHospital: HospitalModel?
@@ -36,6 +37,7 @@ struct HomeTabView: View {
     @AppStorage("current_user_id") private var currentUserId: String?
     @AppStorage("userId") private var userId: String?
     @State private var selectedHistoryType = 0
+    @State private var tabViewRefreshID = UUID() // For forcing UI refresh
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -72,7 +74,7 @@ struct HomeTabView: View {
                         Image(systemName: selectedTab == 2 ? "doc.text.fill" : "doc.text")
                         Text("Lab Reports")
                     }
-                    .tag(2)
+                        .tag(2)
                 
                 bloodDonateTab
                     .tabItem {
@@ -81,14 +83,19 @@ struct HomeTabView: View {
                     }
                     .tag(3)
             }
-            .accentColor(.teal)
+            .accentColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
             .onAppear {
                 // Configure navigation bar appearance
                 configureNavigationBar()
                 
-                // Customize the TabView appearance
-                UITabBar.appearance().backgroundColor = UIColor.systemBackground
-                UITabBar.appearance().backgroundImage = UIImage()
+                // Apply tab bar theme
+                updateTabBarAppearance()
+                
+                // Setup theme change listener
+                setupThemeChangeListener()
+                
+                // Setup return to home tab notification listener
+                setupReturnToHomeListener()
                 
                 print("📱 HomeTabView appeared with currentUserId: \(currentUserId ?? "nil") and userId: \(userId ?? "nil")")
                 
@@ -145,16 +152,23 @@ struct HomeTabView: View {
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
+        .id(tabViewRefreshID) // Force refresh when ID changes
     }
     
     private var homeTab: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                // Apply consistent background gradient
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                              startPoint: .topLeading,
-                              endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
+                // Use the themed background instead of fixed gradient
+                if ThemeManager.shared.isPatient {
+                    ThemeManager.shared.currentTheme.background
+                        .ignoresSafeArea()
+                } else {
+                    // Fallback to original gradient for non-patients
+                    LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                                 startPoint: .topLeading,
+                                 endPoint: .bottomTrailing)
+                        .ignoresSafeArea()
+                }
                 
                 VStack(spacing: 0) {
                     // Fixed Header section
@@ -216,6 +230,7 @@ struct HomeTabView: View {
                                         ForEach(hospitalVM.hospitals) { hospital in
                                             NavigationLink {
                                                 DoctorListView(hospital: hospital)
+                                                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                                             } label: {
                                                 HospitalCard(hospital: hospital)
                                             }
@@ -244,6 +259,7 @@ struct HomeTabView: View {
                     }
                 }
             }
+            .foregroundColor(ThemeManager.shared.isPatient ? ThemeManager.shared.currentTheme.primaryText : Color.primary)
             .navigationBarHidden(true)
             .ignoresSafeArea(.container, edges: .bottom)
             .task {
@@ -309,10 +325,15 @@ struct HomeTabView: View {
         NavigationStack {
             ZStack {
                 // Consistent background gradient
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                             startPoint: .topLeading,
-                             endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
+                if themeManager.isPatient {
+                    themeManager.currentTheme.background
+                        .ignoresSafeArea()
+                } else {
+                    LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                                 startPoint: .topLeading,
+                                 endPoint: .bottomTrailing)
+                        .ignoresSafeArea()
+                }
                 
                 List {
                     // Filter appointments by status
@@ -322,38 +343,51 @@ struct HomeTabView: View {
                     
                     if completedAppointments.isEmpty && cancelledAppointments.isEmpty && missedAppointments.isEmpty {
                         Text("No appointment history")
-                            .foregroundColor(.gray)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding()
                     } else {
                         if !completedAppointments.isEmpty {
-                            Section(header: Text("Completed Appointments")) {
+                            Section(header: Text("Completed Appointments")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)) {
                                 ForEach(completedAppointments) { appointment in
-                                    NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
+                                    NavigationLink(destination: 
+                                        PrescriptionDetailView(appointment: appointment)
+                                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                                            .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
+                                    ) {
                                         AppointmentHistoryCard(appointment: appointment)
-                                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                     }
-                                    .listRowBackground(Color.green.opacity(0.1))
+                                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                    .listRowBackground(themeManager.isPatient ? 
+                                                      themeManager.currentTheme.background : 
+                                                      Color.green.opacity(0.1))
                                 }
                             }
                         }
                         
                         if !missedAppointments.isEmpty {
-                            Section(header: Text("Missed Appointments")) {
+                            Section(header: Text("Missed Appointments")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)) {
                                 ForEach(missedAppointments) { appointment in
                                     AppointmentHistoryCard(appointment: appointment, isMissed: true)
                                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                                        .listRowBackground(Color.orange.opacity(0.1))
+                                        .listRowBackground(themeManager.isPatient ? 
+                                                         themeManager.currentTheme.background : 
+                                                         Color.orange.opacity(0.1))
                                 }
                             }
                         }
                         
                         if !cancelledAppointments.isEmpty {
-                            Section(header: Text("Cancelled Appointments")) {
+                            Section(header: Text("Cancelled Appointments")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)) {
                                 ForEach(cancelledAppointments) { appointment in
                                     AppointmentHistoryCard(appointment: appointment, isCancelled: true)
                                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                                        .listRowBackground(Color.red.opacity(0.1))
+                                        .listRowBackground(themeManager.isPatient ? 
+                                                         themeManager.currentTheme.background : 
+                                                         Color.red.opacity(0.1))
                                 }
                             }
                         }
@@ -367,8 +401,9 @@ struct HomeTabView: View {
                 }
             }
             .navigationTitle("Appointments History")
+            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
             .toolbarColorScheme(.light, for: .navigationBar)
-            .toolbarBackground(Color.teal.opacity(0.1), for: .navigationBar)
+            .toolbarBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.teal.opacity(0.1), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .onAppear {
                 print("📱 History tab appeared - refreshing appointments")
@@ -380,18 +415,24 @@ struct HomeTabView: View {
     private var labReportsTab: some View {
         NavigationStack {
             ZStack {
-                // Consistent background gradient
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                             startPoint: .topLeading,
-                             endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
+                // Apply themed background
+                if themeManager.isPatient {
+                    themeManager.currentTheme.background
+                        .ignoresSafeArea()
+                } else {
+                    LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                                 startPoint: .topLeading,
+                                 endPoint: .bottomTrailing)
+                        .ignoresSafeArea()
+                }
                 
                 labReportsSection
                     .scrollContentBackground(.hidden) // Hide default list background if this contains a List
             }
             .navigationTitle("Lab Reports")
+            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
             .toolbarColorScheme(.light, for: .navigationBar)
-            .toolbarBackground(Color.teal.opacity(0.1), for: .navigationBar)
+            .toolbarBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.teal.opacity(0.1), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
     }
@@ -399,11 +440,16 @@ struct HomeTabView: View {
     private var bloodDonateTab: some View {
         NavigationStack {
             ZStack {
-                // Consistent background gradient
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                             startPoint: .topLeading,
-                             endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
+                // Apply themed background
+                if themeManager.isPatient {
+                    themeManager.currentTheme.background
+                        .ignoresSafeArea()
+                } else {
+                    LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                                 startPoint: .topLeading,
+                                 endPoint: .bottomTrailing)
+                        .ignoresSafeArea()
+                }
                 
                 // Content will go here when implemented
                 VStack {
@@ -411,25 +457,26 @@ struct HomeTabView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 80, height: 80)
-                        .foregroundColor(.teal)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                         .padding()
                     
                     Text("Blood Donation Feature")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.teal)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                     
                     Text("Coming Soon")
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                         .padding()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationTitle("Blood Donation")
             .navigationBarTitleDisplayMode(.inline)
+            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
             .toolbarColorScheme(.light, for: .navigationBar)
-            .toolbarBackground(Color.teal.opacity(0.1), for: .navigationBar)
+            .toolbarBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.teal.opacity(0.1), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
     }
@@ -440,21 +487,42 @@ struct HomeTabView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Welcome")
                     .font(.headline)
-                    .foregroundColor(.gray)
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                 
                 if let patientName = profileController.patient?.name {
                     Text(patientName)
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.black)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .black)
                 } else {
                     Text("Patient")
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.black)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .black)
                 }
             }
             Spacer()
+            
+            // Add Accessibility Settings Button
+            Button(action: {
+                // Show accessibility settings
+                let viewToPresent = AccessibilitySettingsView()
+                    .environmentObject(AppNavigationState())
+                
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootVC = windowScene.windows.first?.rootViewController {
+                    let hostingController = UIHostingController(rootView: viewToPresent)
+                    rootVC.present(hostingController, animated: true)
+                }
+            }) {
+                Image(systemName: "eye")
+                    .font(.system(size: 22))
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                    .padding(8)
+                    .background(Circle().fill(themeManager.isPatient ? themeManager.currentTheme.background : Color.white))
+                    .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.3) : .gray.opacity(0.3), radius: 2)
+            }
+            .padding(.horizontal, 5)
             
             Button(action: {
                 // Create and initialize the profile controller before showing the sheet
@@ -479,11 +547,10 @@ struct HomeTabView: View {
                 }
             }) {
                 Image(systemName: "person.circle.fill")
-                    .resizable()
-                    .frame(width: 40, height: 40)
-                    .foregroundColor(.teal)
-                    .background(Circle().fill(Color.white))
-                    .shadow(color: .gray.opacity(0.2), radius: 3)
+                    .font(.system(size: 32))
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                    .background(Circle().fill(themeManager.isPatient ? themeManager.currentTheme.background : Color.white).frame(width: 48, height: 48))
+                    .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.3) : .gray.opacity(0.3), radius: 3)
             }
             .sheet(isPresented: $showProfile) {
                 PatientProfileView(profileController: profileController)
@@ -495,52 +562,34 @@ struct HomeTabView: View {
 
     // Simplified search and filter section
     private var searchAndFilterSection: some View {
-        HStack {
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.teal)
-                TextField("Search hospitals...", text: $hospitalVM.searchText)
-                    .foregroundColor(.primary)
-                
-                if !hospitalVM.searchText.isEmpty {
-                    Button(action: {
-                        hospitalVM.searchText = ""
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.teal)
-                    }
-                }
-            }
-            .padding(10)
-            .background(Color.white)
-            .cornerRadius(8)
+        VStack(spacing: 16) {
+            // Themed search bar
+            SearchBarView(text: $hospitalVM.searchText)
             
-            // Simple city filter button
-            Menu {
-                ForEach(hospitalVM.availableCities, id: \.self) { city in
-                    Button(action: {
-                        hospitalVM.selectedCity = hospitalVM.selectedCity == city ? nil : city
-                    }) {
-                        HStack {
-                            Text(city)
-                            if hospitalVM.selectedCity == city {
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.teal)
-                            }
+            // City filter buttons
+            if !hospitalVM.availableCities.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        // "All" filter button
+                        FilterButton(
+                            title: "All",
+                            isSelected: hospitalVM.selectedCity == nil,
+                            action: { hospitalVM.selectedCity = nil }
+                        )
+                        
+                        // City filter buttons
+                        ForEach(hospitalVM.availableCities, id: \.self) { city in
+                            FilterButton(
+                                title: city,
+                                isSelected: hospitalVM.selectedCity == city,
+                                action: { hospitalVM.selectedCity = city }
+                            )
                         }
                     }
+                    .padding(.horizontal)
                 }
-                Button("Clear Filter", action: { hospitalVM.selectedCity = nil })
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundColor(.teal)
-                    .font(.title3)
-                    .frame(width: 40, height: 40)
-                    .background(Color.white)
-                    .clipShape(Circle())
             }
         }
-        .padding(.horizontal)
     }
 
     // Simplified upcoming appointments section
@@ -598,21 +647,22 @@ struct HomeTabView: View {
             Text("Search Results")
                 .font(.title2)
                 .fontWeight(.bold)
-                .foregroundColor(.teal)
+                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                 .padding(.horizontal)
 
             if hospitalVM.filteredHospitals.isEmpty {
                 Text("No hospitals found")
-                    .foregroundColor(.gray)
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.white)
+                    .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
                     .cornerRadius(8)
                     .padding(.horizontal)
             } else {
                 ForEach(hospitalVM.filteredHospitals) { hospital in
                     NavigationLink {
                         DoctorListView(hospital: hospital)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                     } label: {
                         HospitalCard(hospital: hospital)
                     }
@@ -629,27 +679,28 @@ struct HomeTabView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
-                    .listRowBackground(Color.clear)
+                    .listRowBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.clear)
             } else if let error = labReportManager.error {
                 Text(error.localizedDescription)
                     .foregroundColor(.red)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
-                    .listRowBackground(Color.clear)
+                    .listRowBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.clear)
             } else if labReportManager.labReports.isEmpty {
                 Text("No lab reports available")
-                    .foregroundColor(.gray)
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
-                    .listRowBackground(Color.clear)
+                    .listRowBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.clear)
             } else {
                 ForEach(labReportManager.labReports) { report in
                     PatientLabReportCard(report: report)
                         .padding(.vertical, 4)
-                        .listRowBackground(Color.clear)
+                        .listRowBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.clear)
                 }
             }
         }
+        .listStyle(InsetGroupedListStyle())
         .scrollContentBackground(.hidden) // Hide default list background
         .refreshable {
             if let userId = userId {
@@ -836,6 +887,67 @@ struct HomeTabView: View {
         UINavigationBar.appearance().compactAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
     }
+
+    // Setup listener for theme changes
+    private func setupThemeChangeListener() {
+        NotificationCenter.default.addObserver(forName: .themeChanged, object: nil, queue: .main) { _ in
+            // Update tab bar appearance
+            self.updateTabBarAppearance()
+            
+            // Generate new ID to force view refresh
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.tabViewRefreshID = UUID()
+            }
+        }
+    }
+    
+    // Update tab bar appearance based on current theme
+    private func updateTabBarAppearance() {
+        if themeManager.isPatient {
+            // Use themed colors for tab bar
+            UITabBar.appearance().backgroundColor = UIColor(themeManager.currentTheme.background)
+            UITabBar.appearance().unselectedItemTintColor = UIColor(themeManager.currentTheme.tertiaryAccent)
+            
+            // Use a custom tint color that works well with all themes
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let tabBarController = windowScene.windows.first?.rootViewController as? UITabBarController {
+                tabBarController.tabBar.tintColor = UIColor(themeManager.currentTheme.accentColor)
+            }
+        } else {
+            // Default colors for non-patients
+            UITabBar.appearance().backgroundColor = UIColor.systemBackground
+            UITabBar.appearance().unselectedItemTintColor = UIColor.gray
+        }
+        
+        // Set these properties for both cases
+        UITabBar.appearance().backgroundImage = UIImage()
+        UITabBar.appearance().shadowImage = UIImage() // Remove shadow line for cleaner look
+    }
+
+    // Setup return to home tab notification listener
+    private func setupReturnToHomeListener() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ReturnToHomeTab"),
+            object: nil,
+            queue: .main) { _ in
+                // Ensure we're on the main thread
+                DispatchQueue.main.async {
+                    // Force selected tab to home (0)
+                    self.selectedTab = 0
+                    
+                    // Refresh data
+                    self.appointmentManager.refreshAppointments()
+                    Task {
+                        await self.refreshHospitals()
+                    }
+                    
+                    // Force UI refresh
+                    self.tabViewRefreshID = UUID()
+                    
+                    print("📱 Returned to Home Tab via notification")
+                }
+            }
+    }
 }
 
 struct AppointmentHistoryCard: View {
@@ -843,6 +955,8 @@ struct AppointmentHistoryCard: View {
     var isCancelled: Bool = false
     var isMissed: Bool = false
     @State private var isLoading = false
+    @ObservedObject private var themeManager = ThemeManager.shared
+    @State private var refreshID = UUID() // Force view refresh when theme changes
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -850,9 +964,10 @@ struct AppointmentHistoryCard: View {
                 VStack(alignment: .leading) {
                     Text(appointment.doctor.name)
                         .font(.headline)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                     Text(appointment.doctor.specialization)
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                 }
                 Spacer()
                 
@@ -862,36 +977,62 @@ struct AppointmentHistoryCard: View {
                 } else {
                     Text(isCancelled ? "Cancelled" : isMissed ? "Missed" : "Completed")
                         .font(.caption)
-                        .foregroundColor(isCancelled ? .red : isMissed ? .orange : .green)
+                        .foregroundColor(statusColor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(isCancelled ? Color.red.opacity(0.1) : isMissed ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
+                        .background(statusColor.opacity(0.1))
                         .cornerRadius(8)
                 }
             }
             
             HStack {
                 Image(systemName: "calendar")
-                    .foregroundColor(.teal)
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                 Text(appointment.date.formatted(date: .long, time: .omitted))
                 Spacer()
                 Image(systemName: "clock")
-                    .foregroundColor(.teal)
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                 let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: appointment.time)!
                 Text("\(appointment.time.formatted(date: .omitted, time: .shortened)) to \(endTime.formatted(date: .omitted, time: .shortened))")
             }
             .font(.subheadline)
-            .foregroundColor(.gray)
+            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
         }
         .padding()
-        .background(Color.white)
+        .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
         .cornerRadius(12)
-        .shadow(color: .teal.opacity(0.1), radius: 5)
+        .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.1) : .teal.opacity(0.1), radius: 5)
         .onAppear {
             isLoading = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 isLoading = false
             }
+            
+            // Listen for theme changes
+            setupThemeChangeListener()
+        }
+        .id(refreshID) // Force view refresh when refreshID changes
+    }
+    
+    private var statusColor: Color {
+        if themeManager.isPatient {
+            if isCancelled {
+                return .red
+            } else if isMissed {
+                return themeManager.currentTheme.secondaryAccent
+            } else {
+                return .green
+            }
+        } else {
+            return isCancelled ? .red : isMissed ? .orange : .green
+        }
+    }
+    
+    // Setup listener for theme changes
+    private func setupThemeChangeListener() {
+        NotificationCenter.default.addObserver(forName: .themeChanged, object: nil, queue: .main) { _ in
+            // Generate new ID to force view refresh
+            refreshID = UUID()
         }
     }
 }
@@ -924,3 +1065,6 @@ struct HospitalSearchBar: View {
         )
     }
 }
+
+// The DashboardCard struct has been moved to a shared file
+// at MediOps/MediOps/CustomOptions/DashboardCard.swift

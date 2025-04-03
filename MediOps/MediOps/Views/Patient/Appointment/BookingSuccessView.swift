@@ -12,12 +12,14 @@ struct BookingSuccessView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var appointmentManager = AppointmentManager.shared
     @StateObject private var hospitalVM = HospitalViewModel.shared
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var isLoading = false
     @State private var appointmentCreated = false // Track if appointment was created
     @State private var appointmentId = "" // Store the appointment ID to avoid regenerating it
     @AppStorage("current_user_id") private var userId: String?
+    @State private var refreshID = UUID() // For UI refresh on theme change
     
     private func formatTime() -> String {
         // Use the saved formatted times directly
@@ -169,105 +171,115 @@ struct BookingSuccessView: View {
     }
 
     var body: some View {
-        VStack(spacing: 30) {
-            // Success icon
-            ZStack {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 80, height: 80)
-                
-                Image(systemName: "checkmark")
-                    .foregroundColor(.white)
-                    .font(.system(size: 40, weight: .bold))
+        ZStack {
+            // Apply themed background
+            if themeManager.isPatient {
+                themeManager.currentTheme.background
+                    .ignoresSafeArea()
             }
-            .padding(.top, 40)
             
-            // Success message
-            VStack(spacing: 15) {
-                Text("Thanks, your booking has been confirmed.")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .multilineTextAlignment(.center)
+            VStack(spacing: 30) {
+                // Success icon
+                ZStack {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 80, height: 80)
+                    
+                    Image(systemName: "checkmark")
+                        .foregroundColor(.white)
+                        .font(.system(size: 40, weight: .bold))
+                }
+                .padding(.top, 40)
                 
-                Text("Please check your email for receipt and booking details.")
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.horizontal)
-            
-            // Appointment details card
-            VStack(spacing: 20) {
-                VStack(alignment: .leading, spacing: 15) {
-                    // Doctor avatar and info
-                    HStack(spacing: 15) {
-                        Circle()
-                            .fill(Color.teal)
-                            .frame(width: 50, height: 50)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .foregroundColor(.white)
-                            )
+                // Success message
+                VStack(spacing: 15) {
+                    Text("Booking Confirmed")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                        .multilineTextAlignment(.center)
+                    
+                    Text("A receipt has been sent to your email")
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal)
+                
+                // Appointment details card
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 15) {
+                        // Doctor avatar and info
+                        HStack(spacing: 15) {
+                            Circle()
+                                .fill(Color.teal)
+                                .frame(width: 50, height: 50)
+                                .overlay(
+                                    Image(systemName: "person.fill")
+                                        .foregroundColor(.white)
+                                )
+                            
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(doctor.name)
+                                    .font(.headline)
+                                Text(doctor.specialization)
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                            }
+                        }
                         
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(doctor.name)
-                                .font(.headline)
-                            Text(doctor.specialization)
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
+                        // Date and time
+                        HStack {
+                            Image(systemName: "calendar")
+                                .foregroundColor(.teal)
+                            
+                            Text(appointmentDate, style: .date)
+                                .foregroundColor(.black)
+                        }
+                        
+                        HStack {
+                            Image(systemName: "clock")
+                                .foregroundColor(.teal)
+                            
+                            Text(formatTime())
+                                .foregroundColor(.black)
                         }
                     }
-                    
-                    // Date and time
-                    HStack {
-                        Image(systemName: "calendar")
-                            .foregroundColor(.teal)
-                        
-                        Text(appointmentDate, style: .date)
-                            .foregroundColor(.black)
-                    }
-                    
-                    HStack {
-                        Image(systemName: "clock")
-                            .foregroundColor(.teal)
-                        
-                        Text(formatTime())
-                            .foregroundColor(.black)
+                }
+                .padding()
+                .background(Color.white)
+                .cornerRadius(12)
+                .shadow(color: .gray.opacity(0.2), radius: 5)
+                
+                Spacer()
+                
+                Button(action: {
+                    navigateToHome()
+                }) {
+                    if isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.green)
+                            .cornerRadius(10)
+                    } else {
+                        Text("Done")
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.green)
+                            .cornerRadius(10)
                     }
                 }
+                .padding(.horizontal)
+                .padding(.bottom, 20)
+                .disabled(isLoading)
             }
-            .padding()
-            .background(Color.white)
-            .cornerRadius(12)
-            .shadow(color: .gray.opacity(0.2), radius: 5)
-            
-            Spacer()
-            
-            Button(action: {
-                saveAndNavigate()
-            }) {
-                if isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.green)
-                        .cornerRadius(10)
-                } else {
-                    Text("Done")
-                        .fontWeight(.medium)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.green)
-                        .cornerRadius(10)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 20)
-            .disabled(isLoading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGray6).ignoresSafeArea())
+        .navigationBarBackButtonHidden(true) // Hide the back button
+        .navigationBarItems(leading: EmptyView()) // Empty view for leading item to remove back button
         .alert(isPresented: $showError) {
             Alert(
                 title: Text("Error"),
@@ -289,6 +301,41 @@ struct BookingSuccessView: View {
             #if DEBUG
             diagnoseDatabaseIssues()
             #endif
+        }
+    }
+    
+    // New function to navigate directly to home screen
+    private func navigateToHome() {
+        // Stop loading state if active
+        isLoading = false
+        
+        // On Apple platforms, create and post a notification for app-wide navigation
+        NotificationCenter.default.post(name: NSNotification.Name("ReturnToHomeTab"), object: nil)
+        
+        // Start with a simple dismiss to close the current view
+        dismiss()
+        
+        // Use the most reliable approach for root view navigation if needed
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first {
+            print("🔄 Navigating to HomeTabView")
+            
+            // Create a fresh instance with minimum dependencies
+            let homeView = HomeTabView()
+            let rootViewController = UIHostingController(rootView: homeView)
+            
+            // Use a transition animation
+            let transition = CATransition()
+            transition.duration = 0.3
+            transition.type = .fade
+            
+            // Apply the transition
+            window.layer.add(transition, forKey: nil)
+            window.rootViewController = rootViewController
+            window.makeKeyAndVisible()
+            
+            // Post notification to dismiss all modals
+            NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
         }
     }
     
@@ -405,20 +452,7 @@ struct BookingSuccessView: View {
                     print("✅ Found existing appointment with this doctor and date - assuming PaymentFinalView created it")
                     
                     // If appointment exists, just navigate to home
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let window = windowScene.windows.first {
-                        print("🔄 Navigating to HomeTabView")
-                        let homeView = HomeTabView()
-                            .environmentObject(hospitalVM)
-                            .environmentObject(appointmentManager)
-                        
-                        window.rootViewController = UIHostingController(rootView: homeView)
-                        window.makeKeyAndVisible()
-                        
-                        // Post notification to dismiss all modals
-                        NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
-                    }
-                    
+                    navigateToHome()
                     return
                 }
                 
@@ -476,7 +510,7 @@ struct BookingSuccessView: View {
                 guard let patientData = patientResults.first,
                       let patientId = patientData["patient_id"] as? String else {
                     print("❌ Could not get or create patient_id")
-                    throw NSError(domain: "AppointmentError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not verify patient record"])
+                    throw NSError(domain: "AppointmentError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Patient verification failed"])
                 }
                 
                 print("✅ Got patient_id: \(patientId)")
@@ -598,19 +632,7 @@ struct BookingSuccessView: View {
                 print("✅ Appointment booking completed successfully")
                 
                 // Now that we've confirmed the appointment is saved, navigate
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let window = windowScene.windows.first {
-                    print("🔄 Navigating to HomeTabView")
-                    let homeView = HomeTabView()
-                        .environmentObject(hospitalVM)
-                        .environmentObject(appointmentManager)
-                    
-                    window.rootViewController = UIHostingController(rootView: homeView)
-                    window.makeKeyAndVisible()
-                    
-                    // Post notification to dismiss all modals
-                    NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
-                }
+                navigateToHome()
                 
             } catch {
                 print("❌ Error saving appointment: \(error.localizedDescription)")
@@ -618,7 +640,7 @@ struct BookingSuccessView: View {
                 await MainActor.run {
                     isLoading = false
                     showError = true
-                    errorMessage = "Error checking for existing appointments: \(error.localizedDescription)"
+                    errorMessage = "Error creating appointment: \(error.localizedDescription)"
                 }
             }
         }
