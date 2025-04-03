@@ -88,6 +88,8 @@ struct HomeTabView: View {
                     await profileController.loadProfile(userId: id)
                     if let patient = profileController.patient {
                         print("📱 Successfully loaded profile for: \(patient.name)")
+                        // Update isRegisteredDonor based on patient's status
+                        isRegisteredDonor = patient.isBloodDonor
                     } else if let error = profileController.error {
                         print("📱 Error loading profile: \(error.localizedDescription)")
                         
@@ -384,20 +386,21 @@ struct HomeTabView: View {
                     // Main Actions
                     VStack(spacing: 15) {
                         if !isRegisteredDonor {
-                            Text("Blood Donation")
-                                .font(.title)
-                                .fontWeight(.bold)
+//                            Text("Give the gift of life")
+//                                .font(.title)
+//                                .fontWeight(.bold)
                             
-                            Text("Be a lifesaver by donating blood")
-                                .font(.subheadline)
+                            Text("Join our life-saving network-donate blood or request help when you need it.")
+                                .font(.title2)
                                 .foregroundColor(.gray)
+                                .padding()
                             
                             Button(action: {
                                 showBloodDonationRegistration = true
                             }) {
                                 HStack {
                                     Image(systemName: "heart.fill")
-                                    Text("Register as Blood Donor")
+                                    Text("Register for become a Blood Donor")
                                 }
                                 .font(.headline)
                                 .foregroundColor(.white)
@@ -409,30 +412,14 @@ struct HomeTabView: View {
                             .padding(.horizontal)
                         }
                         
-                        if !hasActiveBloodRequest {
-                            Button(action: {
-                                showBloodRequest = true
-                            }) {
-                                HStack {
-                                    Image(systemName: "drop.fill")
-                                    Text("Request Blood")
-                                }
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.red)
-                                .cornerRadius(10)
-                            }
-                            .padding(.horizontal)
-                        }
+                        Spacer()
                     }
                     
                     Spacer()
                 }
                 .padding(.top)
             }
-            .navigationTitle("Blood Donation")
+            .navigationTitle("Give the gift of life")
             .alert("Cancel Blood Donor Registration", isPresented: $showCancelRegistrationAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Confirm", role: .destructive) {

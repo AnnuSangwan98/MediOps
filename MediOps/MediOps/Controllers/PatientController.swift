@@ -77,7 +77,8 @@ class PatientController {
                 "phoneNumber": phoneNumber, // Default phone number
                 "emergencyContactNumber": "9999999999", // Default emergency number
                 "emergencyRelationship": "Daughter", // Default relationship
-                "password": password  // Store the raw password in patients table as per schema
+                "password": password,  // Store the raw password in patients table as per schema
+                "is_blood_donor": "false" // Default to not being a blood donor
             ]
             
             // Add optional fields if provided
@@ -105,9 +106,10 @@ class PatientController {
                 bloodGroup: bloodGroup,
                 address: address,
                 phoneNumber: phoneNumber,
-                emergencyContactName: "Astha", // Default emergency contact
+                emergencyContactName: "Astha",
                 emergencyContactNumber: "9999999999",
-                emergencyRelationship: "Daughter"
+                emergencyRelationship: "Daughter",
+                isBloodDonor: false
             )
             
             print("REGISTRATION: Complete! User and patient records created successfully")
@@ -186,7 +188,7 @@ class PatientController {
         emergencyRelationship: String? = nil
     ) async throws -> Patient {
         // 1. Get current patient data to verify it exists
-        _ = try await getPatient(id: id)
+        let currentPatient = try await getPatient(id: id)
         
         // 2. Prepare update data - convert everything to strings for the API
         var updateData: [String: String] = [:]
@@ -239,7 +241,26 @@ class PatientController {
         print("UPDATE PATIENT: Update successful, fetching updated patient data")
         
         // 4. Return updated patient
-        return try await getPatient(id: id)
+        let updatedPatient = Patient(
+            id: id,
+            userId: currentPatient.userId,
+            name: name ?? currentPatient.name,
+            age: age ?? currentPatient.age,
+            gender: gender ?? currentPatient.gender,
+            createdAt: currentPatient.createdAt,
+            updatedAt: Date(),
+            email: email ?? currentPatient.email,
+            emailVerified: currentPatient.emailVerified,
+            bloodGroup: bloodGroup ?? currentPatient.bloodGroup,
+            address: address ?? currentPatient.address,
+            phoneNumber: phoneNumber ?? currentPatient.phoneNumber,
+            emergencyContactName: emergencyContactName ?? currentPatient.emergencyContactName,
+            emergencyContactNumber: emergencyContactNumber ?? currentPatient.emergencyContactNumber,
+            emergencyRelationship: emergencyRelationship ?? currentPatient.emergencyRelationship,
+            isBloodDonor: currentPatient.isBloodDonor
+        )
+        
+        return updatedPatient
     }
     
     /// Verify patient email
@@ -331,6 +352,16 @@ class PatientController {
             emailVerified = false // Default value
         }
         
+        // Handle is_blood_donor which might come as different types
+        let isBloodDonor: Bool
+        if let donor = data["is_blood_donor"] as? Bool {
+            isBloodDonor = donor
+        } else if let donorString = data["is_blood_donor"] as? String {
+            isBloodDonor = donorString.lowercased() == "true"
+        } else {
+            isBloodDonor = false // Default value
+        }
+        
         return Patient(
             id: id,
             userId: userId,
@@ -346,7 +377,8 @@ class PatientController {
             phoneNumber: phoneNumber,
             emergencyContactName: emergencyContactName,
             emergencyContactNumber: emergencyContactNumber,
-            emergencyRelationship: emergencyRelationship
+            emergencyRelationship: emergencyRelationship,
+            isBloodDonor: isBloodDonor
         )
     }
 }

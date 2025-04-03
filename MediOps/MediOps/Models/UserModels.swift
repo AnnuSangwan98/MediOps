@@ -67,6 +67,7 @@ enum Models {
         var emergencyContactName: String?
         var emergencyContactNumber: String
         var emergencyRelationship: String
+        var isBloodDonor: Bool
         
         enum CodingKeys: String, CodingKey {
             case id
@@ -84,6 +85,7 @@ enum Models {
             case emergencyContactName = "emergency_contact_name"
             case emergencyContactNumber = "emergency_contact_number"
             case emergencyRelationship = "emergency_relationship"
+            case isBloodDonor = "is_blood_donor"
         }
     }
 

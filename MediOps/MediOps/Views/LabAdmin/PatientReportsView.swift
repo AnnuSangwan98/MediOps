@@ -142,7 +142,8 @@ class LabAdminPatientsViewModel: ObservableObject {
             phoneNumber: data["phone_number"] as? String ?? "",
             emergencyContactName: data["emergency_contact_name"] as? String,
             emergencyContactNumber: data["emergency_contact_number"] as? String ?? "",
-            emergencyRelationship: data["emergency_relationship"] as? String ?? ""
+            emergencyRelationship: data["emergency_relationship"] as? String ?? "",
+            isBloodDonor: data["is_blood_donor"] as? Bool ?? false
         )
         
         return patient

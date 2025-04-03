@@ -97,6 +97,7 @@ struct AdminHomeView: View {
     @State private var showAddDoctor = false
     @State private var showAddLabAdmin = false
     @State private var showProfile = false
+    @State private var showAddBloodBank = false
     @State private var recentActivities: [UIActivity] = []
     @State private var doctors: [UIDoctor] = []
     @State private var labAdmins: [UILabAdmin] = []
@@ -111,81 +112,104 @@ struct AdminHomeView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Header
-                    HStack {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Admin Dashboard")
-                                .font(.title)
+            ZStack {
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Header
+                        HStack {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Admin Dashboard")
+                                    .font(.title)
+                                    .fontWeight(.bold)
+                            }
+                            Spacer()
+                            
+                            Button(action: {
+                                showProfile = true
+                            }) {
+                                Image(systemName: "person.circle.fill")
+                                    .resizable()
+                                    .frame(width: 40, height: 40)
+                                    .foregroundColor(.teal)
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.top)
+                        
+                        // Quick action
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 15) {
+                            AdminStatCard(
+                                title: "Doctors",
+                                value: "\(doctorCount)",
+                                icon: "stethoscope",
+                                doctors: $doctors
+                            )
+                            AdminStatCard(
+                                title: "Lab Admins",
+                                value: "\(labAdminCount)",
+                                icon: "flask.fill",
+                                labAdmins: $labAdmins
+                            )
+                        }
+                        .padding(.horizontal)
+                        
+                        
+                        
+                        // Recent Activity
+                        VStack(alignment: .leading, spacing: 15) {
+                            Text("Recent Activity")
+                                .font(.title2)
                                 .fontWeight(.bold)
-                        }
-                        Spacer()
-                        
-                        Button(action: {
-                            showProfile = true
-                        }) {
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .frame(width: 40, height: 40)
-                                .foregroundColor(.teal)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.top)
-                    
-                    // Quick action
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 15) {
-                        AdminStatCard(
-                            title: "Doctors",
-                            value: "\(doctorCount)",
-                            icon: "stethoscope",
-                            doctors: $doctors
-                        )
-                        AdminStatCard(
-                            title: "Lab Admins",
-                            value: "\(labAdminCount)",
-                            icon: "flask.fill",
-                            labAdmins: $labAdmins
-                        )
-                    }
-                    .padding(.horizontal)
-                    
-                    
-                    
-                    // Recent Activity
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Recent Activity")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .padding(.horizontal)
-                        
-                        if recentActivities.isEmpty {
-                            Text("No recent activity")
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(10)
-                                .shadow(color: .gray.opacity(0.1), radius: 5)
-                        } else {
-                            ForEach(recentActivities) { activity in
-                                ActivityRow(activity: activity) { updatedActivity in
-                                    if let index = recentActivities.firstIndex(where: { $0.id == activity.id }) {
-                                        recentActivities[index] = updatedActivity
-                                    }
-                                } onDelete: { deletedActivity in
-                                    if let index = recentActivities.firstIndex(where: { $0.id == deletedActivity.id }) {
-                                        recentActivities.remove(at: index)
+                                .padding(.horizontal)
+                            
+                            if recentActivities.isEmpty {
+                                Text("No recent activity")
+                                    .foregroundColor(.gray)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.white)
+                                    .cornerRadius(10)
+                                    .shadow(color: .gray.opacity(0.1), radius: 5)
+                            } else {
+                                ForEach(recentActivities) { activity in
+                                    ActivityRow(activity: activity) { updatedActivity in
+                                        if let index = recentActivities.firstIndex(where: { $0.id == activity.id }) {
+                                            recentActivities[index] = updatedActivity
+                                        }
+                                    } onDelete: { deletedActivity in
+                                        if let index = recentActivities.firstIndex(where: { $0.id == deletedActivity.id }) {
+                                            recentActivities.remove(at: index)
+                                        }
                                     }
                                 }
                             }
                         }
+                        .padding()
                     }
-                    .padding()
+                }
+                
+                // Floating Action Button
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            showAddBloodBank = true
+                        }) {
+                            Image(systemName: "drop.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.white)
+                                .frame(width: 60, height: 60)
+                                .background(Color.red)
+                                .clipShape(Circle())
+                                .shadow(color: .gray.opacity(0.3), radius: 5, x: 0, y: 2)
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 20)
+                    }
                 }
             }
             .navigationBarBackButtonHidden(true)
@@ -208,6 +232,9 @@ struct AdminHomeView: View {
             }
             .sheet(isPresented: $showProfile) {
                 HospitalAdminProfileView()
+            }
+            .sheet(isPresented: $showAddBloodBank) {
+                BloodBankView()
             }
         }
     }
@@ -343,6 +370,91 @@ struct ActivityRow: View {
             return .red
         case .completed:
             return .blue
+        }
+    }
+}
+
+// MARK: - Blood Bank View
+struct BloodBankView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var showRequestBlood = false
+    @State private var hasActiveRequest = false
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Title
+                    Text("Blood Bank")
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .padding(.top, 20)
+                    
+                    // Information Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        RequestInfoRow(title: "Request Status", value: "Will be matched with available donors")
+                        RequestInfoRow(title: "Priority", value: "Emergency requests will be prioritized")
+                        RequestInfoRow(title: "Contact Info", value: "Keep your contact information updated")
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+                    
+                    // Request Blood Assistance Button
+                    if !hasActiveRequest {
+                        Button(action: {
+                            showRequestBlood = true
+                        }) {
+                            HStack {
+                                Image(systemName: "drop.fill")
+                                    .font(.system(size: 20))
+                                Text("Request Blood Assistance")
+                                    .font(.headline)
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red)
+                            .cornerRadius(10)
+                        }
+                        .padding(.horizontal)
+                    } else {
+                        // Active Request Card
+                        VStack(spacing: 15) {
+                            HStack {
+                                Image(systemName: "drop.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.red)
+                                Text("Active Blood Request")
+                                    .font(.headline)
+                            }
+                            
+                            Text("Your request is being processed. We will notify you when a matching donor is found.")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(15)
+                        .padding(.horizontal)
+                    }
+                    
+                    Spacer()
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+            }
+            .sheet(isPresented: $showRequestBlood) {
+                BloodRequestView(hasActiveRequest: $hasActiveRequest)
+            }
         }
     }
 }

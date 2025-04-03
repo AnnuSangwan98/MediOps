@@ -232,6 +232,8 @@ class PatientProfileController: ObservableObject {
             }
             
             // Create patient object from the database fields
+            let isBloodDonor = patientData["is_blood_donor"] as? Bool ?? false
+            
             let patient = Patient(
                 id: id,
                 userId: userId,
@@ -247,7 +249,8 @@ class PatientProfileController: ObservableObject {
                 phoneNumber: phoneNumber,
                 emergencyContactName: emergencyContactName,
                 emergencyContactNumber: emergencyContactNumber,
-                emergencyRelationship: emergencyRelationship
+                emergencyRelationship: emergencyRelationship,
+                isBloodDonor: isBloodDonor
             )
             
             print("📱 PATIENT PROFILE: Successfully created Patient object: \(name)")
@@ -578,7 +581,8 @@ class PatientProfileController: ObservableObject {
                             phoneNumber: phoneNumber,
                             emergencyContactName: emergencyContactName,
                             emergencyContactNumber: emergencyContactNumber,
-                            emergencyRelationship: emergencyRelationship
+                            emergencyRelationship: emergencyRelationship,
+                            isBloodDonor: currentPatient.isBloodDonor
                         )
                         self.patient = updatedPatient
                     }
@@ -711,7 +715,8 @@ class PatientProfileController: ObservableObject {
                             phoneNumber: phoneNumber,
                             emergencyContactName: emergencyContactName,
                             emergencyContactNumber: emergencyContactNumber,
-                            emergencyRelationship: emergencyRelationship
+                            emergencyRelationship: emergencyRelationship,
+                            isBloodDonor: currentPatient.isBloodDonor
                         )
                         self.patient = updatedPatient
                     }
@@ -817,7 +822,8 @@ class PatientProfileController: ObservableObject {
                             phoneNumber: phoneNumber,
                             emergencyContactName: emergencyContactName,
                             emergencyContactNumber: emergencyContactNumber,
-                            emergencyRelationship: emergencyRelationship
+                            emergencyRelationship: emergencyRelationship,
+                            isBloodDonor: currentPatient.isBloodDonor
                         )
                         self.patient = updatedPatient
                     }
@@ -864,7 +870,8 @@ class PatientProfileController: ObservableObject {
             phoneNumber: "9876543210",
             emergencyContactName: "Emergency Contact",
             emergencyContactNumber: "1234567890",
-            emergencyRelationship: "Family"
+            emergencyRelationship: "Family",
+            isBloodDonor: false
         )
         
         // Manually set the patient property
@@ -917,7 +924,8 @@ class PatientProfileController: ObservableObject {
             "address": "123 Test Street, Test City",
             "emergency_contact_name": "Emergency Contact",
             "emergency_contact_number": "1234567890",
-            "emergency_relationship": "Family"
+            "emergency_relationship": "Family",
+            "is_blood_donor": false
         ]
         
         do {
