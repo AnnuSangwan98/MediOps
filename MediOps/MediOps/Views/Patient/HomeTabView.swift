@@ -504,8 +504,11 @@ struct HomeTabView: View {
     @ObservedObject var hospitalVM = HospitalViewModel.shared
     @StateObject var appointmentManager = AppointmentManager.shared
     @StateObject private var labReportManager = LabReportManager.shared
+    @StateObject private var bloodController = BloodDonationController.shared
     @State private var showProfile = false
     @State private var showAddVitals = false
+    @State private var showTermsAndConditions = false
+    @State private var showCancelRegistrationAlert = false
     @State private var selectedHospital: HospitalModel?
     @State private var activeSheet: ActiveSheet?
     @State private var coordinateSpace = UUID()
@@ -888,29 +891,129 @@ struct HomeTabView: View {
                              endPoint: .bottomTrailing)
                     .ignoresSafeArea()
                 
-                // Content will go here when implemented
-                VStack {
-                    Image(systemName: "drop.fill")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 80, height: 80)
-                        .foregroundColor(.teal)
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Header Image
+                        Image(systemName: "drop.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 60, height: 60)
+                            .foregroundColor(.teal)
+                            .padding(.top, 20)
                         
-                    Text("blood_donate".localized)
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .padding(.top, 10)
-                    
-                    Text("coming_soon".localized)
-                        .font(.title3)
-                        .foregroundColor(.gray)
-                        .padding(.top, 5)
+                        // Title
+                        Text("Blood Donation")
+                            .font(.title)
+                            .fontWeight(.bold)
+                        
+                        // Description
+                        Text("Join our community of life-savers by registering as a blood donor.")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                        
+                        if bloodController.isBloodDonor {
+                            // Registered Donor Card
+                            VStack(spacing: 15) {
+                                HStack {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                        .font(.title2)
+                                    
+                                    Text("Registered Blood Donor")
+                                        .font(.headline)
+                                        .foregroundColor(.green)
+                                }
+                                
+                                Text("Thank you for being a life-saver! Your registration is active.")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                    .multilineTextAlignment(.center)
+                                
+                                Button(action: {
+                                    showCancelRegistrationAlert = true
+                                }) {
+                                    Text("Cancel Registration")
+                                        .foregroundColor(.red)
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 16)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .stroke(Color.red, lineWidth: 1)
+                                        )
+                                }
+                            }
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(15)
+                            .shadow(color: Color.black.opacity(0.1), radius: 5)
+                            .padding(.horizontal)
+                        } else {
+                            // Registration Button
+                            Button(action: {
+                                showTermsAndConditions = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "plus.circle.fill")
+                                    Text("Register as Blood Donor")
+                                }
+                                .foregroundColor(.white)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(Color.teal)
+                                .cornerRadius(10)
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                    .padding(.bottom, 30)
                 }
             }
-            .navigationTitle("blood_donate".localized)
+            .navigationTitle("Blood Donation")
             .toolbarColorScheme(.light, for: .navigationBar)
             .toolbarBackground(Color.teal.opacity(0.1), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
+            .alert("Cancel Registration", isPresented: $showCancelRegistrationAlert) {
+                Button("No, Keep Registration", role: .cancel) { }
+                Button("Yes, Cancel", role: .destructive) {
+                    Task {
+                        if let patientId = UserDefaults.standard.string(forKey: "current_patient_id") {
+                            print("🔄 Cancelling blood donor registration for patient ID: \(patientId)")
+                            await bloodController.updateBloodDonorStatus(patientId: patientId, isDonor: false)
+                        } else {
+                            print("❌ No patient ID available for cancelling registration")
+                        }
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to cancel your blood donor registration?")
+            }
+            .sheet(isPresented: $showTermsAndConditions) {
+                TermsAndConditionsView(isAccepted: $showTermsAndConditions) { accepted in
+                    if accepted {
+                        Task {
+                            if let patientId = UserDefaults.standard.string(forKey: "current_patient_id") {
+                                print("🔄 Registering as blood donor for patient ID: \(patientId)")
+                                await bloodController.updateBloodDonorStatus(patientId: patientId, isDonor: true)
+                            } else {
+                                print("❌ No patient ID available for registration")
+                            }
+                        }
+                    }
+                }
+            }
+            .onAppear {
+                print("📱 Blood donation tab appeared")
+                if let patientId = UserDefaults.standard.string(forKey: "current_patient_id") {
+                    print("🔄 Fetching blood donor status for patient ID: \(patientId)")
+                    Task {
+                        await bloodController.fetchBloodDonorStatus(patientId: patientId)
+                    }
+                } else {
+                    print("❌ No patient ID available for fetching blood donor status")
+                }
+            }
         }
     }
     
@@ -1377,3 +1480,4 @@ struct HospitalSearchBar: View {
         )
     }
 }
+
