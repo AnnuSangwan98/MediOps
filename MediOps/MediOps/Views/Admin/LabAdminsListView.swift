@@ -11,13 +11,12 @@ struct LabAdminsListView: View {
     @Binding var labAdmins: [UILabAdmin]
     @State private var labAdminToDelete: UILabAdmin?
     @State private var showDeleteConfirmation = false
-    @State private var showSuccessMessage = false
-    @State private var successMessage = ""
-    
-    // Add state for debug options
     @State private var showDebugOptions = false
     @State private var currentHospitalId = ""
     @State private var showCreateTestAdminConfirmation = false
+    
+    // Add state for debug options
+    @State private var successMessage = ""
     
     private let adminController = AdminController.shared
     
@@ -214,14 +213,8 @@ struct LabAdminsListView: View {
             if let labAdmin = labAdminToDelete {
                 Text("Are you sure you want to delete \(labAdmin.fullName)?\n\nID: \(labAdmin.originalId ?? "Unknown")\nEmail: \(labAdmin.email)\n\nThis action cannot be undone.")
             } else {
-            Text("Are you sure you want to delete this lab admin? This action cannot be undone.")
+                Text("Are you sure you want to delete this lab admin? This action cannot be undone.")
             }
-        }
-        // Success message alert
-        .alert("Success", isPresented: $showSuccessMessage) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(successMessage)
         }
         // Debug options alert
         .alert("Database Connection", isPresented: $showDebugOptions) {
@@ -318,12 +311,6 @@ struct LabAdminsListView: View {
                     )
                 }
                 isLoading = false
-                
-                // Show success message if needed
-                if !labAdmins.isEmpty {
-                    successMessage = "Successfully retrieved \(labAdmins.count) lab admins"
-                    showSuccessMessage = true
-                }
             }
         } catch {
             await MainActor.run {
@@ -494,9 +481,8 @@ struct LabAdminsListView: View {
                             if let index = labAdmins.firstIndex(where: { $0.id == labAdmin.id }) {
                                 labAdmins.remove(at: index)
                                 successMessage = "Lab admin was already deleted from the database. UI has been updated."
-                                showSuccessMessage = true
                                 clearLabAdminToDelete()
-                } else {
+                            } else {
                                 errorMessage = "Could not find lab admin in the list."
                                 showError = true
                                 clearLabAdminToDelete()
@@ -528,9 +514,8 @@ struct LabAdminsListView: View {
                         }
                     }
                     
-                    // Show success message
+                    // Show success message in debug options
                     successMessage = "Lab admin \(labAdmin.fullName) successfully removed from the system"
-                    showSuccessMessage = true
                     clearLabAdminToDelete()
                 }
             } catch let error as AdminError {
@@ -625,7 +610,7 @@ struct LabAdminsListView: View {
                 // Show simple alert for error case
                 await MainActor.run {
                     successMessage = diagMsg
-                    showSuccessMessage = true
+                    showDebugOptions = true
                 }
             }
             
@@ -664,7 +649,7 @@ struct LabAdminsListView: View {
             
             await MainActor.run {
                 successMessage = "Successfully created test lab admin: \(labAdmin.id) - \(labAdmin.name)"
-                showSuccessMessage = true
+                showDebugOptions = true
                 
                 // Refresh the list
                 Task {

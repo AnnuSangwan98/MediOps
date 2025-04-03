@@ -476,6 +476,7 @@ struct AddHospitalForm: View {
                             }
                             
                             TextField("Hospital Name", text: $hospitalName)
+                                .textCase(.uppercase)
                             
                             TextField("Hospital ID (HOSXXX)", text: $hospitalID)
                                 .onChange(of: hospitalID) { _, newValue in
@@ -853,7 +854,7 @@ struct EditHospitalForm: View {
                     isExpanded: $hospitalInfoExpanded,
                     content: {
                         TextField("Hospital Name", text: $editedHospital.name)
-                        
+                            .textCase(.uppercase)
                         // Display hospital ID as non-editable text
                         HStack {
                             Text("Hospital ID")
@@ -895,12 +896,12 @@ struct EditHospitalForm: View {
                                 .keyboardType(.numberPad)
                         }
                         
-                        Picker("Hospital Status", selection: $editedHospital.status) {
-                            Text("Active").tag(HospitalStatus.active)
-                            Text("Pending").tag(HospitalStatus.pending)
-                            Text("Inactive").tag(HospitalStatus.inactive)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
+//                        Picker("Hospital Status", selection: $editedHospital.status) {
+//                            Text("Active").tag(HospitalStatus.active)
+//                            Text("Pending").tag(HospitalStatus.pending)
+//                            Text("Inactive").tag(HospitalStatus.inactive)
+//                        }
+//                        .pickerStyle(SegmentedPickerStyle())
                     },
                     label: {
                         HStack {
