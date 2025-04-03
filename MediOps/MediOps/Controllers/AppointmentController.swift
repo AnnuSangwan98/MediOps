@@ -9,7 +9,25 @@ class AppointmentController: ObservableObject {
     // Create a new appointment
     func createAppointment(patientId: String, doctorId: String, hospitalId: String,
                          availabilitySlotId: Int, appointmentDate: Date, reason: String) async throws -> AppointmentModels.Appointment {
-        let id = UUID().uuidString
+        // First, get the PAT format patient_id from the patients table
+        let patientResults = try await supabase.select(
+            from: "patients",
+            where: "id",
+            equals: patientId
+        )
+        
+        guard let patientData = patientResults.first,
+              let patFormatId = patientData["patient_id"] as? String else {
+            throw NSError(domain: "AppointmentError", 
+                         code: 1, 
+                         userInfo: [NSLocalizedDescriptionKey: "Could not find patient_id in PAT format"])
+        }
+        
+        // Generate APPT format ID for the appointment
+        let randomNum = String(format: "%03d", Int.random(in: 0...999))
+        let randomLetter = String(UnicodeScalar(UInt8(65 + Int.random(in: 0...25))))
+        let appointmentId = "APPT\(randomNum)\(randomLetter)"
+        
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let formattedDate = dateFormatter.string(from: appointmentDate)
@@ -20,26 +38,33 @@ class AppointmentController: ObservableObject {
             let patient_id: String
             let doctor_id: String
             let hospital_id: String
-            let availability_slot_id: Int
             let appointment_date: String
             let reason: String
+            let status: String
+            let isdone: Bool
+            let is_premium: Bool?
         }
         
+        // Get premium status from patient data
+        let isPremium = (patientData["user_type"] as? String) == "premium"
+        
         let appointmentData = AppointmentData(
-            id: id,
-            patient_id: patientId,
+            id: appointmentId,
+            patient_id: patFormatId,  // Using PAT format ID
             doctor_id: doctorId,
             hospital_id: hospitalId,
-            availability_slot_id: availabilitySlotId,
             appointment_date: formattedDate,
-            reason: reason
+            reason: reason,
+            status: "upcoming",
+            isdone: false,
+            is_premium: isPremium
         )
         
         do {
             try await supabase.insert(into: "appointments", data: appointmentData)
             
             // Fetch the created appointment to get all fields with default values
-            let results = try await supabase.select(from: "appointments", where: "id", equals: id)
+            let results = try await supabase.select(from: "appointments", where: "id", equals: appointmentId)
             guard let data = results.first else {
                 throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch created appointment"])
             }
@@ -47,9 +72,9 @@ class AppointmentController: ObservableObject {
             // Parse the fetched appointment
             guard 
                 let fetchedId = data["id"] as? String,
+                let fetchedPatientId = data["patient_id"] as? String,
                 let fetchedDoctorId = data["doctor_id"] as? String,
                 let fetchedHospitalId = data["hospital_id"] as? String,
-                let fetchedAvailabilitySlotId = data["availability_slot_id"] as? Int,
                 let fetchedAppointmentDateString = data["appointment_date"] as? String,
                 let fetchedBookingTimeString = data["booking_time"] as? String,
                 let fetchedStatusString = data["status"] as? String,
@@ -65,10 +90,10 @@ class AppointmentController: ObservableObject {
             
             let appointment = AppointmentModels.Appointment(
                 id: fetchedId,
-                patientId: patientId,
+                patientId: fetchedPatientId,  // This will be the PAT format ID
                 doctorId: fetchedDoctorId,
                 hospitalId: fetchedHospitalId,
-                availabilitySlotId: fetchedAvailabilitySlotId,
+                availabilitySlotId: availabilitySlotId,
                 appointmentDate: dateFormatter.date(from: fetchedAppointmentDateString) ?? Date(),
                 bookingTime: timestampFormatter.date(from: fetchedBookingTimeString) ?? Date(),
                 status: status,
