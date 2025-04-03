@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+import struct MediOps.Appointment
+import enum MediOps.AppointmentStatus
 
 // MARK: - Models
 struct HospitalModel: Identifiable, Codable, Hashable {
@@ -1203,8 +1205,10 @@ class HospitalViewModel: ObservableObject {
                 contactNumber: contactNumber,
                 emergencyContactNumber: nil,
                 doctorStatus: status,
+                dateOfBirth: nil,
                 createdAt: Date(),
-                updatedAt: Date()
+                updatedAt: Date(),
+                maxAppointments: 8 // Default value matching other parts of the app
             )
         } catch {
             print("⚠️ Error fetching doctor details: \(error.localizedDescription)")
@@ -1237,7 +1241,7 @@ extension HospitalDoctor {
             dateOfBirth: nil,
             createdAt: Date(),
             updatedAt: Date(),
-            maxAppointments: 10
+            maxAppointments: 8 // Default value matching other parts of the app
         )
     }
 }

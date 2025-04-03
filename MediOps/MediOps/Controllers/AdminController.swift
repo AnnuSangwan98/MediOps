@@ -2217,6 +2217,14 @@ class AdminController {
     
     // MARK: - Doctor Availability Methods
     
+    /// Simple struct to represent doctor availability
+    struct DoctorAvailability {
+        let doctorId: String
+        let weeklySchedule: [String: [String: Bool]]
+        let maxNormalPatients: Int
+        let maxPremiumPatients: Int
+    }
+    
     /// Get doctor's availability schedule and patient limits
     func getDoctorAvailability(doctorId: String) async throws -> DoctorAvailability? {
         let availabilityData = try await supabase.select(
