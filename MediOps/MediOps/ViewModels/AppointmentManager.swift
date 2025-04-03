@@ -5,7 +5,12 @@ class AppointmentManager: ObservableObject {
     static let shared = AppointmentManager()
     
     @Published var appointments: [Appointment] = []
+    @Published var isLoading = false
     private var isRefreshing = false // Track if refresh is in progress
+    
+    var upcomingAppointments: [Appointment] {
+        appointments.filter { $0.status == .upcoming }
+    }
     
     private init() {
         // Try to load any appointments from the last session
@@ -55,6 +60,10 @@ class AppointmentManager: ObservableObject {
         
         // Update the appointments array
         appointments = Array(updatedAppointments.values)
+    }
+    
+    func cancelAppointment(_ appointment: Appointment) {
+        cancelAppointment(appointment.id)
     }
     
     func cancelAppointment(_ appointmentId: String) {
@@ -180,11 +189,13 @@ class AppointmentManager: ObservableObject {
         }
         
         isRefreshing = true
+        isLoading = true
         print("🔄 Starting appointment refresh")
         
         guard let userId = UserDefaults.standard.string(forKey: "current_user_id") else {
             print("❌ No user ID found for refresh")
             isRefreshing = false
+            isLoading = false
             return
         }
         
@@ -201,6 +212,7 @@ class AppointmentManager: ObservableObject {
             guard let patientData = patientResults.first else {
                 print("❌ Could not find patient record for user: \(userId)")
                 isRefreshing = false
+                isLoading = false
                 return
             }
             
@@ -209,6 +221,7 @@ class AppointmentManager: ObservableObject {
             guard let finalPatientId = patientId else {
                 print("❌ Could not find patient_id for user: \(userId)")
                 isRefreshing = false
+                isLoading = false
                 return
             }
             
@@ -372,9 +385,10 @@ class AppointmentManager: ObservableObject {
             
             print("✅ Successfully refreshed appointments")
         } catch {
-            print("❌ Error refreshing appointments: \(error.localizedDescription)")
+            print("❌ Error during appointment refresh: \(error)")
         }
         
         isRefreshing = false
+        isLoading = false
     }
 }
