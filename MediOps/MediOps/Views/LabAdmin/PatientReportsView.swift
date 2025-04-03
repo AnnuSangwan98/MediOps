@@ -412,16 +412,48 @@ struct PDFPreview: UIViewRepresentable {
     let data: Data
     
     func makeUIView(context: Context) -> PDFView {
+        print("Creating new PDFView")
         let pdfView = PDFView()
+        pdfView.backgroundColor = .white
         pdfView.displayMode = .singlePage
         pdfView.autoScales = true
         pdfView.displayDirection = .vertical
+        pdfView.usePageViewController(true)
+        
+        // Try to create a PDFDocument right away
+        if let document = PDFDocument(data: data) {
+            print("Document created in makeUIView with \(document.pageCount) pages")
+            pdfView.document = document
+            // Force layout
+            pdfView.layoutDocumentView()
+            pdfView.goToFirstPage(nil)
+        } else {
+            print("Failed to create document in makeUIView")
+        }
+        
         return pdfView
     }
     
-    func updateUIView(_ uiView: PDFView, context: Context) {
+    func updateUIView(_ pdfView: PDFView, context: Context) {
+        print("Updating PDFView")
+        
+        // Recreate document and set it to the view
         if let document = PDFDocument(data: data) {
-            uiView.document = document
+            print("Document created in updateUIView with \(document.pageCount) pages")
+            // Set document on main thread
+            DispatchQueue.main.async {
+                pdfView.document = document
+                // Force layout and go to first page
+                pdfView.layoutDocumentView()
+                pdfView.goToFirstPage(nil)
+                pdfView.scaleFactor = pdfView.scaleFactorForSizeToFit
+                
+                // Set minScaleFactor and maxScaleFactor
+                pdfView.minScaleFactor = pdfView.scaleFactorForSizeToFit * 0.8
+                pdfView.maxScaleFactor = pdfView.scaleFactorForSizeToFit * 4.0
+            }
+        } else {
+            print("Failed to create document in updateUIView")
         }
     }
 }
@@ -434,60 +466,129 @@ struct PatientReportDetailView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var pdfData: Data?
+    @State private var pdfLoadAttempts = 0
+    @State private var attemptingAlternateGeneration = false
+    
+    // App theme colors
+    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
+    let darkTeal = Color(red: 23/255, green: 130/255, blue: 160/255)
     
     var body: some View {
         NavigationStack {
-            VStack {
-                if isLoadingPdf {
-                    ProgressView("Generating report...")
-                } else if let pdfData = pdfData {
-                    PDFPreview(data: pdfData)
-                        .edgesIgnoringSafeArea(.bottom)
-                } else {
-                    VStack(spacing: 20) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 40))
-                            .foregroundColor(.orange)
-                        Text("Failed to generate report")
-                            .font(.headline)
-                        Text("Please try again later")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                    .padding()
-                }
-            }
-            .navigationTitle("Lab Report")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Back") {
-                        dismiss()
-                    }
-                }
+            ZStack {
+                // Background color
+                Color.white
+                    .ignoresSafeArea()
                 
-                if pdfData != nil {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: sharePDF) {
-                            Image(systemName: "square.and.arrow.up")
+                VStack {
+                    if isLoadingPdf {
+                        VStack(spacing: 20) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                                .tint(primaryTeal)
+                            Text(attemptingAlternateGeneration ? "Trying alternative method..." : "Generating report...")
+                                .font(.headline)
+                                .foregroundColor(darkTeal)
+                        }
+                    } else if let pdfData = pdfData {
+                        // First wrap PDFPreview in a GeometryReader to ensure it fills the available space
+                        GeometryReader { geometry in
+                            PDFPreview(data: pdfData)
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                        }
+                        .edgesIgnoringSafeArea(.bottom)
+                    } else {
+                        VStack(spacing: 20) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 40))
+                                .foregroundColor(.orange)
+                            Text("Failed to generate report")
+                                .font(.headline)
+                                .foregroundColor(darkTeal)
+                            Text("Please try again")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            Button("Retry") {
+                                pdfLoadAttempts = 0
+                                attemptingAlternateGeneration = false
+                                loadReport()
+                            }
+                            .padding()
+                            .foregroundColor(.white)
+                            .background(primaryTeal)
+                            .cornerRadius(8)
+                            .padding(.top, 10)
+                        }
+                        .padding()
+                    }
+                }
+                .navigationTitle("Lab Report")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(primaryTeal, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Back") {
+                            dismiss()
+                        }
+                        .foregroundColor(.white)
+                    }
+                    
+                    if pdfData != nil {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button(action: sharePDF) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .foregroundColor(.white)
+                            }
                         }
                     }
                 }
+                .alert("Error", isPresented: $showError) {
+                    Button("OK", role: .cancel) {}
+                    Button("Retry", role: .none) {
+                        loadReport()
+                    }
+                } message: {
+                    Text(errorMessage)
+                }
             }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(errorMessage)
-            }
-            .onAppear {
+        }
+        .onAppear {
+            // Always reset state when view appears to prevent black screen
+            reset()
+            
+            // Load the report with a slight delay to ensure view is initialized
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 loadReport()
             }
         }
     }
     
+    private func reset() {
+        isLoadingPdf = true
+        pdfData = nil
+        pdfLoadAttempts = 0
+        attemptingAlternateGeneration = false
+    }
+    
     private func loadReport() {
-        // If the report's fileUrl starts with "generated_pdf", we'll generate a PDF
-        // Otherwise, we'll try to load the PDF from the URL
+        // Reset loading state
+        isLoadingPdf = true
+        pdfLoadAttempts += 1
+        
+        print("Attempting to load report: Attempt \(pdfLoadAttempts)")
+        
+        // If we've already tried 3 times, try alternate generation
+        if pdfLoadAttempts >= 3 && !attemptingAlternateGeneration {
+            print("Multiple attempts failed, trying alternate generation method")
+            attemptingAlternateGeneration = true
+            generatePDFAlternate()
+            return
+        }
+        
+        // If the report's fileUrl starts with "generated_pdf", generate a PDF
         if report.fileUrl.starts(with: "generated_pdf") {
             generatePDF()
         } else {
@@ -497,14 +598,96 @@ struct PatientReportDetailView: View {
     }
     
     private func generatePDF() {
-        // Generate a PDF from the report data
+        print("Generating PDF for report: \(report.id)")
+        // Generate a PDF from the report data with better error handling
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            if let generatedPDF = PDFGenerator.generateLabReportPDF(report: report) {
-                pdfData = generatedPDF
+            do {
+                // Try to generate PDF
+                if let generatedPDF = PDFGenerator.generateLabReportPDF(report: report) {
+                    let pdfDocument = PDFDocument(data: generatedPDF)
+                    if pdfDocument != nil {
+                        print("PDF generation successful: \(generatedPDF.count) bytes")
+                        pdfData = generatedPDF
+                        isLoadingPdf = false
+                    } else {
+                        throw NSError(domain: "PDFGenerationError", code: 2, 
+                                     userInfo: [NSLocalizedDescriptionKey: "Generated invalid PDF document"])
+                    }
+                } else {
+                    throw NSError(domain: "PDFGenerationError", code: 1, 
+                                 userInfo: [NSLocalizedDescriptionKey: "Failed to generate PDF data"])
+                }
+            } catch {
+                print("PDF generation error: \(error.localizedDescription)")
+                
+                // Try alternate if this fails
+                if !attemptingAlternateGeneration {
+                    attemptingAlternateGeneration = true
+                    generatePDFAlternate()
+                } else {
+                    isLoadingPdf = false
+                    errorMessage = "Failed to generate PDF report: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
+    }
+    
+    // Alternate PDF generation method using a simpler approach
+    private func generatePDFAlternate() {
+        print("Using alternate PDF generation method")
+        attemptingAlternateGeneration = true
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // Create a very simple PDF with minimal content
+            let pageWidth: CGFloat = 595.2
+            let pageHeight: CGFloat = 841.8
+            let pageRect = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
+            
+            let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+            
+            let data = renderer.pdfData { context in
+                context.beginPage()
+                
+                let titleAttributes = [
+                    NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 24)
+                ]
+                let contentAttributes = [
+                    NSAttributedString.Key.font: UIFont.systemFont(ofSize: 16)
+                ]
+                
+                // Draw simple title
+                let title = "Lab Report: \(report.patientName)"
+                title.draw(at: CGPoint(x: 50, y: 50), withAttributes: titleAttributes)
+                
+                // Draw ID
+                let idText = "Patient ID: \(report.patientId)"
+                idText.draw(at: CGPoint(x: 50, y: 100), withAttributes: contentAttributes)
+                
+                // Draw date
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateStyle = .long
+                let dateText = "Date: \(dateFormatter.string(from: report.uploadedAt))"
+                dateText.draw(at: CGPoint(x: 50, y: 130), withAttributes: contentAttributes)
+                
+                // Draw summary if available
+                let summaryTitle = "Summary:"
+                summaryTitle.draw(at: CGPoint(x: 50, y: 180), withAttributes: contentAttributes)
+                
+                let summaryText = report.summary ?? "No summary available"
+                summaryText.draw(in: CGRect(x: 50, y: 210, width: pageWidth - 100, height: 200), 
+                               withAttributes: contentAttributes)
+            }
+            
+            // Check if PDF was created successfully
+            if let pdfDocument = PDFDocument(data: data) {
+                print("Alternate PDF generation successful: \(data.count) bytes, \(pdfDocument.pageCount) pages")
+                pdfData = data
                 isLoadingPdf = false
             } else {
+                print("Alternate PDF generation failed")
                 isLoadingPdf = false
-                errorMessage = "Failed to generate PDF report"
+                errorMessage = "Failed to generate PDF report using both methods."
                 showError = true
             }
         }
@@ -518,30 +701,54 @@ struct PatientReportDetailView: View {
             return
         }
         
+        print("Loading PDF from URL: \(url)")
         // Use URLSession to download the PDF
         URLSession.shared.dataTask(with: url) { data, response, error in
             DispatchQueue.main.async {
-                isLoadingPdf = false
-                
                 if let error = error {
-                    errorMessage = "Failed to load PDF: \(error.localizedDescription)"
-                    showError = true
+                    print("PDF download error: \(error.localizedDescription)")
+                    
+                    // Try to generate instead if download fails
+                    if !attemptingAlternateGeneration {
+                        attemptingAlternateGeneration = true
+                        generatePDFAlternate()
+                    } else {
+                        isLoadingPdf = false
+                        errorMessage = "Failed to load PDF: \(error.localizedDescription)"
+                        showError = true
+                    }
                     return
                 }
                 
                 guard let data = data, let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                    errorMessage = "Failed to load PDF from server"
-                    showError = true
+                    print("Invalid response or data from server")
+                    
+                    // Try to generate instead if response is invalid
+                    if !attemptingAlternateGeneration {
+                        attemptingAlternateGeneration = true
+                        generatePDFAlternate()
+                    } else {
+                        isLoadingPdf = false
+                        errorMessage = "Failed to load PDF from server"
+                        showError = true
+                    }
                     return
                 }
                 
                 // Check if the data is a valid PDF
-                if PDFDocument(data: data) != nil {
+                if let pdfDocument = PDFDocument(data: data) {
+                    print("PDF loaded successfully: \(pdfDocument.pageCount) pages, \(data.count) bytes")
                     pdfData = data
+                    isLoadingPdf = false
                 } else {
-                    // If not a valid PDF, generate one instead
-                    pdfData = PDFGenerator.generateLabReportPDF(report: report)
-                    if pdfData == nil {
+                    print("Invalid PDF format, generating fallback")
+                    
+                    // Try alternate method
+                    if !attemptingAlternateGeneration {
+                        attemptingAlternateGeneration = true
+                        generatePDFAlternate()
+                    } else {
+                        isLoadingPdf = false
                         errorMessage = "Invalid PDF format"
                         showError = true
                     }
@@ -604,87 +811,149 @@ struct AddReportView: View {
     @State private var isValidatingPatient = false
     @State private var patientValidated = false
     
+    // App theme colors
+    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
+    let darkTeal = Color(red: 23/255, green: 130/255, blue: 160/255)
+    
     private let supabase = SupabaseController.shared
     
     var onReportAdded: () -> Void
     
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    HStack {
-                        TextField("Patient ID", text: Binding(
-                            get: { patientId },
-                            set: { patientId = $0.uppercased() }
-                        ))
-                        .textCase(.uppercase)
-                        .autocapitalization(.allCharacters)
-                        .autocorrectionDisabled(true)
+            ZStack {
+                // Background gradient instead of solid white
+                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                             startPoint: .topLeading,
+                             endPoint: .bottomTrailing)
+                    .ignoresSafeArea()
+                
+                VStack(spacing: 0) {
+                    // Patient Information Section
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("PATIENT INFORMATION")
+                            .font(.subheadline)
+                            .foregroundColor(primaryTeal)
+                            .padding(.top, 30)
+                            .padding(.bottom, 5)
                         
-                        if isValidatingPatient {
-                            ProgressView()
-                                .padding(.leading, 4)
-                        } else if !patientId.isEmpty {
-                            Button("Verify") {
-                                Task {
-                                    await fetchPatientDetails()
+                        // Patient ID Field
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                TextField("PATIENT ID", text: Binding(
+                                    get: { patientId },
+                                    set: { patientId = $0.uppercased() }
+                                ))
+                                .font(.system(size: 18))
+                                .textCase(.uppercase)
+                                .autocapitalization(.allCharacters)
+                                .autocorrectionDisabled(true)
+                                .padding()
+                                .background(Color.white)
+                                .cornerRadius(10)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                )
+                                
+                                if isValidatingPatient {
+                                    ProgressView()
+                                        .tint(primaryTeal)
+                                        .padding(.leading, 4)
+                                } else if !patientId.isEmpty {
+                                    Button("Verify") {
+                                        Task {
+                                            await fetchPatientDetails()
+                                        }
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(Color(red: 220/255, green: 240/255, blue: 240/255))
+                                    .foregroundColor(primaryTeal)
+                                    .cornerRadius(10)
+                                    .disabled(patientId.isEmpty || isValidatingPatient)
                                 }
                             }
-                            .buttonStyle(.bordered)
-                            .tint(.blue)
-                            .disabled(patientId.isEmpty || isValidatingPatient)
-                        }
-                    }
-                    
-                    if !patientName.isEmpty {
-                        Text(patientName)
-                            .foregroundColor(.gray)
-                    }
-                    
-                    if patientValidated {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Patient verified")
-                                .foregroundColor(.green)
-                        }
-                    }
-                } header: {
-                    Text("Patient Information")
-                }
-                
-                Section {
-                    TextField("Report Summary", text: $summary, axis: .vertical)
-                        .lineLimit(5...10)
-                } header: {
-                    Text("Report Details")
-                }
-                
-                Section {
-                    Button(action: addReport) {
-                        HStack {
-                            Text("Add Report")
-                            if isLoading {
-                                Spacer()
-                                ProgressView()
+                            
+                            if !patientName.isEmpty {
+                                Text(patientName)
+                                    .foregroundColor(.gray)
+                                    .padding(.leading, 5)
+                            }
+                            
+                            if patientValidated {
+                                HStack {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                    Text("Patient verified")
+                                        .foregroundColor(.green)
+                                }
+                                .padding(.leading, 5)
                             }
                         }
                     }
-                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty || !patientValidated)
-                }
-            }
-            .navigationTitle("Add New Report")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
+                    .padding(.horizontal)
+                    
+                    // Report Details Section
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("REPORT DETAILS")
+                            .font(.subheadline)
+                            .foregroundColor(primaryTeal)
+                            .padding(.top, 25)
+                            .padding(.bottom, 5)
+                        
+                        // Report Summary Field
+                        TextField("Report Summary", text: $summary, axis: .vertical)
+                            .lineLimit(5...10)
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                            )
+                    }
+                    .padding(.horizontal)
+                    
+                    Spacer()
+                    
+                    // Add Report Button at bottom
+                    Button(action: addReport) {
+                        Text("Add Report")
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                    }
+                    .background(!patientId.isEmpty && !patientName.isEmpty ? 
+                               (patientValidated ? primaryTeal : primaryTeal.opacity(0.6)) : 
+                               Color.gray.opacity(0.4))
+                    .cornerRadius(10)
+                    .disabled(isLoading || patientId.isEmpty || patientName.isEmpty || !patientValidated)
+                    .padding(.horizontal)
+                    .padding(.vertical, 20)
+                    
+                    if isLoading {
+                        ProgressView()
+                            .tint(primaryTeal)
+                            .padding()
                     }
                 }
-            }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(errorMessage)
+                .navigationTitle("Add New Report")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .foregroundColor(primaryTeal)
+                    }
+                }
+                .alert("Error", isPresented: $showError) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(errorMessage)
+                }
             }
         }
     }
@@ -799,6 +1068,10 @@ struct EditReportView: View {
     @State private var isValidatingPatient = false
     @State private var patientValidated = true
     
+    // App theme colors
+    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
+    let darkTeal = Color(red: 23/255, green: 130/255, blue: 160/255)
+    
     private let supabase = SupabaseController.shared
     private let report: PatientReport
     
@@ -814,82 +1087,103 @@ struct EditReportView: View {
     
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    TextField("Patient Name", text: $patientName)
-                    
-                    HStack {
-                        TextField("Patient ID", text: Binding(
-                            get: { patientId },
-                            set: { patientId = $0.uppercased() }
-                        ))
-                        .textCase(.uppercase)
-                        .autocapitalization(.allCharacters)
-                        .autocorrectionDisabled(true)
+            ZStack {
+                // White background instead of gradient
+                Color.white
+                    .ignoresSafeArea()
+                
+                Form {
+                    Section {
+                        TextField("Patient Name", text: $patientName)
                         
-                        if isValidatingPatient {
-                            ProgressView()
-                                .padding(.leading, 4)
-                        } else if !patientId.isEmpty {
-                            Button("Verify") {
-                                verifyPatient()
+                        HStack {
+                            TextField("Patient ID", text: Binding(
+                                get: { patientId },
+                                set: { patientId = $0.uppercased() }
+                            ))
+                            .textCase(.uppercase)
+                            .autocapitalization(.allCharacters)
+                            .autocorrectionDisabled(true)
+                            
+                            if isValidatingPatient {
+                                ProgressView()
+                                    .tint(primaryTeal)
+                                    .padding(.leading, 4)
+                            } else if !patientId.isEmpty {
+                                Button("Verify") {
+                                    verifyPatient()
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(primaryTeal)
+                                .disabled(patientId.isEmpty || isValidatingPatient)
                             }
-                            .buttonStyle(.bordered)
-                            .tint(.blue)
-                            .disabled(patientId.isEmpty || isValidatingPatient)
                         }
+                        
+                        if patientValidated {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Patient verified")
+                                    .foregroundColor(.green)
+                            }
+                        }
+                    } header: {
+                        Text("Patient Information")
+                            .foregroundColor(darkTeal)
                     }
                     
-                    if patientValidated {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Patient verified")
-                                .foregroundColor(.green)
-                        }
+                    Section {
+                        TextField("Report Summary", text: $summary, axis: .vertical)
+                            .lineLimit(5...10)
+                    } header: {
+                        Text("Report Details")
+                            .foregroundColor(darkTeal)
                     }
-                } header: {
-                    Text("Patient Information")
-                }
-                
-                Section {
-                    TextField("Report Summary", text: $summary, axis: .vertical)
-                        .lineLimit(5...10)
-                } header: {
-                    Text("Report Details")
-                }
-                
-                Section {
-                    Button(action: updateReport) {
-                        HStack {
-                            Text("Update Report")
-                            if isLoading {
+                    
+                    Section {
+                        Button(action: updateReport) {
+                            HStack {
                                 Spacer()
-                                ProgressView()
+                                Text("Update Report")
+                                    .fontWeight(.semibold)
+                                if isLoading {
+                                    Spacer()
+                                    ProgressView()
+                                        .tint(.white)
+                                }
+                                Spacer()
                             }
+                            .padding(.vertical, 10)
+                            .background(patientName.isEmpty || patientId.isEmpty || !patientValidated ? Color.gray.opacity(0.3) : primaryTeal)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
                         }
-                    }
-                    .disabled(isLoading || patientName.isEmpty || patientId.isEmpty || !patientValidated)
-                }
-            }
-            .navigationTitle("Edit Report")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
+                        .disabled(isLoading || patientName.isEmpty || patientId.isEmpty || !patientValidated)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
                     }
                 }
-            }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(errorMessage)
-            }
-            .onChange(of: patientId) { _, _ in
-                patientValidated = false
-            }
-            .onChange(of: patientName) { _, _ in
-                patientValidated = false
+                .scrollContentBackground(.hidden) // Make form background transparent to show white background
+                .navigationTitle("Edit Report")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .foregroundColor(primaryTeal)
+                    }
+                }
+                .alert("Error", isPresented: $showError) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(errorMessage)
+                }
+                .onChange(of: patientId) { _, _ in
+                    patientValidated = false
+                }
+                .onChange(of: patientName) { _, _ in
+                    patientValidated = false
+                }
             }
         }
     }
@@ -1102,6 +1396,10 @@ struct PatientReportsView: View {
     @State private var reportToDelete: PatientReport?
     @State private var selectedFilter: String = "All Patients"
     
+    // App theme colors
+    let primaryTeal = Color(red: 43/255, green: 182/255, blue: 205/255)
+    let darkTeal = Color(red: 23/255, green: 130/255, blue: 160/255)
+    
     private let supabase = SupabaseController.shared
     
     // Available filters
@@ -1141,15 +1439,17 @@ struct PatientReportsView: View {
     
     var body: some View {
         ZStack {
-            // Background with a light color
-            Color(.systemGray6)
+            // Background gradient
+            LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                         startPoint: .topLeading,
+                         endPoint: .bottomTrailing)
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // Search bar (moved to top, replacing header)
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
+                        .foregroundColor(darkTeal)
                     
                     TextField("Search reports...", text: $searchQuery)
                         .padding(.vertical, 10)
@@ -1159,13 +1459,16 @@ struct PatientReportsView: View {
                             searchQuery = ""
                         }) {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
+                                .foregroundColor(primaryTeal)
                         }
                     }
                 }
                 .padding(.horizontal)
-                .background(Color.white)
-                .cornerRadius(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.white)
+                        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                )
                 .padding(.horizontal)
                 .padding(.top, 20)
                 .padding(.bottom, 15)
@@ -1174,7 +1477,7 @@ struct PatientReportsView: View {
                 HStack {
                     Text("\(filteredReports.count) Reports Found")
                         .font(.headline)
-                        .foregroundColor(.primary)
+                        .foregroundColor(darkTeal)
                     Spacer()
                 }
                 .padding(.horizontal)
@@ -1199,8 +1502,8 @@ struct PatientReportsView: View {
                             .font(.system(size: 22, weight: .bold))
                             .foregroundColor(.white)
                             .frame(width: 56, height: 56)
-                            .background(Circle().fill(Color.blue))
-                            .shadow(color: Color.blue.opacity(0.4), radius: 4, x: 0, y: 2)
+                            .background(Circle().fill(primaryTeal))
+                            .shadow(color: primaryTeal.opacity(0.4), radius: 4, x: 0, y: 2)
                     }
                     .padding(.trailing, 20)
                     .padding(.bottom, 20)
@@ -1258,30 +1561,40 @@ struct PatientReportsView: View {
             VStack(spacing: 15) {
                 if isLoading {
                     // Loading view
-                    ProgressView("Loading reports...")
-                        .padding(.top, 50)
+                    VStack {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .tint(primaryTeal)
+                            .padding(.bottom, 15)
+                        Text("Loading reports...")
+                            .font(.headline)
+                            .foregroundColor(darkTeal)
+                    }
+                    .padding(.top, 50)
                 } else if filteredReports.isEmpty {
                     // Empty state
                     VStack(spacing: 20) {
                         Image(systemName: "doc.text")
                             .font(.system(size: 60))
-                            .foregroundColor(.gray.opacity(0.7))
+                            .foregroundColor(primaryTeal.opacity(0.7))
                         
                         if !searchQuery.isEmpty {
                             Text("No matching reports found")
                                 .font(.title3)
                                 .fontWeight(.medium)
+                                .foregroundColor(darkTeal)
                             
                             Button(action: {
                                 searchQuery = ""
                             }) {
                                 Text("Clear Search")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(primaryTeal)
                             }
                         } else {
                             Text("No reports found")
                                 .font(.title3)
                                 .fontWeight(.medium)
+                                .foregroundColor(darkTeal)
                             
                             Button(action: {
                                 showAddReport = true
@@ -1290,7 +1603,7 @@ struct PatientReportsView: View {
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 20)
                                     .padding(.vertical, 10)
-                                    .background(Color.blue)
+                                    .background(primaryTeal)
                                     .cornerRadius(8)
                             }
                         }
@@ -1313,15 +1626,7 @@ struct PatientReportsView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Report header with hospital-like layout
             HStack(alignment: .top, spacing: 15) {
-                // Hospital icon placeholder
-                Image(systemName: "doc.text.viewfinder")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 35, height: 35)
-                    .foregroundColor(.gray)
-                    .padding(10)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(8)
+                
                 
                 // Main report details - matches hospital card format
                 VStack(alignment: .leading, spacing: 4) {
@@ -1336,7 +1641,7 @@ struct PatientReportsView: View {
                         
                         Text(report.patientId.uppercased())
                             .font(.subheadline)
-                            .foregroundColor(.blue)
+                            .foregroundColor(.black) // Changed from teal to black
                     }
                 }
                 
@@ -1372,7 +1677,7 @@ struct PatientReportsView: View {
             
             // Report details section
             VStack(alignment: .leading, spacing: 12) {
-                // First row: Hospital ID and License (mimicking the hospital card layout)
+                // First row: Date and Time details - change from teal to black
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Date")
@@ -1380,7 +1685,7 @@ struct PatientReportsView: View {
                             .foregroundColor(.gray)
                         Text(formatDate(report.uploadedAt, dateOnly: true))
                             .font(.subheadline)
-                            .foregroundColor(.blue)
+                            .foregroundColor(.black) // Keep this teal to match screenshot
                     }
                     
                     Spacer()
@@ -1391,26 +1696,35 @@ struct PatientReportsView: View {
                             .foregroundColor(.gray)
                         Text(formatDate(report.uploadedAt, timeOnly: true))
                             .font(.subheadline)
-                            .foregroundColor(.blue)
+                            .foregroundColor(.black) // Keep this teal to match screenshot
                     }
                 }
             }
             .padding(.horizontal, 15)
             .padding(.vertical, 12)
             
-            // Phone/Report action button - mimics the phone number button in hospital card
+            // VIEW LAB REPORTS BUTTON - keep this teal as shown in the image
             Button(action: {
                 selectedReport = report
                 showReportDetail = true
             }) {
                 HStack {
                     Image(systemName: "doc.text")
-                        .foregroundColor(.blue)
-                    Text("View Report")
-                        .foregroundColor(.blue)
+                        .foregroundColor(primaryTeal)
+                    
+                    Text("View Lab Reports")
+                        .foregroundColor(primaryTeal)
+                        .font(.system(size: 16, weight: .medium))
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.gray.opacity(0.6))
+                        .font(.system(size: 14))
                 }
-                .padding(.vertical, 12)
                 .padding(.horizontal, 15)
+                .padding(.vertical, 12)
+                .background(Color.white)
             }
             .buttonStyle(PlainButtonStyle())
         }
