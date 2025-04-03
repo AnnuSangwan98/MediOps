@@ -15,13 +15,15 @@ struct PatientProfileView: View {
     @State private var isLoading = false
     @State private var showLogoutAlert = false
     @State private var hasCompletedInitialLoad = false
+    @State private var showLanguageSelection = false
+    @ObservedObject private var translationManager = TranslationManager.shared
     
     var body: some View {
         NavigationStack {
             ScrollView (.vertical, showsIndicators: false) {
                 VStack(spacing: 20) {
                     if profileController.isLoading || isLoading {
-                        ProgressView("Loading profile...")
+                        ProgressView("Loading profile...".localized)
                             .padding(.vertical, 100)
                     } else if let patient = profileController.patient {
                         // Profile header with patient image
@@ -55,7 +57,7 @@ struct PatientProfileView: View {
                         CardView {
                             HStack {
                                 VStack(alignment: .leading) {
-                                    Text("Blood Group")
+                                    Text("blood_group".localized)
                                         .font(.headline)
                                         .padding(.bottom, 2)
                                     
@@ -65,7 +67,7 @@ struct PatientProfileView: View {
                                             .font(.title2)
                                         
                                         if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
-                                            Text("Unknown")
+                                            Text("unknown".localized)
                                                 .foregroundColor(.orange)
                                                 .font(.title3)
                                                 .fontWeight(.semibold)
@@ -120,12 +122,36 @@ struct PatientProfileView: View {
                         VStack(spacing: 16) {
                             CardView {
                                 VStack(alignment: .leading, spacing: 10) {
-                                    Text("Personal Information")
+                                    Text("personal_information".localized)
                                         .font(.headline)
                                         .padding(.bottom, 5)
-                                    InfoRow(title: "Address", value: patient.address ?? "Not provided")
-                                    InfoRow(title: "Phone Number", value: patient.phoneNumber)
+                                    InfoRow(title: "address".localized, value: patient.address ?? "not_provided".localized)
+                                    InfoRow(title: "phone_number".localized, value: patient.phoneNumber)
                                 }
+                            }
+                            
+                            // Language selection card
+                            CardView {
+                                Button(action: {
+                                    showLanguageSelection = true
+                                }) {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text("language".localized)
+                                                .font(.headline)
+                                            
+                                            Text(translationManager.currentLanguage.displayName)
+                                                .foregroundColor(.gray)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.gray)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(PlainButtonStyle())
                             }
                         }
                         .padding(.horizontal)
@@ -210,17 +236,17 @@ struct PatientProfileView: View {
                     }
                 }
             }
-            .navigationTitle("Patient Profile")
+            .navigationTitle("patient_profile".localized)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
+                    Button("cancel".localized) {
                         dismiss()
                     }
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Edit") {
+                    Button("edit".localized) {
                         isEditing = true
                     }
                     .disabled(profileController.patient == nil)
@@ -234,7 +260,7 @@ struct PatientProfileView: View {
                 Button(action: {
                     showLogoutAlert = true
                 }) {
-                    Text("Logout")
+                    Text("logout".localized)
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -250,9 +276,12 @@ struct PatientProfileView: View {
         .sheet(isPresented: $isEditing) {
             EditProfileView(profileController: profileController, isPresented: $isEditing)
         }
-        .alert("Logout", isPresented: $showLogoutAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Yes, Logout", role: .destructive) {
+        .sheet(isPresented: $showLanguageSelection) {
+            LanguageSelectionView()
+        }
+        .alert("logout".localized, isPresented: $showLogoutAlert) {
+            Button("cancel".localized, role: .cancel) { }
+            Button("yes_logout".localized, role: .destructive) {
                 // Get the AppNavigationState from UserDefaults
                 let defaults = UserDefaults.standard
                 defaults.removeObject(forKey: "userId")
@@ -280,7 +309,7 @@ struct PatientProfileView: View {
                 window.makeKeyAndVisible()
             }
         } message: {
-            Text("Are you sure you want to log out?")
+            Text("are_you_sure_logout".localized)
         }
         .onAppear {
             print("🔍 DEBUG: PatientProfileView appeared, checking data state")

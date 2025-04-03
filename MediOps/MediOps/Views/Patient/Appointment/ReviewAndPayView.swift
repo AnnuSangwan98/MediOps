@@ -22,6 +22,7 @@ struct ReviewAndPayView: View {
     @State private var healthConcerns = ""
     @State private var isPremium = false
     @State private var showPremiumAlert = false
+    @ObservedObject private var translationManager = TranslationManager.shared
     
     private let bookingFee = 10.0
     private let consultationFee = 500.0
@@ -57,7 +58,7 @@ struct ReviewAndPayView: View {
                 
                 // Appointment details
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Appointment")
+                    Text("appointment".localized)
                         .font(.headline)
                     
                     HStack {
@@ -89,7 +90,7 @@ struct ReviewAndPayView: View {
                 
                 // Patient info
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Patient info")
+                    Text("patient_info".localized)
                         .font(.headline)
                     
                     Text("Note: You can describe your health concerns or any relevant details in the text field below.")
@@ -107,7 +108,7 @@ struct ReviewAndPayView: View {
                         HStack {
                             Image(systemName: "star.fill")
                                 .foregroundColor(.yellow)
-                            Text("Premium Appointment")
+                            Text("premium_appointment".localized)
                                 .fontWeight(.medium)
                         }
                     }
@@ -131,25 +132,25 @@ struct ReviewAndPayView: View {
                 
                 // Payment details
                 VStack(alignment: .leading, spacing: 15) {
-                    Text("Payment Details")
+                    Text("payment_details".localized)
                         .font(.headline)
                     
                     VStack(spacing: 10) {
                         HStack {
-                            Text("Consultation fees:")
+                            Text("consultation_fees".localized)
                             Spacer()
                             Text("Rs.\(Int(consultationFee))")
                         }
                         
                         HStack {
-                            Text("Booking fee")
+                            Text("booking_fee".localized)
                             Spacer()
                             Text("Rs.\(Int(bookingFee))")
                         }
                         
                         if isPremium {
                             HStack {
-                                Text("Premium fee")
+                                Text("premium_fee".localized)
                                 Spacer()
                                 Text("Rs.\(Int(premiumFee))")
                             }
@@ -159,7 +160,7 @@ struct ReviewAndPayView: View {
                         Divider()
                         
                         HStack {
-                            Text("Total Pay")
+                            Text("total_pay".localized)
                                 .fontWeight(.bold)
                             Spacer()
                             Text("Rs.\(Int(totalAmount))")
@@ -170,13 +171,13 @@ struct ReviewAndPayView: View {
                 .padding()
             }
         }
-        .navigationTitle("Review & Pay")
+        .navigationTitle("review_and_pay".localized)
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Premium Appointment", isPresented: $showPremiumAlert) {
-            Button("Continue", role: .none) {
+        .alert("premium_appointment".localized, isPresented: $showPremiumAlert) {
+            Button("continue".localized, role: .none) {
                 // Keep premium enabled
             }
-            Button("Cancel", role: .cancel) {
+            Button("cancel".localized, role: .cancel) {
                 isPremium = false
             }
         } message: {
@@ -194,7 +195,7 @@ struct ReviewAndPayView: View {
             showConfirmation = true
         }) {
             HStack {
-                Text("Pay")
+                Text("pay".localized)
                 Text("Rs.\(Int(totalAmount))")
                     .padding(.horizontal, 8)
                     .background(Color.teal.opacity(0.2))

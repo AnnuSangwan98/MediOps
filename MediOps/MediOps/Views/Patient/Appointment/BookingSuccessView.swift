@@ -18,6 +18,7 @@ struct BookingSuccessView: View {
     @State private var appointmentCreated = false // Track if appointment was created
     @State private var appointmentId = "" // Store the appointment ID to avoid regenerating it
     @AppStorage("current_user_id") private var userId: String?
+    @ObservedObject private var translationManager = TranslationManager.shared
     
     private func formatTime() -> String {
         // Use the saved formatted times directly
@@ -184,12 +185,12 @@ struct BookingSuccessView: View {
             
             // Success message
             VStack(spacing: 15) {
-                Text("Thanks, your booking has been confirmed.")
+                Text("booking_confirmed".localized)
                     .font(.title3)
                     .fontWeight(.bold)
                     .multilineTextAlignment(.center)
                 
-                Text("Please check your email for receipt and booking details.")
+                Text("email_receipt".localized)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -243,7 +244,7 @@ struct BookingSuccessView: View {
             Spacer()
             
             Button(action: {
-                saveAndNavigate()
+                navigateToHome()
             }) {
                 if isLoading {
                     ProgressView()
@@ -253,7 +254,7 @@ struct BookingSuccessView: View {
                         .background(Color.green)
                         .cornerRadius(10)
                 } else {
-                    Text("Done")
+                    Text("done".localized)
                         .fontWeight(.medium)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -268,11 +269,14 @@ struct BookingSuccessView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemGray6).ignoresSafeArea())
+        .localizedLayout()
+        .navigationBarBackButtonHidden(true) // Hide the back button
+        .navigationBarItems(leading: EmptyView()) // Empty view for leading item to remove back button
         .alert(isPresented: $showError) {
             Alert(
-                title: Text("Error"),
+                title: Text("error".localized),
                 message: Text(errorMessage),
-                dismissButton: .default(Text("OK"))
+                dismissButton: .default(Text("ok".localized))
             )
         }
         .onAppear {
@@ -289,6 +293,23 @@ struct BookingSuccessView: View {
             #if DEBUG
             diagnoseDatabaseIssues()
             #endif
+        }
+    }
+    
+    // New function to navigate directly to home screen
+    private func navigateToHome() {
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first {
+            print("🔄 Navigating to HomeTabView")
+            let homeView = HomeTabView()
+                .environmentObject(hospitalVM)
+                .environmentObject(appointmentManager)
+            
+            window.rootViewController = UIHostingController(rootView: homeView)
+            window.makeKeyAndVisible()
+            
+            // Post notification to dismiss all modals
+            NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
         }
     }
     
@@ -405,20 +426,7 @@ struct BookingSuccessView: View {
                     print("✅ Found existing appointment with this doctor and date - assuming PaymentFinalView created it")
                     
                     // If appointment exists, just navigate to home
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let window = windowScene.windows.first {
-                        print("🔄 Navigating to HomeTabView")
-                        let homeView = HomeTabView()
-                            .environmentObject(hospitalVM)
-                            .environmentObject(appointmentManager)
-                        
-                        window.rootViewController = UIHostingController(rootView: homeView)
-                        window.makeKeyAndVisible()
-                        
-                        // Post notification to dismiss all modals
-                        NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
-                    }
-                    
+                    navigateToHome()
                     return
                 }
                 
@@ -464,7 +472,7 @@ struct BookingSuccessView: View {
                 // First ensure we have a valid patient_id
                 guard let userId = userId else {
                     print("❌ No user ID found")
-                    throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "User ID not found"])
+                    throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "user_id_not_found".localized])
                 }
                 
                 let patientResults = try await supabase.select(
@@ -476,7 +484,7 @@ struct BookingSuccessView: View {
                 guard let patientData = patientResults.first,
                       let patientId = patientData["patient_id"] as? String else {
                     print("❌ Could not get or create patient_id")
-                    throw NSError(domain: "AppointmentError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not verify patient record"])
+                    throw NSError(domain: "AppointmentError", code: 2, userInfo: [NSLocalizedDescriptionKey: "patient_verification_failed".localized])
                 }
                 
                 print("✅ Got patient_id: \(patientId)")
@@ -556,7 +564,7 @@ struct BookingSuccessView: View {
                     "hospital_id": doctor.hospitalId,
                     "appointment_date": formattedDate,
                     "status": "upcoming",
-                    "reason": "Medical consultation",
+                    "reason": "medical_consultation".localized,
                     "isdone": false,
                     "is_premium": isPremium,
                     "slot_start_time": formattedStartTime,
@@ -598,19 +606,7 @@ struct BookingSuccessView: View {
                 print("✅ Appointment booking completed successfully")
                 
                 // Now that we've confirmed the appointment is saved, navigate
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let window = windowScene.windows.first {
-                    print("🔄 Navigating to HomeTabView")
-                    let homeView = HomeTabView()
-                        .environmentObject(hospitalVM)
-                        .environmentObject(appointmentManager)
-                    
-                    window.rootViewController = UIHostingController(rootView: homeView)
-                    window.makeKeyAndVisible()
-                    
-                    // Post notification to dismiss all modals
-                    NotificationCenter.default.post(name: NSNotification.Name("DismissAllModals"), object: nil)
-                }
+                navigateToHome()
                 
             } catch {
                 print("❌ Error saving appointment: \(error.localizedDescription)")
@@ -618,7 +614,7 @@ struct BookingSuccessView: View {
                 await MainActor.run {
                     isLoading = false
                     showError = true
-                    errorMessage = "Error checking for existing appointments: \(error.localizedDescription)"
+                    errorMessage = "error_creating_appointment".localized + ": \(error.localizedDescription)"
                 }
             }
         }

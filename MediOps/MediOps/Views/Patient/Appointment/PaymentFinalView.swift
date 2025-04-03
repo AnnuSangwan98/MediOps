@@ -17,6 +17,7 @@ struct PaymentFinalView: View {
     @State private var isDragging = false
     @State private var isProcessing = false
     @State private var bookingError: String? = nil
+    @ObservedObject private var translationManager = TranslationManager.shared
     
     private let maxSliderOffset: CGFloat = 300 // Adjust this value based on your needs
     private let consultationFee = 500.0 // Default consultation fee
@@ -31,7 +32,7 @@ struct PaymentFinalView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                Text("Confirm Payment")
+                Text("confirm_payment".localized)
                     .font(.title2)
                     .padding(.top)
                 
@@ -39,34 +40,34 @@ struct PaymentFinalView: View {
                     HStack {
                         Image(systemName: "person.fill")
                             .foregroundColor(.teal)
-                        Text("Pay with")
+                        Text("pay_with".localized)
                         Spacer()
                         Text("•••• 5941")
-                        Button("Change") {}
+                        Button("change".localized) {}
                             .foregroundColor(.teal)
                     }
                     
                     Divider()
                     
-                    Text("Bill Details")
+                    Text("bill_details".localized)
                         .font(.headline)
                     
                     Group {
                         HStack {
-                            Text("Consultation fees:")
+                            Text("consultation_fees".localized)
                             Spacer()
                             Text("Rs.\(Int(consultationFee))")
                         }
                         
                         HStack {
-                            Text("Booking fee")
+                            Text("booking_fee".localized)
                             Spacer()
                             Text("Rs.\(Int(bookingFee))")
                         }
                         
                         if isPremium {
                             HStack {
-                                Text("Premium fee")
+                                Text("premium_fee".localized)
                                     .foregroundColor(.teal)
                                 Spacer()
                                 Text("Rs.\(Int(premiumFee))")
@@ -82,7 +83,7 @@ struct PaymentFinalView: View {
                         .padding(.vertical)
                     
                     HStack {
-                        Text("Total")
+                        Text("total_pay".localized)
                             .font(.headline)
                         Text("(Incl. VAT)")
                             .font(.caption)
@@ -156,7 +157,7 @@ struct PaymentFinalView: View {
                         Spacer()
                     }
                     
-                    Text(isProcessing ? "Processing..." : "Swipe to Pay")
+                    Text(isProcessing ? "processing".localized : "swipe_to_pay".localized)
                         .foregroundColor(.teal)
                         .font(.headline)
                         .frame(maxWidth: .infinity)

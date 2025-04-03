@@ -5,6 +5,7 @@ struct DoctorListView: View {
     @StateObject private var viewModel = DoctorViewModel()
     @State private var searchText = ""
     @State private var selectedSpeciality: String?
+    @ObservedObject private var translationManager = TranslationManager.shared
     
     var specialities: [String] {
         Array(Set(viewModel.doctors.map { $0.specialization })).sorted()
@@ -18,7 +19,7 @@ struct DoctorListView: View {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.gray)
-                    TextField("Search by doctor's name", text: $searchText)
+                    TextField("search_by_doctor".localized, text: $searchText)
                         .textFieldStyle(PlainTextFieldStyle())
                 }
                 .padding()
@@ -62,7 +63,7 @@ struct DoctorListView: View {
             }
             .padding(.horizontal)
             
-            Text("Doctors")
+            Text("doctors".localized)
                 .font(.title2)
                 .fontWeight(.bold)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -80,7 +81,7 @@ struct DoctorListView: View {
                         .font(.system(size: 50))
                         .foregroundColor(.orange)
                     
-                    Text("Error Loading Doctors")
+                    Text("error".localized)
                         .font(.headline)
                         .foregroundColor(.red)
                     
@@ -95,7 +96,7 @@ struct DoctorListView: View {
                             await viewModel.loadDoctors(for: hospital)
                         }
                     }) {
-                        Text("Try Again")
+                        Text("try_again".localized)
                             .foregroundColor(.white)
                             .padding(.vertical, 8)
                             .padding(.horizontal, 20)
@@ -112,7 +113,7 @@ struct DoctorListView: View {
                         .font(.system(size: 50))
                         .foregroundColor(.gray)
                     
-                    Text("No Active Doctors Found")
+                    Text("no_active_doctors".localized)
                         .font(.headline)
                         .foregroundColor(.gray)
                     
@@ -130,11 +131,11 @@ struct DoctorListView: View {
                         .font(.system(size: 50))
                         .foregroundColor(.gray)
                     
-                    Text("No Matching Doctors")
+                    Text("no_matching_doctors".localized)
                         .font(.headline)
                         .foregroundColor(.gray)
                     
-                    Text("Try adjusting your search or filters.")
+                    Text("try_adjusting_search".localized)
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
@@ -192,6 +193,7 @@ struct DoctorListView: View {
 struct DoctorCard: View {
     let doctor: HospitalDoctor
     @State private var showAppointment = false
+    @ObservedObject private var translationManager = TranslationManager.shared
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -218,7 +220,7 @@ struct DoctorCard: View {
                         Text("Rs.\(Int(doctor.consultationFee))")
                             .font(.headline)
                             .foregroundColor(.black)
-                        Text("Consultation Fee")
+                        Text("consultation_fee".localized)
                             .font(.caption)
                             .foregroundColor(.gray)
                     }
@@ -235,7 +237,7 @@ struct DoctorCard: View {
             Button(action: {
                 showAppointment.toggle()
             }) {
-                Text("Book Appointment")
+                Text("book_appointment".localized)
                     .fontWeight(.medium)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)

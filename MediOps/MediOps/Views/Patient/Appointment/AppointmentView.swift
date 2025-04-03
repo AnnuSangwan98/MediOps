@@ -13,6 +13,7 @@ struct AppointmentView: View {
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
     @State private var doctorAvailability: DoctorAvailabilityModels.EfficientAvailability? = nil
+    @ObservedObject private var translationManager = TranslationManager.shared
     
     // Maximum date is 7 days from today
     private var maxDate: Date {
@@ -35,7 +36,7 @@ struct AppointmentView: View {
         ZStack {
             VStack(spacing: 0) {
                 // Calendar
-                DatePicker("Select Date", 
+                DatePicker("select_date".localized, 
                          selection: $selectedDate,
                          in: Date()...maxDate,
                          displayedComponents: [.date])
@@ -53,14 +54,14 @@ struct AppointmentView: View {
                 
                 // Time slots
                 if isLoading {
-                    ProgressView("Loading available slots...")
+                    ProgressView("loading_slots".localized)
                         .padding()
                 } else if let error = errorMessage {
                     Text(error)
                         .foregroundColor(.red)
                         .padding()
                 } else if availableSlots.isEmpty {
-                    Text("No available slots for this date. Please select another date or doctor.")
+                    Text("no_available_slots".localized)
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
                         .padding()
@@ -81,7 +82,7 @@ struct AppointmentView: View {
                                             .minimumScaleFactor(0.8)
                                             .lineLimit(1)
                                         
-                                        Text("\(slot.remainingSlots)/\(slot.totalSlots) slots")
+                                        Text("\(slot.remainingSlots)/\(slot.totalSlots) slots".localized)
                                             .font(.system(size: 11))
                                             .foregroundColor(.secondary)
                                     }
@@ -108,7 +109,7 @@ struct AppointmentView: View {
                         navigateToReviewAndPay = true
                     }
                 }) {
-                    Text("Book Appointment")
+                    Text("book_appointment".localized)
                         .fontWeight(.medium)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -137,7 +138,7 @@ struct AppointmentView: View {
             }
             .opacity(0)
         }
-        .navigationTitle("Book Appointment")
+        .navigationTitle("book_appointment".localized)
         .navigationBarTitleDisplayMode(.inline)
         .task {
             // Initial fetch of doctor availability
@@ -160,7 +161,7 @@ struct AppointmentView: View {
             )
             
             guard let availabilityData = results.first else {
-                errorMessage = "This doctor doesn't have any availability schedule set up yet."
+                errorMessage = "no_doctor_availability".localized
                 isLoading = false
                 return
             }
@@ -171,7 +172,7 @@ struct AppointmentView: View {
                   let hospitalId = availabilityData["hospital_id"] as? String,
                   let weeklyScheduleData = availabilityData["weekly_schedule"],
                   let effectiveFromStr = availabilityData["effective_from"] as? String else {
-                errorMessage = "Invalid availability data format"
+                errorMessage = "invalid_availability_data".localized
                 isLoading = false
                 return
             }
@@ -210,7 +211,7 @@ struct AppointmentView: View {
             self.doctorAvailability = availability
             
         } catch {
-            errorMessage = "Error fetching doctor availability: \(error.localizedDescription)"
+            errorMessage = "error_fetching_availability".localized + ": \(error.localizedDescription)"
         }
         
         isLoading = false
