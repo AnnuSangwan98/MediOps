@@ -9,15 +9,14 @@ import SwiftUI
 
 @main
 struct MediOpsApp: App {
-    // Add translation manager
-    @StateObject private var translationManager = TranslationManager.shared
+    // State object for theme management
+    @StateObject private var themeManager = ThemeManager.shared
     
     var body: some Scene {
         WindowGroup {
             SplashScreenAlt()
-                // Add translation support
-                .environmentObject(translationManager)
-                .localizedLayout()
+                // Add theme support
+                .environmentObject(themeManager)
         }
     }
 }

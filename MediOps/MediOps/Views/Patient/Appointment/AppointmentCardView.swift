@@ -10,6 +10,7 @@ import SwiftUI
 struct AppointmentCard: View {
     @State private var showCancelAlert = false
     let appointment: Appointment
+    @ObservedObject private var themeManager = ThemeManager.shared
     
     private func formatTimeRange(_ time: Date) -> String {
         // First check if we have the slot_time and slot_end_time values directly from the database
@@ -102,15 +103,24 @@ struct AppointmentCard: View {
         ) {
             VStack(alignment: .leading, spacing: 15) {
                 HStack(spacing: 15) {
+                    // Doctor avatar - themed
+                    Circle()
+                        .fill(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.white)
+                        )
 
                     VStack(alignment: .leading) {
                         Text(appointment.doctor.name)
                             .font(.headline)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                         Text(appointment.doctor.specialization)
                             .font(.subheadline)
-                            .foregroundColor(.gray)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                     }
-//
+
                     Spacer()
 
                     VStack(alignment: .trailing, spacing: 4) {
@@ -138,16 +148,22 @@ struct AppointmentCard: View {
                     }
                 }
 
-                Divider()
+                // Use themed divider
+                ThemedDivider()
 
+                // Date and time sections with themed icons
                 HStack {
                     Image(systemName: "calendar")
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                     Text(appointment.date.formatted(date: .long, time: .omitted))
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                 }
 
                 HStack {
                     Image(systemName: "clock")
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                     Text(formatTimeRange(appointment.time))
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                 }
 
                 // Show Cancel Button only for upcoming appointments
@@ -174,17 +190,17 @@ struct AppointmentCard: View {
                     }
                 }
                 
-                // Show View Prescription button for completed appointments
+                // Show View Prescription button for completed appointments - themed
                 if appointment.status == .completed {
                     HStack {
                         Image(systemName: "doc.text.fill")
-                            .foregroundColor(.teal)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                         Text("View Prescription")
                             .font(.subheadline)
-                            .foregroundColor(.teal)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .foregroundColor(.gray)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                     }
                     .padding(.vertical, 8)
                 }
@@ -192,7 +208,22 @@ struct AppointmentCard: View {
             .padding()
             .background(Color.white)
             .cornerRadius(12)
-            .shadow(color: .gray.opacity(0.1), radius: 5)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(
+                        themeManager.isPatient ? 
+                            themeManager.currentTheme.accentColor.opacity(0.2) : 
+                            Color.teal.opacity(0.2), 
+                        lineWidth: 0.5
+                    )
+            )
+            .shadow(
+                color: themeManager.isPatient ? 
+                    themeManager.currentTheme.accentColor.opacity(0.15) : 
+                    .gray.opacity(0.15), 
+                radius: 5
+            )
+            .padding(.horizontal)
         }
         .buttonStyle(PlainButtonStyle()) // This ensures the card doesn't get the default button styling
     }

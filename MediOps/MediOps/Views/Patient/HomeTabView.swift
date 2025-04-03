@@ -6,484 +6,6 @@
 //
 
 import SwiftUI
-import Foundation
-
-// Supported languages
-enum AppLanguage: String, CaseIterable, Identifiable {
-    case english = "en"
-    case hindi = "hi"
-    case tamil = "ta"
-    case urdu = "ur"
-    case kannada = "kn"
-    
-    var id: String { self.rawValue }
-    
-    var displayName: String {
-        switch self {
-        case .english: return "English"
-        case .hindi: return "हिन्दी (Hindi)"
-        case .tamil: return "தமிழ் (Tamil)"
-        case .urdu: return "اردو (Urdu)"
-        case .kannada: return "ಕನ್ನಡ (Kannada)"
-        }
-    }
-}
-
-// Translation Manager to handle localization
-class TranslationManager: ObservableObject {
-    static let shared = TranslationManager()
-    
-    @AppStorage("app_language") var selectedLanguage: String = AppLanguage.english.rawValue
-    
-    // All translations are stored in this dictionary
-    private var translations: [String: [String: String]] = [
-        // English (default)
-        "en": [
-            // Common UI elements
-            "home": "Home",
-            "history": "History",
-            "lab_reports": "Lab Reports",
-            "blood_donate": "Blood Donation",
-            "profile": "Profile",
-            "welcome": "Welcome",
-            "logout": "Logout",
-            "edit": "Edit",
-            "cancel": "Cancel",
-            "save": "Save",
-            "done": "Done",
-            "yes_logout": "Yes, Logout",
-            "are_you_sure_logout": "Are you sure you want to logout?",
-            "coming_soon": "Coming Soon",
-            "try_again": "Try Again",
-            "error": "Error",
-            "ok": "OK",
-            "continue": "Continue",
-            "change": "Change",
-            
-            // Profile screen
-            "patient_profile": "Patient Profile",
-            "personal_information": "Personal Information",
-            "address": "Address",
-            "phone_number": "Phone Number",
-            "blood_group": "Blood Group",
-            "language": "Language",
-            "unknown": "Unknown",
-            "not_provided": "Not Provided",
-            
-            // Home screen
-            "hospitals": "Hospitals",
-            "upcoming_appointments": "Upcoming Appointments",
-            "no_appointments": "No upcoming appointments",
-            "view_all": "View All",
-            "search_hospitals": "Search Hospitals",
-            "search_by_doctor": "Search by doctor's name",
-            "search_results": "Search Results",
-            "no_hospitals_found": "No hospitals found",
-            "no_lab_reports": "No lab reports available",
-            
-            // Appointment history
-            "appointment_history": "Appointment History",
-            "no_appointment_history": "No appointment history",
-            "completed_appointments": "Completed Appointments",
-            "missed_appointments": "Missed Appointments",
-            "cancelled_appointments": "Cancelled Appointments",
-            
-            // Appointment booking
-            "doctors": "Doctors",
-            "no_active_doctors": "No Active Doctors Found",
-            "no_matching_doctors": "No Matching Doctors",
-            "try_adjusting_search": "Try adjusting your search or filters.",
-            "book_appointment": "Book Appointment",
-            "consultation_fee": "Consultation Fee",
-            "review_and_pay": "Review & Pay",
-            "appointment": "Appointment",
-            "patient_info": "Patient Info",
-            "premium_appointment": "Premium Appointment",
-            "payment_details": "Payment Details",
-            "consultation_fees": "Consultation Fees",
-            "booking_fee": "Booking Fee",
-            "premium_fee": "Premium Fee",
-            "total_pay": "Total Pay",
-            "pay": "Pay",
-            "confirm_payment": "Confirm Payment",
-            "pay_with": "Pay with",
-            "bill_details": "Bill Details",
-            "swipe_to_pay": "Swipe to Pay",
-            "processing": "Processing...",
-            "slots": "Slots",
-            "select_date": "Select Date",
-            "loading_slots": "Loading available slots...",
-            "no_available_slots": "No available slots for this date. Please select another date or doctor.",
-            "no_doctor_availability": "This doctor doesn't have any availability schedule set up yet.",
-            "invalid_availability_data": "Invalid availability data format",
-            "error_fetching_availability": "Error fetching doctor availability",
-            "user_id_not_found": "User ID not found",
-            "patient_verification_failed": "Could not verify patient record",
-            "medical_consultation": "Medical consultation",
-            "error_creating_appointment": "Error creating appointment",
-            
-            // Appointment
-            "appointment_details": "Appointment Details",
-            "appointment_date": "Appointment Date",
-            "appointment_time": "Appointment Time",
-            "booking_confirmed": "Thank you, your booking is confirmed.",
-            "email_receipt": "Please check your email for receipt and booking details.",
-        ],
-        
-        // Hindi
-        "hi": [
-            // Common UI elements
-            "home": "होम",
-            "history": "इतिहास",
-            "lab_reports": "लैब रिपोर्ट",
-            "blood_donate": "रक्तदान",
-            "profile": "प्रोफाइल",
-            "welcome": "स्वागत है",
-            "logout": "लॉग आउट",
-            "edit": "संपादित करें",
-            "cancel": "रद्द करें",
-            "save": "सहेजें",
-            "done": "हो गया",
-            "yes_logout": "हां, लॉग आउट करें",
-            "are_you_sure_logout": "क्या आप लॉग आउट करना चाहते हैं?",
-            "coming_soon": "जल्द आ रहा है",
-            "try_again": "फिर से प्रयास करें",
-            "error": "त्रुटि",
-            "ok": "ठीक है",
-            "continue": "जारी रखें",
-            "change": "बदलें",
-            
-            // Profile screen
-            "patient_profile": "रोगी प्रोफाइल",
-            "personal_information": "व्यक्तिगत जानकारी",
-            "address": "पता",
-            "phone_number": "फोन नंबर",
-            "blood_group": "रक्त समूह",
-            "language": "भाषा",
-            "unknown": "अज्ञात",
-            "not_provided": "प्रदान नहीं किया गया",
-            
-            // Home screen
-            "hospitals": "अस्पताल",
-            "upcoming_appointments": "आगामी अपॉइंटमेंट",
-            "no_appointments": "कोई आगामी अपॉइंटमेंट नहीं",
-            "view_all": "सभी देखें",
-            "search_hospitals": "अस्पताल खोजें",
-            "search_by_doctor": "डॉक्टर के नाम से खोजें",
-            "search_results": "खोज परिणाम",
-            "no_hospitals_found": "कोई अस्पताल नहीं मिला",
-            "no_lab_reports": "कोई लैब रिपोर्ट उपलब्ध नहीं है",
-            
-            // Appointment history
-            "appointment_history": "अपॉइंटमेंट इतिहास",
-            "no_appointment_history": "कोई अपॉइंटमेंट इतिहास नहीं",
-            "completed_appointments": "पूर्ण अपॉइंटमेंट",
-            "missed_appointments": "छूटे हुए अपॉइंटमेंट",
-            "cancelled_appointments": "रद्द किए गए अपॉइंटमेंट",
-            
-            // Appointment booking
-            "doctors": "डॉक्टर्स",
-            "no_active_doctors": "कोई सक्रिय डॉक्टर नहीं मिले",
-            "no_matching_doctors": "कोई मिलते जुलते डॉक्टर नहीं मिले",
-            "try_adjusting_search": "अपनी खोज या फिल्टर को समायोजित करने का प्रयास करें",
-            "book_appointment": "अपॉइंटमेंट बुक करें",
-            "consultation_fee": "परामर्श शुल्क",
-            "review_and_pay": "समीक्षा और भुगतान",
-            "appointment": "अपॉइंटमेंट",
-            "patient_info": "रोगी की जानकारी",
-            "premium_appointment": "प्रीमियम अपॉइंटमेंट",
-            "payment_details": "भुगतान विवरण",
-            "consultation_fees": "परामर्श शुल्क",
-            "booking_fee": "बुकिंग शुल्क",
-            "premium_fee": "प्रीमियम शुल्क",
-            "total_pay": "कुल भुगतान",
-            "pay": "भुगतान करें",
-            "confirm_payment": "भुगतान की पुष्टि करें",
-            "pay_with": "भुगतान विधि",
-            "bill_details": "बिल विवरण",
-            "swipe_to_pay": "भुगतान के लिए स्वाइप करें",
-            "processing": "प्रोसेसिंग हो रही है",
-            "slots": "स्लॉट्स",
-            "select_date": "तारीख चुनें",
-            "loading_slots": "उपलब्ध स्लॉट्स लोड हो रहे हैं...",
-            "no_available_slots": "इस तारीख के लिए कोई उपलब्ध स्लॉट्स नहीं हैं। कृपया दूसरी तारीख या डॉक्टर चुनें।",
-            "no_doctor_availability": "इस डॉक्टर की कोई उपलब्धता अनुसूची अभी तक सेट नहीं की गई है।",
-            "invalid_availability_data": "अवैध उपलब्धता डेटा प्रारूप",
-            "error_fetching_availability": "डॉक्टर उपलब्धता प्राप्त करने में त्रुटि",
-            "user_id_not_found": "उपयोगकर्ता आईडी नहीं मिली",
-            "patient_verification_failed": "रोगी रिकॉर्ड सत्यापित नहीं किया जा सका",
-            "medical_consultation": "चिकित्सा परामर्श",
-            "error_creating_appointment": "अपॉइंटमेंट बनाने में त्रुटि",
-            
-            // Appointment
-            "appointment_details": "अपॉइंटमेंट विवरण",
-            "appointment_date": "अपॉइंटमेंट की तारीख",
-            "appointment_time": "अपॉइंटमेंट का समय",
-            "booking_confirmed": "धन्यवाद, आपकी बुकिंग की पुष्टि हो गई है।",
-            "email_receipt": "कृपया रसीद और बुकिंग विवरण के लिए अपना ईमेल देखें।",
-        ],
-        
-        // Tamil
-        "ta": [
-            "home": "முகப்பு",
-            "history": "வரலாறு",
-            "lab_reports": "ஆய்வக அறிக்கைகள்",
-            "blood_donate": "இரத்த தானம்",
-            "profile": "சுயவிவரம்",
-            "welcome": "வரவேற்கிறோம்",
-            "logout": "வெளியேறு",
-            "edit": "திருத்து",
-            "cancel": "ரத்து செய்",
-            "save": "சேமி",
-            "done": "முடிந்தது",
-            "yes_logout": "ஆம், வெளியேறு",
-            "are_you_sure_logout": "நீங்கள் வெளியேற விரும்புகிறீர்களா?",
-            "coming_soon": "விரைவில் வருகிறது",
-            "try_again": "மீண்டும் முயற்சிக்கவும்",
-            "error": "பிழை",
-            "ok": "சரி",
-            "continue": "தொடரவும்",
-            "change": "மாற்றவும்",
-            
-            // Profile screen
-            "patient_profile": "நோயாளி சுயவிவரம்",
-            "personal_information": "தனிப்பட்ட தகவல்",
-            "address": "முகவரி",
-            "phone_number": "தொலைபேசி எண்",
-            "blood_group": "இரத்த வகை",
-            "language": "மொழி",
-            "unknown": "தெரியாதது",
-            "not_provided": "வழங்கப்படவில்லை",
-            
-            // Home screen
-            "search_results": "தேடல் முடிவுகள்",
-            "no_hospitals_found": "மருத்துவமனைகள் எதுவும் இல்லை",
-            "search_hospitals": "மருத்துவமனைகளைத் தேடுங்கள்",
-            "search_by_doctor": "மருத்துவர் பெயரால் தேடுங்கள்",
-            "no_lab_reports": "ஆய்வக அறிக்கைகள் இல்லை",
-            "hospitals": "மருத்துவமனைகள்",
-            "upcoming_appointments": "வரவிருக்கும் சந்திப்புகள்",
-            "no_appointments": "வரவிருக்கும் சந்திப்புகள் இல்லை",
-            "view_all": "அனைத்தையும் காண்க",
-            
-            // Appointment history
-            "appointment_history": "சந்திப்பு வரலாறு",
-            "no_appointment_history": "சந்திப்பு வரலாறு இல்லை",
-            "completed_appointments": "முடிந்த சந்திப்புகள்",
-            "missed_appointments": "தவறிய சந்திப்புகள்",
-            "cancelled_appointments": "ரத்து செய்யப்பட்ட சந்திப்புகள்",
-            
-            // Appointment booking
-            "doctors": "மருத்துவர்கள்",
-            "no_active_doctors": "செயலில் உள்ள மருத்துவர்கள் இல்லை",
-            "no_matching_doctors": "பொருந்தும் மருத்துவர்கள் இல்லை",
-            "try_adjusting_search": "உங்கள் தேடலை அல்லது வடிகட்டிகளை சரிசெய்ய முயற்சிக்கவும்",
-            "book_appointment": "சந்திப்பை பதிவு செய்க",
-            "consultation_fee": "ஆலோசனை கட்டணம்",
-            "review_and_pay": "சரிபார்த்து செலுத்துங்கள்",
-            "appointment": "சந்திப்பு",
-            "patient_info": "நோயாளி தகவல்",
-            "premium_appointment": "பிரீமியம் சந்திப்பு",
-            "payment_details": "கட்டண விவரங்கள்",
-            "consultation_fees": "ஆலோசனை கட்டணம்",
-            "booking_fee": "பதிவு கட்டணம்",
-            "premium_fee": "பிரீமியம் கட்டணம்",
-            "total_pay": "மொத்தம் செலுத்த",
-            "pay": "செலுத்து",
-            "confirm_payment": "கட்டணத்தை உறுதிப்படுத்தவும்",
-            "pay_with": "செலுத்தும் முறை",
-            "bill_details": "பில் விவரங்கள்",
-            "swipe_to_pay": "செலுத்த ஸ்வைப் செய்யவும்",
-            "processing": "செயலாக்கப்படுகிறது",
-            "slots": "இடங்கள்",
-            "select_date": "தேதியைத் தேர்ந்தெடுக்கவும்",
-            "loading_slots": "கிடைக்கக்கூடிய இடங்களை ஏற்றுகிறது...",
-            "no_available_slots": "இந்த தேதிக்கு கிடைக்கக்கூடிய இடங்கள் இல்லை. வேறு தேதி அல்லது மருத்துவரைத் தேர்ந்தெடுக்கவும்.",
-            "no_doctor_availability": "இந்த மருத்துவர் இன்னும் எந்த கிடைக்கும் அட்டவணையையும் அமைக்கவில்லை.",
-            "invalid_availability_data": "தவறான கிடைக்கும் தரவு வடிவம்",
-            "error_fetching_availability": "மருத்துவர் கிடைப்பதை பெறுவதில் பிழை",
-            
-            // Appointment
-            "booking_confirmed": "நன்றி, உங்கள் பதிவு உறுதிப்படுத்தப்பட்டது.",
-            "email_receipt": "ரசீது மற்றும் பதிவு விவரங்களுக்கு உங்கள் மின்னஞ்சலைப் பாருங்கள்.",
-            "appointment_details": "சந்திப்பு விவரங்கள்",
-            "appointment_date": "சந்திப்பு தேதி",
-            "appointment_time": "சந்திப்பு நேரம்",
-            "user_id_not_found": "பயனர் ஐடி கிடைக்கவில்லை",
-            "patient_verification_failed": "நோயாளி பதிவு சரிபார்க்க முடியவில்லை",
-            "medical_consultation": "மருத்துவ ஆலோசனை",
-            "error_creating_appointment": "அப்பாய்ன்ட்மென்ட் உருவாக்குவதில் பிழை",
-        ],
-        
-        // Urdu
-        "ur": [
-            "home": "ہوم",
-            "history": "تاریخ",
-            "lab_reports": "لیب رپورٹس",
-            "blood_donate": "خون کا عطیہ",
-            "profile": "پروفائل",
-            "welcome": "خوش آمدید",
-            "logout": "لاگ آؤٹ",
-            "edit": "ترمیم",
-            "cancel": "منسوخ",
-            "save": "محفوظ کریں",
-            "done": "ہو گیا",
-            "yes_logout": "ہاں، لاگ آؤٹ کریں",
-            "are_you_sure_logout": "کیا آپ واقعی لاگ آؤٹ کرنا چاہتے ہیں؟",
-            "coming_soon": "جلد آ رہا ہے",
-            "search_results": "تلاش کے نتائج",
-            "no_hospitals_found": "کوئی ہسپتال نہیں ملا",
-            "search_hospitals": "ہسپتال تلاش کریں",
-            "search_by_doctor": "ڈاکٹر کے نام سے تلاش کریں",
-            "no_lab_reports": "کوئی لیب رپورٹ دستیاب نہیں ہے",
-            "appointment_history": "اپائنٹمنٹ کی تاریخ",
-            "no_appointment_history": "کوئی اپائنٹمنٹ تاریخ نہیں",
-            "completed_appointments": "مکمل اپائنٹمنٹس",
-            "missed_appointments": "چھوٹی ہوئی اپائنٹمنٹس",
-            "cancelled_appointments": "منسوخ شدہ اپائنٹمنٹس",
-            "hospitals": "ہسپتال",
-            "upcoming_appointments": "آنے والی اپوائنٹمنٹس",
-            "no_appointments": "کوئی آنے والی اپوائنٹمنٹ نہیں",
-            "view_all": "سب دیکھیں",
-            "doctors": "ڈاکٹرز",
-            "no_active_doctors": "کوئی متحرک ڈاکٹر نہیں ملے",
-            "no_matching_doctors": "کوئی میل کھاتے ڈاکٹر نہیں ملے",
-            "try_adjusting_search": "اپنی تلاش یا فلٹرز کو ایڈجسٹ کرنے کی کوشش کریں",
-            "book_appointment": "اپوائنٹمنٹ بک کریں",
-            "consultation_fee": "مشاورت فیس",
-            "review_and_pay": "جائزہ اور ادائیگی",
-            "appointment": "اپوائنٹمنٹ",
-            "patient_info": "مریض کی معلومات",
-            "premium_appointment": "پریمیم اپوائنٹمنٹ",
-            "payment_details": "ادائیگی کی تفصیلات",
-            "consultation_fees": "مشاورت فیس",
-            "booking_fee": "بکنگ فیس",
-            "premium_fee": "پریمیم فیس",
-            "total_pay": "کل ادائیگی",
-            "pay": "ادائیگی",
-            "confirm_payment": "ادائیگی کی تصدیق کریں",
-            "pay_with": "ادائیگی کا ذریعہ",
-            "bill_details": "بل کی تفصیلات",
-            "swipe_to_pay": "ادائیگی کے لیے سوائپ کریں",
-            "processing": "کارروائی جاری ہے",
-            "slots": "سلاٹس",
-            "booking_confirmed": "شکریہ، آپ کی بکنگ کی تصدیق ہو گئی ہے۔",
-            "email_receipt": "براہ کرم رسید اور بکنگ کی تفصیلات کے لیے اپنا ای میل چیک کریں۔",
-            "appointment_details": "اپوائنٹمنٹ کی تفصیلات",
-            "appointment_date": "اپوائنٹمنٹ کی تاریخ",
-            "appointment_time": "اپوائنٹمنٹ کا وقت",
-            "error": "خرابی",
-            "ok": "ٹھیک ہے",
-            "continue": "جاری رکھیں",
-            "change": "تبدیل کریں",
-            "select_date": "تاریخ منتخب کریں",
-            "loading_slots": "دستیاب سلاٹس لوڈ ہو رہے ہیں...",
-            "no_available_slots": "اس تاریخ کے لیے کوئی دستیاب سلاٹس نہیں ہیں۔ براہ کرم کوئی دوسری تاریخ یا ڈاکٹر منتخب کریں۔",
-            "no_doctor_availability": "اس ڈاکٹر کی کوئی دستیابی شیڈول ابھی تک مرتب نہیں کی گئی ہے۔",
-            "invalid_availability_data": "غلط دستیابی ڈیٹا فارمیٹ",
-            "error_fetching_availability": "ڈاکٹر کی دستیابی حاصل کرنے میں خرابی",
-            "user_id_not_found": "صارف کی شناخت نہیں ملی",
-            "patient_verification_failed": "مریض کا ریکارڈ تصدیق نہیں کیا جا سکا",
-            "medical_consultation": "طبی مشاورت",
-            "error_creating_appointment": "اپائنٹمنٹ بنانے میں خرابی",
-            
-            // Profile screen
-            "patient_profile": "مریض کا پروفائل",
-            "personal_information": "ذاتی معلومات",
-            "address": "پتہ",
-            "phone_number": "فون نمبر",
-            "blood_group": "بلڈ گروپ",
-            "language": "زبان",
-            "unknown": "نامعلوم",
-            "not_provided": "فراہم نہیں کیا گیا",
-        ],
-        
-        // Kannada
-        "kn": [
-            "home": "ಮುಖಪುಟ",
-            "history": "ಇತಿಹಾಸ",
-            "lab_reports": "ಲ್ಯಾಬ್ ವರದಿಗಳು",
-            "blood_donate": "ರಕ್ತದಾನ",
-            "profile": "ಪ್ರೊಫೈಲ್",
-            "welcome": "ಸ್ವಾಗತ",
-            "logout": "ಲಾಗ್ ಔಟ್",
-            "edit": "ಸಂಪಾದಿಸಿ",
-            "cancel": "ರದ್ದುಮಾಡಿ",
-            "save": "ಉಳಿಸಿ",
-            "done": "ಮುಗಿದಿದೆ",
-            "yes_logout": "ಹೌದು, ಲಾಗ್ ಔಟ್",
-            "are_you_sure_logout": "ನೀವು ಖಚಿತವಾಗಿಯೂ ಲಾಗ್ ಔಟ್ ಮಾಡಲು ಬಯಸುವಿರಾ?",
-            "coming_soon": "ಶೀಘ್ರದಲ್ಲೇ ಬರಲಿದೆ",
-            "try_again": "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",
-            "error": "ದೋಷ",
-            "ok": "ಸರಿ",
-            "continue": "ಮುಂದುವರಿಸಿ",
-            "change": "ಬದಲಾಯಿಸಿ",
-            
-            // Profile screen
-            "patient_profile": "ರೋಗಿಯ ಪ್ರೊಫೈಲ್",
-            "personal_information": "ವೈಯಕ್ತಿಕ ಮಾಹಿತಿ",
-            "address": "ವಿಳಾಸ",
-            "phone_number": "ಫೋನ್ ಸಂಖ್ಯೆ",
-            "blood_group": "ರಕ್ತ ಗುಂಪು",
-            "language": "ಭಾಷೆ",
-            "unknown": "ಅಜ್ಞಾತ",
-            "not_provided": "ಒದಗಿಸಿಲ್ಲ",
-            "appointment_time": "ಅಪಾಯಿಂಟ್ಮೆಂಟ್ ಸಮಯ",
-            "user_id_not_found": "ಬಳಕೆದಾರ ಐಡಿ ಕಂಡುಬಂದಿಲ್ಲ",
-            "patient_verification_failed": "ರೋಗಿಯ ದಾಖಲೆಯನ್ನು ಪರಿಶೀಲಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ",
-            "medical_consultation": "ವೈದ್ಯಕೀಯ ಸಮಾಲೋಚನೆ",
-            "error_creating_appointment": "ಅಪಾಯಿಂಟ್ಮೆಂಟ್ ರಚಿಸುವಲ್ಲಿ ದೋಷ",
-        ],
-    ]
-    
-    // Get translation for a key in the currently selected language
-    func localized(_ key: String) -> String {
-        // Get translations for selected language
-        guard let languageDict = translations[selectedLanguage] else {
-            // Fallback to English if selected language not available
-            return translations["en"]?[key] ?? key
-        }
-        
-        // Return translation if available, otherwise fallback to English or the key itself
-        return languageDict[key] ?? translations["en"]?[key] ?? key
-    }
-    
-    // Change the app language
-    func setLanguage(_ language: AppLanguage) {
-        selectedLanguage = language.rawValue
-    }
-    
-    // Get current language as AppLanguage enum
-    var currentLanguage: AppLanguage {
-        AppLanguage(rawValue: selectedLanguage) ?? .english
-    }
-}
-
-// Extension for String to easily get localized version
-extension String {
-    var localized: String {
-        TranslationManager.shared.localized(self)
-    }
-}
-
-// View modifier for applying right-to-left layout for Arabic
-struct LocalizedViewModifier: ViewModifier {
-    @ObservedObject private var translationManager = TranslationManager.shared
-    
-    func body(content: Content) -> some View {
-        content
-            // We don't need right-to-left layout as we only support English and Indian languages
-            .environment(\.layoutDirection, .leftToRight)
-    }
-}
-
-// Extension for View to easily apply localization modifiers
-extension View {
-    func localizedLayout() -> some View {
-        self.modifier(LocalizedViewModifier())
-    }
-}
 
 // Define the missing ActiveSheet enum
 enum ActiveSheet: Identifiable {
@@ -504,6 +26,7 @@ struct HomeTabView: View {
     @ObservedObject var hospitalVM = HospitalViewModel.shared
     @StateObject var appointmentManager = AppointmentManager.shared
     @StateObject private var labReportManager = LabReportManager.shared
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var showProfile = false
     @State private var showAddVitals = false
     @State private var selectedHospital: HospitalModel?
@@ -514,7 +37,7 @@ struct HomeTabView: View {
     @AppStorage("current_user_id") private var currentUserId: String?
     @AppStorage("userId") private var userId: String?
     @State private var selectedHistoryType = 0
-    @ObservedObject private var translationManager = TranslationManager.shared
+    @State private var tabViewRefreshID = UUID() // For forcing UI refresh
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -528,7 +51,7 @@ struct HomeTabView: View {
                 homeTab
                     .tabItem {
                         Image(systemName: selectedTab == 0 ? "house.fill" : "house")
-                        Text("home".localized)
+                        Text("Home")
                     }
                     .tag(0)
                     .onAppear {
@@ -542,32 +65,37 @@ struct HomeTabView: View {
                 historyTab
                     .tabItem {
                         Image(systemName: selectedTab == 1 ? "clock.fill" : "clock")
-                        Text("history".localized)
+                        Text("History")
                     }
                     .tag(1)
                 
                 labReportsTab
                     .tabItem {
                         Image(systemName: selectedTab == 2 ? "doc.text.fill" : "doc.text")
-                        Text("lab_reports".localized)
+                        Text("Lab Reports")
                     }
-                    .tag(2)
+                        .tag(2)
                 
                 bloodDonateTab
                     .tabItem {
                         Image(systemName: selectedTab == 3 ? "drop.fill" : "drop")
-                        Text("blood_donate".localized)
+                        Text("Blood Donate")
                     }
                     .tag(3)
             }
-            .accentColor(.teal)
+            .accentColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
             .onAppear {
                 // Configure navigation bar appearance
                 configureNavigationBar()
                 
-                // Customize the TabView appearance
-                UITabBar.appearance().backgroundColor = UIColor.systemBackground
-                UITabBar.appearance().backgroundImage = UIImage()
+                // Apply tab bar theme
+                updateTabBarAppearance()
+                
+                // Setup theme change listener
+                setupThemeChangeListener()
+                
+                // Setup return to home tab notification listener
+                setupReturnToHomeListener()
                 
                 print("📱 HomeTabView appeared with currentUserId: \(currentUserId ?? "nil") and userId: \(userId ?? "nil")")
                 
@@ -624,17 +152,23 @@ struct HomeTabView: View {
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        .localizedLayout()
+        .id(tabViewRefreshID) // Force refresh when ID changes
     }
     
     private var homeTab: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                // Apply consistent background gradient
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                              startPoint: .topLeading,
-                              endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
+                // Use the themed background instead of fixed gradient
+                if ThemeManager.shared.isPatient {
+                    ThemeManager.shared.currentTheme.background
+                        .ignoresSafeArea()
+                } else {
+                    // Fallback to original gradient for non-patients
+                    LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                                 startPoint: .topLeading,
+                                 endPoint: .bottomTrailing)
+                        .ignoresSafeArea()
+                }
                 
                 VStack(spacing: 0) {
                     // Fixed Header section
@@ -668,7 +202,7 @@ struct HomeTabView: View {
                                 
                                 // Show all hospitals with simplified styling
                                 VStack(alignment: .leading, spacing: 15) {
-                                    Text("hospitals".localized)
+                                    Text("Hospitals")
                                         .font(.title2)
                                         .fontWeight(.bold)
                                         .foregroundColor(.black)
@@ -696,6 +230,7 @@ struct HomeTabView: View {
                                         ForEach(hospitalVM.hospitals) { hospital in
                                             NavigationLink {
                                                 DoctorListView(hospital: hospital)
+                                                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                                             } label: {
                                                 HospitalCard(hospital: hospital)
                                             }
@@ -703,7 +238,7 @@ struct HomeTabView: View {
                                             .padding(.horizontal)
                                         }
                                     } else {
-                                        Text("no_hospitals_found".localized)
+                                        Text("No hospitals found")
                                             .foregroundColor(.gray)
                                             .frame(maxWidth: .infinity)
                                             .padding()
@@ -724,6 +259,7 @@ struct HomeTabView: View {
                     }
                 }
             }
+            .foregroundColor(ThemeManager.shared.isPatient ? ThemeManager.shared.currentTheme.primaryText : Color.primary)
             .navigationBarHidden(true)
             .ignoresSafeArea(.container, edges: .bottom)
             .task {
@@ -740,9 +276,6 @@ struct HomeTabView: View {
                         await profileController.loadProfile(userId: userId)
                     }
                 }
-            }
-            .sheet(isPresented: $showProfile) {
-                PatientProfileView(profileController: profileController)
             }
         }
     }
@@ -792,10 +325,15 @@ struct HomeTabView: View {
         NavigationStack {
             ZStack {
                 // Consistent background gradient
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                             startPoint: .topLeading,
-                             endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
+                if themeManager.isPatient {
+                    themeManager.currentTheme.background
+                        .ignoresSafeArea()
+                } else {
+                    LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                                 startPoint: .topLeading,
+                                 endPoint: .bottomTrailing)
+                        .ignoresSafeArea()
+                }
                 
                 List {
                     // Filter appointments by status
@@ -805,38 +343,51 @@ struct HomeTabView: View {
                     
                     if completedAppointments.isEmpty && cancelledAppointments.isEmpty && missedAppointments.isEmpty {
                         Text("No appointment history")
-                            .foregroundColor(.gray)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding()
                     } else {
                         if !completedAppointments.isEmpty {
-                            Section(header: Text("Completed Appointments").foregroundColor(.teal)) {
+                            Section(header: Text("Completed Appointments")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)) {
                                 ForEach(completedAppointments) { appointment in
-                                    NavigationLink(destination: PrescriptionDetailView(appointment: appointment)) {
+                                    NavigationLink(destination: 
+                                        PrescriptionDetailView(appointment: appointment)
+                                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                                            .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
+                                    ) {
                                         AppointmentHistoryCard(appointment: appointment)
-                                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                     }
-                                    .listRowBackground(Color.green.opacity(0.1))
+                                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                    .listRowBackground(themeManager.isPatient ? 
+                                                      themeManager.currentTheme.background : 
+                                                      Color.green.opacity(0.1))
                                 }
                             }
                         }
                         
                         if !missedAppointments.isEmpty {
-                            Section(header: Text("Missed Appointments").foregroundColor(.teal)) {
+                            Section(header: Text("Missed Appointments")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)) {
                                 ForEach(missedAppointments) { appointment in
                                     AppointmentHistoryCard(appointment: appointment, isMissed: true)
                                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                                        .listRowBackground(Color.orange.opacity(0.1))
+                                        .listRowBackground(themeManager.isPatient ? 
+                                                         themeManager.currentTheme.background : 
+                                                         Color.orange.opacity(0.1))
                                 }
                             }
                         }
                         
                         if !cancelledAppointments.isEmpty {
-                            Section(header: Text("Cancelled Appointments").foregroundColor(.teal)) {
+                            Section(header: Text("Cancelled Appointments")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)) {
                                 ForEach(cancelledAppointments) { appointment in
                                     AppointmentHistoryCard(appointment: appointment, isCancelled: true)
                                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                                        .listRowBackground(Color.red.opacity(0.1))
+                                        .listRowBackground(themeManager.isPatient ? 
+                                                         themeManager.currentTheme.background : 
+                                                         Color.red.opacity(0.1))
                                 }
                             }
                         }
@@ -849,9 +400,10 @@ struct HomeTabView: View {
                     appointmentManager.refreshAppointments()
                 }
             }
-            .navigationTitle("history".localized)
+            .navigationTitle("Appointments History")
+            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
             .toolbarColorScheme(.light, for: .navigationBar)
-            .toolbarBackground(Color.teal.opacity(0.1), for: .navigationBar)
+            .toolbarBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.teal.opacity(0.1), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .onAppear {
                 print("📱 History tab appeared - refreshing appointments")
@@ -863,18 +415,24 @@ struct HomeTabView: View {
     private var labReportsTab: some View {
         NavigationStack {
             ZStack {
-                // Consistent background gradient
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                             startPoint: .topLeading,
-                             endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
+                // Apply themed background
+                if themeManager.isPatient {
+                    themeManager.currentTheme.background
+                        .ignoresSafeArea()
+                } else {
+                    LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                                 startPoint: .topLeading,
+                                 endPoint: .bottomTrailing)
+                        .ignoresSafeArea()
+                }
                 
                 labReportsSection
                     .scrollContentBackground(.hidden) // Hide default list background if this contains a List
             }
-            .navigationTitle("lab_reports".localized)
+            .navigationTitle("Lab Reports")
+            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
             .toolbarColorScheme(.light, for: .navigationBar)
-            .toolbarBackground(Color.teal.opacity(0.1), for: .navigationBar)
+            .toolbarBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.teal.opacity(0.1), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
     }
@@ -882,11 +440,16 @@ struct HomeTabView: View {
     private var bloodDonateTab: some View {
         NavigationStack {
             ZStack {
-                // Consistent background gradient
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                             startPoint: .topLeading,
-                             endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
+                // Apply themed background
+                if themeManager.isPatient {
+                    themeManager.currentTheme.background
+                        .ignoresSafeArea()
+                } else {
+                    LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
+                                 startPoint: .topLeading,
+                                 endPoint: .bottomTrailing)
+                        .ignoresSafeArea()
+                }
                 
                 // Content will go here when implemented
                 VStack {
@@ -894,22 +457,26 @@ struct HomeTabView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 80, height: 80)
-                        .foregroundColor(.teal)
-                        
-                    Text("blood_donate".localized)
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .padding(.top, 10)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                        .padding()
                     
-                    Text("coming_soon".localized)
-                        .font(.title3)
-                        .foregroundColor(.gray)
-                        .padding(.top, 5)
+                    Text("Blood Donation Feature")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                    
+                    Text("Coming Soon")
+                        .font(.subheadline)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
+                        .padding()
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .navigationTitle("blood_donate".localized)
+            .navigationTitle("Blood Donation")
+            .navigationBarTitleDisplayMode(.inline)
+            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
             .toolbarColorScheme(.light, for: .navigationBar)
-            .toolbarBackground(Color.teal.opacity(0.1), for: .navigationBar)
+            .toolbarBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.teal.opacity(0.1), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
     }
@@ -918,23 +485,44 @@ struct HomeTabView: View {
     private var headerSection: some View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
-                Text("welcome".localized)
+                Text("Welcome")
                     .font(.headline)
-                    .foregroundColor(.gray)
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                 
                 if let patientName = profileController.patient?.name {
                     Text(patientName)
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.black)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .black)
                 } else {
                     Text("Patient")
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.black)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .black)
                 }
             }
             Spacer()
+            
+            // Add Accessibility Settings Button
+            Button(action: {
+                // Show accessibility settings
+                let viewToPresent = AccessibilitySettingsView()
+                    .environmentObject(AppNavigationState())
+                
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootVC = windowScene.windows.first?.rootViewController {
+                    let hostingController = UIHostingController(rootView: viewToPresent)
+                    rootVC.present(hostingController, animated: true)
+                }
+            }) {
+                Image(systemName: "eye")
+                    .font(.system(size: 22))
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                    .padding(8)
+                    .background(Circle().fill(themeManager.isPatient ? themeManager.currentTheme.background : Color.white))
+                    .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.3) : .gray.opacity(0.3), radius: 2)
+            }
+            .padding(.horizontal, 5)
             
             Button(action: {
                 // Create and initialize the profile controller before showing the sheet
@@ -959,81 +547,43 @@ struct HomeTabView: View {
                 }
             }) {
                 Image(systemName: "person.circle.fill")
-                    .resizable()
-                    .frame(width: 40, height: 40)
-                    .foregroundColor(.teal)
+                    .font(.system(size: 32))
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                    .background(Circle().fill(themeManager.isPatient ? themeManager.currentTheme.background : Color.white).frame(width: 48, height: 48))
+                    .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.3) : .gray.opacity(0.3), radius: 3)
+            }
+            .sheet(isPresented: $showProfile) {
+                PatientProfileView(profileController: profileController)
             }
         }
         .padding(.horizontal)
+        .padding(.vertical, 10)
     }
 
-    // Update the searchAndFilterSection to use localized text
+    // Simplified search and filter section
     private var searchAndFilterSection: some View {
-        HStack {
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.gray)
-                
-                TextField("search_hospitals".localized, text: $hospitalVM.searchText)
-                    .foregroundColor(.primary)
-                
-                if !hospitalVM.searchText.isEmpty {
-                    Button(action: {
-                        hospitalVM.searchText = ""
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.gray)
-                    }
-                }
-            }
-            .padding(10)
-            .background(Color.white)
-            .cornerRadius(10)
-            .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
-        }
-        .padding(.horizontal)
-    }
-
-    // Update the upcomingAppointmentsSection to use localized text
-    private var upcomingAppointmentsSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            HStack {
-                Text("upcoming_appointments".localized)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                NavigationLink(destination: AppointmentHistoryView()) {
-                    Text("view_all".localized)
-                        .foregroundColor(.teal)
-                        .font(.subheadline)
-                }
-            }
-            .padding(.horizontal)
+        VStack(spacing: 16) {
+            // Themed search bar
+            SearchBarView(text: $hospitalVM.searchText)
             
-            if appointmentManager.isLoading {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle())
-                    .scaleEffect(1.2)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-            } else if appointmentManager.upcomingAppointments.isEmpty {
-                Text("no_appointments".localized)
-                    .foregroundColor(.gray)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.white)
-                    )
-                    .padding(.horizontal)
-            } else {
+            // City filter buttons
+            if !hospitalVM.availableCities.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 15) {
-                        ForEach(appointmentManager.upcomingAppointments) { appointment in
-                            AppointmentCard(appointment: appointment)
-                            .frame(width: 300)
+                    HStack(spacing: 10) {
+                        // "All" filter button
+                        FilterButton(
+                            title: "All",
+                            isSelected: hospitalVM.selectedCity == nil,
+                            action: { hospitalVM.selectedCity = nil }
+                        )
+                        
+                        // City filter buttons
+                        ForEach(hospitalVM.availableCities, id: \.self) { city in
+                            FilterButton(
+                                title: city,
+                                isSelected: hospitalVM.selectedCity == city,
+                                action: { hospitalVM.selectedCity = city }
+                            )
                         }
                     }
                     .padding(.horizontal)
@@ -1042,29 +592,77 @@ struct HomeTabView: View {
         }
     }
 
-    // Simplified search results section
-    private var searchResultsSection: some View {
+    // Simplified upcoming appointments section
+    private var upcomingAppointmentsSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("search_results".localized)
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.black)
-                .padding(.horizontal)
+            HStack {
+                Text("Upcoming Appointments")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.black)
+                
+                
+            }
+            .padding(.horizontal)
 
-            if hospitalVM.filteredHospitals.isEmpty {
-                Text("no_hospitals_found".localized)
+            if appointmentManager.appointments.isEmpty {
+                Text("No upcoming appointments")
                     .foregroundColor(.gray)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.white)
-                    )
+                    .background(Color.white)
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+            } else {
+                let upcomingAppointments = appointmentManager.appointments.filter { $0.status == .upcoming }
+                
+                if upcomingAppointments.isEmpty {
+                    Text("No upcoming appointments")
+                        .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(8)
+                        .padding(.horizontal)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 16) {
+                            ForEach(upcomingAppointments) { appointment in
+                                AppointmentCard(appointment: appointment)
+                                    .frame(width: 380)
+                            }
+                        }
+                        .padding(.leading, 10)
+                        .padding(.trailing, 10)
+                        .padding(.bottom, 8)
+                    }
+                }
+            }
+        }
+    }
+
+    // Simplified search results section
+    private var searchResultsSection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Search Results")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                .padding(.horizontal)
+
+            if hospitalVM.filteredHospitals.isEmpty {
+                Text("No hospitals found")
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
+                    .cornerRadius(8)
                     .padding(.horizontal)
             } else {
                 ForEach(hospitalVM.filteredHospitals) { hospital in
                     NavigationLink {
                         DoctorListView(hospital: hospital)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                     } label: {
                         HospitalCard(hospital: hospital)
                     }
@@ -1081,27 +679,28 @@ struct HomeTabView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
-                    .listRowBackground(Color.clear)
+                    .listRowBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.clear)
             } else if let error = labReportManager.error {
                 Text(error.localizedDescription)
                     .foregroundColor(.red)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
-                    .listRowBackground(Color.clear)
+                    .listRowBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.clear)
             } else if labReportManager.labReports.isEmpty {
-                Text("no_lab_reports".localized)
-                    .foregroundColor(.gray)
+                Text("No lab reports available")
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
-                    .listRowBackground(Color.clear)
+                    .listRowBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.clear)
             } else {
                 ForEach(labReportManager.labReports) { report in
                     PatientLabReportCard(report: report)
                         .padding(.vertical, 4)
-                        .listRowBackground(Color.clear)
+                        .listRowBackground(themeManager.isPatient ? themeManager.currentTheme.background : Color.clear)
                 }
             }
         }
+        .listStyle(InsetGroupedListStyle())
         .scrollContentBackground(.hidden) // Hide default list background
         .refreshable {
             if let userId = userId {
@@ -1288,6 +887,67 @@ struct HomeTabView: View {
         UINavigationBar.appearance().compactAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
     }
+
+    // Setup listener for theme changes
+    private func setupThemeChangeListener() {
+        NotificationCenter.default.addObserver(forName: .themeChanged, object: nil, queue: .main) { _ in
+            // Update tab bar appearance
+            self.updateTabBarAppearance()
+            
+            // Generate new ID to force view refresh
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.tabViewRefreshID = UUID()
+            }
+        }
+    }
+    
+    // Update tab bar appearance based on current theme
+    private func updateTabBarAppearance() {
+        if themeManager.isPatient {
+            // Use themed colors for tab bar
+            UITabBar.appearance().backgroundColor = UIColor(themeManager.currentTheme.background)
+            UITabBar.appearance().unselectedItemTintColor = UIColor(themeManager.currentTheme.tertiaryAccent)
+            
+            // Use a custom tint color that works well with all themes
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let tabBarController = windowScene.windows.first?.rootViewController as? UITabBarController {
+                tabBarController.tabBar.tintColor = UIColor(themeManager.currentTheme.accentColor)
+            }
+        } else {
+            // Default colors for non-patients
+            UITabBar.appearance().backgroundColor = UIColor.systemBackground
+            UITabBar.appearance().unselectedItemTintColor = UIColor.gray
+        }
+        
+        // Set these properties for both cases
+        UITabBar.appearance().backgroundImage = UIImage()
+        UITabBar.appearance().shadowImage = UIImage() // Remove shadow line for cleaner look
+    }
+
+    // Setup return to home tab notification listener
+    private func setupReturnToHomeListener() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ReturnToHomeTab"),
+            object: nil,
+            queue: .main) { _ in
+                // Ensure we're on the main thread
+                DispatchQueue.main.async {
+                    // Force selected tab to home (0)
+                    self.selectedTab = 0
+                    
+                    // Refresh data
+                    self.appointmentManager.refreshAppointments()
+                    Task {
+                        await self.refreshHospitals()
+                    }
+                    
+                    // Force UI refresh
+                    self.tabViewRefreshID = UUID()
+                    
+                    print("📱 Returned to Home Tab via notification")
+                }
+            }
+    }
 }
 
 struct AppointmentHistoryCard: View {
@@ -1295,6 +955,8 @@ struct AppointmentHistoryCard: View {
     var isCancelled: Bool = false
     var isMissed: Bool = false
     @State private var isLoading = false
+    @ObservedObject private var themeManager = ThemeManager.shared
+    @State private var refreshID = UUID() // Force view refresh when theme changes
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1302,9 +964,10 @@ struct AppointmentHistoryCard: View {
                 VStack(alignment: .leading) {
                     Text(appointment.doctor.name)
                         .font(.headline)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                     Text(appointment.doctor.specialization)
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                 }
                 Spacer()
                 
@@ -1312,39 +975,64 @@ struct AppointmentHistoryCard: View {
                     ProgressView()
                         .scaleEffect(0.8)
                 } else {
-                    // Always use English for these statuses as requested
                     Text(isCancelled ? "Cancelled" : isMissed ? "Missed" : "Completed")
                         .font(.caption)
-                        .foregroundColor(isCancelled ? .red : isMissed ? .orange : .green)
+                        .foregroundColor(statusColor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(isCancelled ? Color.red.opacity(0.1) : isMissed ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
+                        .background(statusColor.opacity(0.1))
                         .cornerRadius(8)
                 }
             }
             
             HStack {
                 Image(systemName: "calendar")
-                    .foregroundColor(.teal)
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                 Text(appointment.date.formatted(date: .long, time: .omitted))
                 Spacer()
                 Image(systemName: "clock")
-                    .foregroundColor(.teal)
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                 let endTime = Calendar.current.date(byAdding: .hour, value: 1, to: appointment.time)!
                 Text("\(appointment.time.formatted(date: .omitted, time: .shortened)) to \(endTime.formatted(date: .omitted, time: .shortened))")
             }
             .font(.subheadline)
-            .foregroundColor(.gray)
+            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
         }
         .padding()
-        .background(Color.white)
+        .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
         .cornerRadius(12)
-        .shadow(color: .teal.opacity(0.1), radius: 5)
+        .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.1) : .teal.opacity(0.1), radius: 5)
         .onAppear {
             isLoading = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 isLoading = false
             }
+            
+            // Listen for theme changes
+            setupThemeChangeListener()
+        }
+        .id(refreshID) // Force view refresh when refreshID changes
+    }
+    
+    private var statusColor: Color {
+        if themeManager.isPatient {
+            if isCancelled {
+                return .red
+            } else if isMissed {
+                return themeManager.currentTheme.secondaryAccent
+            } else {
+                return .green
+            }
+        } else {
+            return isCancelled ? .red : isMissed ? .orange : .green
+        }
+    }
+    
+    // Setup listener for theme changes
+    private func setupThemeChangeListener() {
+        NotificationCenter.default.addObserver(forName: .themeChanged, object: nil, queue: .main) { _ in
+            // Generate new ID to force view refresh
+            refreshID = UUID()
         }
     }
 }
@@ -1377,3 +1065,6 @@ struct HospitalSearchBar: View {
         )
     }
 }
+
+// The DashboardCard struct has been moved to a shared file
+// at MediOps/MediOps/CustomOptions/DashboardCard.swift

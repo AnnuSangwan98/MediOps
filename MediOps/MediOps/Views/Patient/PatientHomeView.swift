@@ -39,9 +39,6 @@ struct PatientHomeView: View {
                         }
                         .padding(.horizontal)
                         .padding(.top)
-                        }
-                        .padding(.horizontal)
-                        .padding(.top)
                         
                         // Quick Actions Grid
                         LazyVGrid(columns: [
@@ -101,34 +98,11 @@ struct PatientHomeView: View {
             .navigationBarBackButtonHidden(true)
         }
     }
-
-
-struct DashboardCard: View {
-    let title: String
-    let icon: String
-    let color: Color
-    
-    var body: some View {
-        Button(action: {
-            // TODO: Implement action
-        }) {
-            VStack(spacing: 15) {
-                Image(systemName: icon)
-                    .font(.system(size: 30))
-                    .foregroundColor(color)
-                Text(title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.black)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 120)
-            .background(Color.white)
-            .cornerRadius(15)
-            .shadow(color: .gray.opacity(0.1), radius: 5)
-        }
-    }
 }
+
+// DashboardCard is now defined in a shared file
+// MediOps/MediOps/CustomOptions/DashboardCard.swift
 
 #Preview {
     PatientHomeView()
-}
+} 

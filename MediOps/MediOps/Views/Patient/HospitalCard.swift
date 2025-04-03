@@ -5,115 +5,63 @@ struct HospitalCard: View {
     var onEdit: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
     @State private var showMenu = false
+    @ObservedObject private var themeManager = ThemeManager.shared
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 15) {
-                // Hospital Image
-                if let imageUrl = hospital.hospitalProfileImage,
-                   let url = URL(string: imageUrl) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 80, height: 80)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        case .failure(_):
-                            fallbackHospitalImage
-                        case .empty:
-                            fallbackHospitalImage
-                        @unknown default:
-                            fallbackHospitalImage
-                        }
-                    }
-                } else {
-                    fallbackHospitalImage
-                }
+            HStack(alignment: .top) {
+                // Hospital icon
+                Image(systemName: "building.2")
+                    .font(.system(size: 36))
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                    .frame(width: 44, height: 44)
                 
-                VStack(alignment: .leading, spacing: 6) {
-                    // Hospital Name and Status
-                    HStack {
-                        Text(hospital.hospitalName)
-                            .font(.headline)
-                            .foregroundColor(.black)
-                        
-                        Spacer()
-                        
-                        // Add menu button if edit/delete functions are provided
-                        if onEdit != nil || onDelete != nil {
-                            Menu {
-                                if let editAction = onEdit {
-                                    Button(action: editAction) {
-                                        Label("Edit", systemImage: "pencil")
-                                    }
-                                }
-                                if let deleteAction = onDelete {
-                                    Button(action: deleteAction) {
-                                        Label("Delete", systemImage: "trash")
-                                            .foregroundColor(.red)
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis")
-                                    .foregroundColor(.gray)
-                                    .padding(8)
-                                    .background(Color.gray.opacity(0.1))
-                                    .clipShape(Circle())
-                            }
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(hospital.hospitalName)
+                        .font(.headline)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .black)
                     
-                    // City/Location
                     Text(hospital.hospitalCity)
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                     
-                    // Address
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Address")
-                            .font(.caption2)
-                            .foregroundColor(.gray)
-                        Text(hospital.hospitalAddress)
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                            .lineLimit(2)
-                    }
-                    
-                    Divider()
-                        .padding(.vertical, 4)
-                    
-                    // Show number of doctors
+                    Text("Address")
+                        .font(.caption)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
+                        .padding(.top, 2)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 6) {
                     HStack(spacing: 4) {
-                        Image(systemName: "person.2.fill")
+                        Image(systemName: "stethoscope")
                             .font(.caption)
-                            .foregroundColor(.teal)
-                        
-                        if hospital.numberOfDoctors > 0 {
-                            Text("\(hospital.numberOfDoctors) Doctors")
+                        Text("\(hospital.numberOfDoctors) Doctors")
+                            .font(.caption)
+                    }
+                    .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                    
+                    if hospital.numberOfAppointments > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar")
                                 .font(.caption)
-                                .foregroundColor(.gray)
-                        } else {
-                            Text("No Doctors Available")
+                            Text("\(hospital.numberOfAppointments) Appointments")
                                 .font(.caption)
-                                .foregroundColor(.gray)
-                                .italic()
                         }
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                     }
                 }
             }
         }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        // Apply the themed card styling
+        .themedHospitalCard()
     }
     
     private var fallbackHospitalImage: some View {
         Image(systemName: "building.2.fill")
             .font(.system(size: 40))
-            .foregroundColor(.gray)
+            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
             .frame(width: 80, height: 80)
             .background(Color.gray.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 10))
