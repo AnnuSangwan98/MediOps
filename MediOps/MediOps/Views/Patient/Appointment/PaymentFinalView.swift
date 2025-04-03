@@ -12,11 +12,13 @@ struct PaymentFinalView: View {
     let isPremium: Bool
     
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var navigateToSuccess = false
     @State private var sliderOffset: CGFloat = 0
     @State private var isDragging = false
     @State private var isProcessing = false
     @State private var bookingError: String? = nil
+    @State private var refreshID = UUID() // For UI refresh on theme change
     
     private let maxSliderOffset: CGFloat = 300 // Adjust this value based on your needs
     private let consultationFee = 500.0 // Default consultation fee
@@ -30,140 +32,113 @@ struct PaymentFinalView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                Text("Confirm Payment")
-                    .font(.title2)
-                    .padding(.top)
+            ZStack {
+                // Apply themed background
+                if themeManager.isPatient {
+                    themeManager.currentTheme.background
+                        .ignoresSafeArea()
+                }
                 
-                VStack(alignment: .leading, spacing: 15) {
-                    HStack {
-                        Image(systemName: "person.fill")
-                            .foregroundColor(.teal)
-                        Text("Pay with")
-                        Spacer()
-                        Text("•••• 5941")
-                        Button("Change") {}
-                            .foregroundColor(.teal)
-                    }
+                VStack(spacing: 20) {
+                    Text("Confirm Payment")
+                        .font(.title2)
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                        .padding(.top)
                     
-                    Divider()
-                    
-                    Text("Bill Details")
-                        .font(.headline)
-                    
-                    Group {
+                    VStack(alignment: .leading, spacing: 15) {
                         HStack {
-                            Text("Consultation fees:")
+                            Image(systemName: "person.fill")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                            Text("Pay with")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
                             Spacer()
-                            Text("Rs.\(Int(consultationFee))")
+                            Text("•••• 5941")
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                            Button("Change") {}
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                         }
                         
-                        HStack {
-                            Text("Booking fee")
-                            Spacer()
-                            Text("Rs.\(Int(bookingFee))")
-                        }
+                        Divider()
                         
-                        if isPremium {
+                        Text("Bill Details")
+                            .font(.headline)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                        
+                        Group {
                             HStack {
-                                Text("Premium fee")
-                                    .foregroundColor(.teal)
+                                Text("Consultation fees:")
                                 Spacer()
-                                Text("Rs.\(Int(premiumFee))")
-                                    .foregroundColor(.teal)
+                                Text("Rs.\(Int(consultationFee))")
+                            }
+                            
+                            HStack {
+                                Text("Booking fee")
+                                Spacer()
+                                Text("Rs.\(Int(bookingFee))")
+                            }
+                            
+                            if isPremium {
+                                HStack {
+                                    Text("Premium fee")
+                                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                                    Spacer()
+                                    Text("Rs.\(Int(premiumFee))")
+                                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
+                                }
                             }
                         }
-                    }
-                    .foregroundColor(.gray)
-                    
-                    Text("This booking will be charged in USD (USD 207) Contact the bank directly for their policies regarding currency conversion and applicable foreign transaction fees.")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .padding(.vertical)
-                    
-                    HStack {
-                        Text("Total")
-                            .font(.headline)
-                        Text("(Incl. VAT)")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        Spacer()
-                        Text("Rs.\(Int(totalAmount))")
-                            .font(.headline)
-                    }
-                }
-                .padding()
-                .background(Color.white)
-                .cornerRadius(12)
-                .shadow(color: .gray.opacity(0.1), radius: 5)
-                .padding()
-                
-                Spacer()
-                
-                if let error = bookingError {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .padding()
-                }
-                
-                // Sliding confirmation button
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 30)
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(height: 60)
-                    
-                    HStack {
-                        Circle()
-                            .fill(Color.teal)
-                            .frame(width: 50, height: 50)
-                            .padding(.leading, 5)
-                            .offset(x: sliderOffset)
-                            .gesture(
-                                DragGesture()
-                                    .onChanged { value in
-                                        if isProcessing { return }
-                                        isDragging = true
-                                        let newOffset = value.translation.width
-                                        sliderOffset = min(max(0, newOffset), maxSliderOffset - 60)
-                                    }
-                                    .onEnded { value in
-                                        if isProcessing { return }
-                                        isDragging = false
-                                        if sliderOffset > maxSliderOffset * 0.6 {
-                                            withAnimation {
-                                                sliderOffset = maxSliderOffset - 60
-                                                processPayment()
-                                            }
-                                        } else {
-                                            withAnimation {
-                                                sliderOffset = 0
-                                            }
-                                        }
-                                    }
-                            )
-                            .overlay(
-                                Group {
-                                    if isProcessing {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    } else {
-                                        Image(systemName: "chevron.right")
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                            )
+                        .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
                         
-                        Spacer()
+                        Text("This booking will be charged in USD (USD 207) Contact the bank directly for their policies regarding currency conversion and applicable foreign transaction fees.")
+                            .font(.caption)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
+                            .padding(.vertical)
+                        
+                        HStack {
+                            Text("Total")
+                                .font(.headline)
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                            Text("(Incl. VAT)")
+                                .font(.caption)
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
+                            Spacer()
+                            Text("Rs.\(Int(totalAmount))")
+                                .font(.headline)
+                                .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .primary)
+                        }
+                    }
+                    .padding()
+                    .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
+                    .cornerRadius(12)
+                    .shadow(color: themeManager.isPatient ? themeManager.currentTheme.accentColor.opacity(0.1) : .gray.opacity(0.1), radius: 5)
+                    .padding()
+                    
+                    Spacer()
+                    
+                    if let error = bookingError {
+                        Text(error)
+                            .foregroundColor(.red)
+                            .padding()
                     }
                     
-                    Text(isProcessing ? "Processing..." : "Swipe to Pay")
-                        .foregroundColor(.teal)
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
+                    // Replace slider with a direct button for easier booking
+                    Button(action: {
+                        if !isProcessing {
+                            processPayment()
+                        }
+                    }) {
+                        Text(isProcessing ? "Processing..." : "Book Now")
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(themeManager.isPatient ? themeManager.currentTheme.accentColor : Color.teal)
+                            .cornerRadius(10)
+                            .padding(.horizontal)
+                    }
+                    .disabled(isProcessing)
+                    .padding(.bottom, 20)
                 }
-                .frame(height: 60)
-                .padding()
-                .disabled(isProcessing)
             }
             .navigationBarItems(trailing: Button("✕") { dismiss() })
             .navigationDestination(isPresented: $navigateToSuccess) {
@@ -180,6 +155,19 @@ struct PaymentFinalView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DismissAllModals"))) { _ in
             dismiss()
+        }
+        .onAppear {
+            // Setup theme change listener
+            setupThemeChangeListener()
+        }
+        .id(refreshID) // Force refresh when ID changes
+    }
+    
+    // Setup listener for theme changes
+    private func setupThemeChangeListener() {
+        NotificationCenter.default.addObserver(forName: .themeChanged, object: nil, queue: .main) { _ in
+            // Generate new ID to force view refresh
+            refreshID = UUID()
         }
     }
     
@@ -205,16 +193,12 @@ struct PaymentFinalView: View {
                     throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "User ID not found"])
                 }
                 
-                print("🔍 Fetching patient record for user ID: \(userId)")
-                
                 // Get patient_id from the patients table - try multiple approaches
                 let patientResults = try await SupabaseController.shared.select(
                     from: "patients",
                     where: "user_id", 
                     equals: userId
                 )
-                
-                print("Found \(patientResults.count) patient records")
                 
                 // Check if we have patients data and extract patient ID
                 var patientId: String? = nil
@@ -223,18 +207,15 @@ struct PaymentFinalView: View {
                     // Try patient_id first
                     if let pid = patientData["patient_id"] as? String, !pid.isEmpty {
                         patientId = pid
-                        print("Using patient_id: \(pid)")
                     } 
                     // Fall back to id field if patient_id is not available
                     else if let pid = patientData["id"] as? String {
                         patientId = pid
-                        print("Using id as patient_id: \(pid)")
                     }
                 }
                 
                 // If we don't have a patient ID from the first query, try direct SQL
                 if patientId == nil {
-                    print("No patient ID found, attempting to query by id directly")
                     // Try one more fallback - get patient records by direct user_id match
                     let directResults = try await SupabaseController.shared.select(
                         from: "patients", 
@@ -245,7 +226,6 @@ struct PaymentFinalView: View {
                     if let firstRecord = directResults.first,
                        let id = firstRecord["id"] as? String {
                         patientId = id
-                        print("Found patient ID via direct SQL: \(id)")
                     }
                 }
                 
@@ -285,7 +265,6 @@ struct PaymentFinalView: View {
                             break
                         }
                     }
-                    print("⚠️ Using formatted start time: \(formattedStartTime)")
                 }
                 
                 // Same for end time
@@ -302,12 +281,7 @@ struct PaymentFinalView: View {
                             break
                         }
                     }
-                    print("⚠️ Using formatted end time: \(formattedEndTime)")
                 }
-                
-                // Log the before/after for debugging
-                print("Time conversion: Raw start=\(rawStartTime) → Database format=\(formattedStartTime)")
-                print("Time conversion: Raw end=\(rawEndTime) → Database format=\(formattedEndTime)")
                 
                 // Format the slot JSON properly - ensure it uses the same formatted times
                 let slotJson = """
@@ -332,14 +306,11 @@ struct PaymentFinalView: View {
                 
                 // Use the insert method (which uses REST API)
                 try await SupabaseController.shared.insert(into: "appointments", values: appointmentData)
-                print("✅ Successfully inserted appointment")
                 
                 // Create and add local appointment object for state management
                 // Convert formatted database times to display format
                 let displayStartTime = formatTimeForDisplay(formattedStartTime)
                 let displayEndTime = formatTimeForDisplay(formattedEndTime)
-                
-                print("💾 Saving appointment with times: DB=(\(formattedStartTime)-\(formattedEndTime)) Display=(\(displayStartTime)-\(displayEndTime))")
                 
                 let appointment = Appointment(
                     id: appointmentId,
@@ -363,19 +334,14 @@ struct PaymentFinalView: View {
                 
                 // Refresh appointments from database
                 if let userId = UserDefaults.standard.string(forKey: "current_user_id") {
-                    print("🔄 Refreshing appointments after booking with user ID: \(userId)")
                     try await HospitalViewModel.shared.fetchAppointments(for: patientId!)
                 }
                 
             } catch {
-                // Handle error with detailed logging
-                print("❌ Error creating appointment: \(error.localizedDescription)")
+                // Handle error
                 DispatchQueue.main.async {
                     isProcessing = false
                     bookingError = "Failed to create appointment: \(error.localizedDescription)"
-                    withAnimation {
-                        sliderOffset = 0
-                    }
                 }
             }
         }

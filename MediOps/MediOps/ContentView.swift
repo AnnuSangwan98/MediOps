@@ -8,6 +8,7 @@ struct ContentView: View {
             RoleSelectionView()
         }
         .environmentObject(navigationState)
+        .environmentObject(ThemeManager.shared)
     }
 }
 

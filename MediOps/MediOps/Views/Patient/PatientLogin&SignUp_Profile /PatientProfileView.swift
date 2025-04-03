@@ -10,213 +10,227 @@ import UIKit
 struct PatientProfileView: View {
     @ObservedObject var profileController: PatientProfileController
     @Environment(\.dismiss) var dismiss
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var isEditing = false
     @State private var showFamilyMemberSheet = false
     @State private var isLoading = false
     @State private var showLogoutAlert = false
     @State private var hasCompletedInitialLoad = false
+    @State private var refreshID = UUID() // For UI refresh on theme change
     
     var body: some View {
         NavigationStack {
-            ScrollView (.vertical, showsIndicators: false) {
-                VStack(spacing: 20) {
-                    if profileController.isLoading || isLoading {
-                        ProgressView("Loading profile...")
-                            .padding(.vertical, 100)
-                    } else if let patient = profileController.patient {
-                        // Profile header with patient image
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .frame(width: 120, height: 120)
-                            .foregroundColor(.teal)
-                            .padding(.top, 15)
-                        
-                        Text(patient.name)
-                            .font(.title)
-                            .fontWeight(.semibold)
-                            .padding(.top, 5)
-                        
-                        HStack(spacing: 70) {
-                            VStack {
-                                Image(systemName: "person.fill")
-                                Text(patient.gender)
-                                    .padding(.horizontal)
+            ZStack {
+                // Use the themed background
+                themeManager.currentTheme.background
+                    .ignoresSafeArea()
+                
+                ScrollView (.vertical, showsIndicators: false) {
+                    VStack(spacing: 20) {
+                        if profileController.isLoading || isLoading {
+                            ProgressView("Loading profile...")
+                                .padding(.vertical, 100)
+                        } else if let patient = profileController.patient {
+                            // Profile header with patient image
+                            Image(systemName: "person.crop.circle.fill")
+                                .resizable()
+                                .frame(width: 120, height: 120)
+                                .foregroundColor(themeManager.currentTheme.accentColor)
+                                .padding(.top, 15)
+                            
+                            Text(patient.name)
+                                .font(.title)
+                                .fontWeight(.semibold)
+                                .foregroundColor(themeManager.currentTheme.primaryText)
+                                .padding(.top, 5)
+                            
+                            HStack(spacing: 70) {
+                                VStack {
+                                    Image(systemName: "person.fill")
+                                        .foregroundColor(themeManager.currentTheme.accentColor)
+                                    Text(patient.gender)
+                                        .foregroundColor(themeManager.currentTheme.primaryText)
+                                        .padding(.horizontal)
+                                }
+                                VStack {
+                                    Image(systemName: "calendar")
+                                        .foregroundColor(themeManager.currentTheme.accentColor)
+                                    Text("\(patient.age)")
+                                        .foregroundColor(themeManager.currentTheme.primaryText)
+                                }
                             }
-                            VStack {
-                                Image(systemName: "calendar")
-                                Text("\(patient.age)")
-                            }
-                        }
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                        .padding(.bottom, 20)
-                        
-                        // Blood group card - displayed as a separate card for better visibility
-                        CardView {
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text("Blood Group")
-                                        .font(.headline)
-                                        .padding(.bottom, 2)
-                                    
-                                    HStack {
-                                        Image(systemName: "drop.fill")
-                                            .foregroundColor(.red)
-                                            .font(.title2)
+                            .font(.subheadline)
+                            .padding(.bottom, 20)
+                            
+                            // Blood group card - displayed as a separate card for better visibility
+                            CardView {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text("Blood Group")
+                                            .font(.headline)
+                                            .padding(.bottom, 2)
                                         
-                                        if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
-                                            Text("Unknown")
-                                                .foregroundColor(.orange)
-                                                .font(.title3)
-                                                .fontWeight(.semibold)
-                                                .onTapGesture {
-                                                    Task {
-                                                        // Run diagnostic on tap if blood group is missing
-                                                        await profileController.inspectPatientsTableSchema()
-                                                        profileController.inspectCurrentPatientObject()
-                                                    }
-                                                }
+                                        HStack {
+                                            Image(systemName: "drop.fill")
+                                                .foregroundColor(.red)
+                                                .font(.title2)
                                             
-                                            // Add fix button
-                                            Menu {
-                                                ForEach(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], id: \.self) { group in
-                                                    Button(group) {
+                                            if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
+                                                Text("Unknown")
+                                                    .foregroundColor(.orange)
+                                                    .font(.title3)
+                                                    .fontWeight(.semibold)
+                                                    .onTapGesture {
                                                         Task {
-                                                            // Fix blood group
-                                                            let success = await profileController.fixBloodGroup(
-                                                                patientId: patient.id,
-                                                                bloodGroup: group
-                                                            )
-                                                            
-                                                            if success {
-                                                                // Reload profile
-                                                                await profileController.loadProfile(userId: patient.userId)
+                                                            // Run diagnostic on tap if blood group is missing
+                                                            await profileController.inspectPatientsTableSchema()
+                                                            profileController.inspectCurrentPatientObject()
+                                                        }
+                                                    }
+                                                
+                                                // Add fix button
+                                                Menu {
+                                                    ForEach(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], id: \.self) { group in
+                                                        Button(group) {
+                                                            Task {
+                                                                // Fix blood group
+                                                                let success = await profileController.fixBloodGroup(
+                                                                    patientId: patient.id,
+                                                                    bloodGroup: group
+                                                                )
+                                                                
+                                                                if success {
+                                                                    // Reload profile
+                                                                    await profileController.loadProfile(userId: patient.userId)
+                                                                }
                                                             }
                                                         }
                                                     }
+                                                } label: {
+                                                    Text("Fix")
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 3)
+                                                        .background(Color.blue)
+                                                        .foregroundColor(.white)
+                                                        .cornerRadius(4)
                                                 }
-                                            } label: {
-                                                Text("Fix")
-                                                    .padding(.horizontal, 8)
-                                                    .padding(.vertical, 3)
-                                                    .background(Color.blue)
-                                                    .foregroundColor(.white)
-                                                    .cornerRadius(4)
+                                            } else {
+                                                Text(patient.bloodGroup)
+                                                    .font(.title3)
+                                                    .fontWeight(.semibold)
                                             }
+                                        }
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.vertical, 5)
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 10)
+                            
+                            VStack(spacing: 16) {
+                                CardView {
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        Text("Personal Information")
+                                            .font(.headline)
+                                            .padding(.bottom, 5)
+                                        InfoRow(title: "Address", value: patient.address ?? "Not provided")
+                                        InfoRow(title: "Phone Number", value: patient.phoneNumber)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                            
+                            Spacer()
+                        } else if let error = profileController.error {
+                            // Error view
+                            VStack(spacing: 20) {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .font(.system(size: 50))
+                                    .foregroundColor(.orange)
+                                
+                                Text("Could not load profile")
+                                    .font(.title3)
+                                    .fontWeight(.medium)
+                                
+                                Text(error.localizedDescription)
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.gray)
+                                    .padding(.horizontal)
+                                
+                                Button("Try Again") {
+                                    Task {
+                                        isLoading = true
+                                        if let userId = UserDefaults.standard.string(forKey: "userId") ?? 
+                                                   UserDefaults.standard.string(forKey: "current_user_id") {
+                                            await profileController.loadProfile(userId: userId)
                                         } else {
-                                            Text(patient.bloodGroup)
-                                                .font(.title3)
-                                                .fontWeight(.semibold)
+                                            // Create a test patient if no user ID is available
+                                            await profileController.createAndInsertTestPatientInSupabase()
                                         }
+                                        isLoading = false
                                     }
                                 }
-                                Spacer()
-                            }
-                            .padding(.vertical, 5)
-                        }
-                        .padding(.horizontal)
-                        .padding(.bottom, 10)
-                        
-                        VStack(spacing: 16) {
-                            CardView {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Text("Personal Information")
-                                        .font(.headline)
-                                        .padding(.bottom, 5)
-                                    InfoRow(title: "Address", value: patient.address ?? "Not provided")
-                                    InfoRow(title: "Phone Number", value: patient.phoneNumber)
-                                }
-                            }
-                        }
-                        .padding(.horizontal)
-                        
-                        Spacer()
-                    } else if let error = profileController.error {
-                        // Error view
-                        VStack(spacing: 20) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.system(size: 50))
-                                .foregroundColor(.orange)
-                            
-                            Text("Could not load profile")
-                                .font(.title3)
-                                .fontWeight(.medium)
-                            
-                            Text(error.localizedDescription)
-                                .multilineTextAlignment(.center)
-                                .foregroundColor(.gray)
-                                .padding(.horizontal)
-                            
-                            Button("Try Again") {
-                                Task {
-                                    isLoading = true
-                                    if let userId = UserDefaults.standard.string(forKey: "userId") ?? 
-                                               UserDefaults.standard.string(forKey: "current_user_id") {
-                                        await profileController.loadProfile(userId: userId)
-                                    } else {
-                                        // Create a test patient if no user ID is available
-                                        await profileController.createAndInsertTestPatientInSupabase()
-                                    }
-                                    isLoading = false
-                                }
-                            }
-                            .padding()
-                            .background(Color.teal)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 100)
-                    } else if isLoading {
-                        // Show a spinner when actively loading
-                        ProgressView("Loading profile data...")
-                            .padding(.vertical, 100)
-                    } else if hasCompletedInitialLoad && profileController.patient == nil {
-                        // Only show this message after we've attempted to load data and failed
-                        VStack(spacing: 20) {
-                            Text("No patient information available")
-                                .font(.title3)
-                                .foregroundColor(.gray)
                                 .padding()
-                            
-                            Button("Create Test Profile") {
-                                Task {
-                                    isLoading = true
-                                    let success = await profileController.createAndInsertTestPatientInSupabase()
-                                    if !success {
-                                        await MainActor.run {
-                                            // Set an error if creation failed
-                                            profileController.error = NSError(
-                                                domain: "PatientProfileError",
-                                                code: 2,
-                                                userInfo: [NSLocalizedDescriptionKey: "Failed to create test profile. Please try logging in again."]
-                                            )
-                                        }
-                                    }
-                                    isLoading = false
-                                }
+                                .background(Color.teal)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
                             }
                             .padding()
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 100)
+                        } else if isLoading {
+                            // Show a spinner when actively loading
+                            ProgressView("Loading profile data...")
+                                .padding(.vertical, 100)
+                        } else if hasCompletedInitialLoad && profileController.patient == nil {
+                            // Only show this message after we've attempted to load data and failed
+                            VStack(spacing: 20) {
+                                Text("No patient information available")
+                                    .font(.title3)
+                                    .foregroundColor(.gray)
+                                    .padding()
+                                
+                                Button("Create Test Profile") {
+                                    Task {
+                                        isLoading = true
+                                        let success = await profileController.createAndInsertTestPatientInSupabase()
+                                        if !success {
+                                            await MainActor.run {
+                                                // Set an error if creation failed
+                                                profileController.error = NSError(
+                                                    domain: "PatientProfileError",
+                                                    code: 2,
+                                                    userInfo: [NSLocalizedDescriptionKey: "Failed to create test profile. Please try logging in again."]
+                                                )
+                                            }
+                                        }
+                                        isLoading = false
+                                    }
+                                }
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
+                            }
+                            .padding(.top, 50)
+                        } else {
+                            // Default placeholder while waiting for data
+                            ProgressView()
+                                .padding(.vertical, 100)
                         }
-                        .padding(.top, 50)
-                    } else {
-                        // Default placeholder while waiting for data
-                        ProgressView()
-                            .padding(.vertical, 100)
                     }
                 }
             }
             .navigationTitle("Patient Profile")
             .navigationBarTitleDisplayMode(.inline)
+            .foregroundColor(themeManager.currentTheme.primaryText)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .foregroundColor(themeManager.currentTheme.accentColor)
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -224,6 +238,7 @@ struct PatientProfileView: View {
                         isEditing = true
                     }
                     .disabled(profileController.patient == nil)
+                    .foregroundColor(themeManager.currentTheme.accentColor)
                 }
             }
             
@@ -283,11 +298,14 @@ struct PatientProfileView: View {
             Text("Are you sure you want to log out?")
         }
         .onAppear {
+            // Setup theme change listener
+            setupThemeChangeListener()
+            
             print("🔍 DEBUG: PatientProfileView appeared, checking data state")
             print("🔍 DEBUG: Patient data: \(profileController.patient != nil ? "Available" : "Not available")")
             print("🔍 DEBUG: Error: \(profileController.error?.localizedDescription ?? "None")")
             
-            // Only attempt to load if we don't already have data
+            // Load patient data
             if profileController.patient == nil && !profileController.isLoading {
                 Task {
                     print("🔄 DEBUG: Starting patient data load")
@@ -338,11 +356,22 @@ struct PatientProfileView: View {
                 }
             }
         }
+        .id(refreshID) // Force refresh when ID changes
+    }
+    
+    // Setup listener for theme changes
+    private func setupThemeChangeListener() {
+        NotificationCenter.default.addObserver(forName: .themeChanged, object: nil, queue: .main) { _ in
+            // Generate new ID to force view refresh
+            refreshID = UUID()
+        }
     }
     
     // CardView reusable style
     struct CardView<Content: View>: View {
         let content: Content
+        @ObservedObject private var themeManager = ThemeManager.shared
+        
         init(@ViewBuilder content: () -> Content) {
             self.content = content()
         }
@@ -351,9 +380,9 @@ struct PatientProfileView: View {
                 content
             }
             .padding()
-            .background(Color(.systemGray6))
+            .background(themeManager.currentTheme.background)
             .cornerRadius(16)
-            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+            .shadow(color: themeManager.currentTheme.accentColor.opacity(0.2), radius: 5, x: 0, y: 2)
         }
     }
     
@@ -361,13 +390,16 @@ struct PatientProfileView: View {
     struct InfoRow: View {
         var title: String
         var value: String
+        @ObservedObject private var themeManager = ThemeManager.shared
+        
         var body: some View {
             HStack {
                 Text(title)
                     .fontWeight(.medium)
+                    .foregroundColor(themeManager.currentTheme.primaryText)
                 Spacer()
                 Text(value)
-                    .foregroundColor(.gray)
+                    .foregroundColor(themeManager.currentTheme.tertiaryAccent)
             }
         }
     }

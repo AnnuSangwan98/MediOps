@@ -5,6 +5,7 @@ struct HospitalCard: View {
     var onEdit: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
     @State private var showMenu = false
+    @ObservedObject private var themeManager = ThemeManager.shared
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -37,7 +38,7 @@ struct HospitalCard: View {
                     HStack {
                         Text(hospital.hospitalName)
                             .font(.headline)
-                            .foregroundColor(.black)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.primaryText : .black)
                         
                         Spacer()
                         
@@ -88,7 +89,7 @@ struct HospitalCard: View {
                     HStack(spacing: 4) {
                         Image(systemName: "person.2.fill")
                             .font(.caption)
-                            .foregroundColor(.teal)
+                            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.accentColor : .teal)
                         
                         if hospital.numberOfDoctors > 0 {
                             Text("\(hospital.numberOfDoctors) Doctors")
@@ -105,7 +106,7 @@ struct HospitalCard: View {
             }
         }
         .padding()
-        .background(Color.white)
+        .background(themeManager.isPatient ? themeManager.currentTheme.background : Color.white)
         .cornerRadius(12)
         .shadow(color: .gray.opacity(0.1), radius: 5)
     }
@@ -113,7 +114,7 @@ struct HospitalCard: View {
     private var fallbackHospitalImage: some View {
         Image(systemName: "building.2.fill")
             .font(.system(size: 40))
-            .foregroundColor(.gray)
+            .foregroundColor(themeManager.isPatient ? themeManager.currentTheme.tertiaryAccent : .gray)
             .frame(width: 80, height: 80)
             .background(Color.gray.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 10))
