@@ -13,6 +13,7 @@ struct UIDoctor: Identifiable {
     var qualification: String
     var license: String
     var address: String // Added address field
+    var maxAppointments: Int = 8 // Default value for max appointments
     
     enum Gender: String, CaseIterable, Identifiable {
         case male = "Male"
@@ -32,6 +33,7 @@ struct UILabAdmin: Identifiable {
     var dateOfBirth: Date
     var experience: Int
     var qualification: String
+    var license: String? // License number field
     var address: String // Added address field
     
     enum Gender: String, CaseIterable, Identifiable {
@@ -92,14 +94,126 @@ struct AdminDashboardCard: View {
     }
 }
 
+// MARK: - Blood Donation Card
+struct BloodDonationCard: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 15) {
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.red)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Blood Donation Request")
+                        .font(.headline)
+                        .foregroundColor(.black)
+                    
+                    Text("Send requests to registered donors")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .lineLimit(2)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
+            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
+        }
+    }
+}
+
+// MARK: - Blood Donors List Card
+struct BloodDonorsListCard: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 15) {
+                Image(systemName: "doc.text.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.blue)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("All Blood Donors")
+                        .font(.headline)
+                        .foregroundColor(.black)
+                    
+                    Text("View all registered blood donors")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
+            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
+        }
+    }
+}
+
+// MARK: - Analytics Card
+struct AnalyticsCard: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 15) {
+                Image(systemName: "chart.bar.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.purple)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Hospital Revenue")
+                        .font(.headline)
+                        .foregroundColor(.black)
+                    
+                    Text("View appointment revenue analytics")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
+            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
+        }
+    }
+}
+
 // MARK: - Modified Admin Home View
 struct AdminHomeView: View {
     @State private var showAddDoctor = false
     @State private var showAddLabAdmin = false
     @State private var showProfile = false
+    @State private var showBloodDonationRequest = false
+    @State private var showAllBloodDonors = false
+    @State private var showHospitalAnalytics = false
     @State private var recentActivities: [UIActivity] = []
     @State private var doctors: [UIDoctor] = []
     @State private var labAdmins: [UILabAdmin] = []
+    @State private var isLoggedIn = false
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    
+    private let adminController = AdminController.shared
     
     private var doctorCount: Int {
         doctors.count
@@ -134,27 +248,45 @@ struct AdminHomeView: View {
                     .padding(.horizontal)
                     .padding(.top)
                     
-                    // Quick action
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 15) {
-                        AdminStatCard(
-                            title: "Doctors",
-                            value: "\(doctorCount)",
-                            icon: "stethoscope",
-                            doctors: $doctors
-                        )
-                        AdminStatCard(
-                            title: "Lab Admins",
-                            value: "\(labAdminCount)",
-                            icon: "flask.fill",
-                            labAdmins: $labAdmins
-                        )
+                    if isLoggedIn {
+                        // Quick action
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 15) {
+                            AdminStatCard(
+                                title: "Doctors",
+                                value: "\(doctorCount)",
+                                icon: "stethoscope",
+                                doctors: $doctors
+                            )
+                            AdminStatCard(
+                                title: "Lab Admins",
+                                value: "\(labAdminCount)",
+                                icon: "flask.fill",
+                                labAdmins: $labAdmins
+                            )
+                        }
+                        .padding(.horizontal)
+                        
+                        // Add Blood Donation Card here
+                        BloodDonationCard {
+                            showBloodDonationRequest = true
+                        }
+                        .padding(.horizontal)
+                        
+                        // Add Blood Donors List Card
+                        BloodDonorsListCard {
+                            showAllBloodDonors = true
+                        }
+                        .padding(.horizontal)
+                        
+                        // Add Analytics Card
+                        AnalyticsCard {
+                            showHospitalAnalytics = true
+                        }
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
-                    
-                    
                     
                     // Recent Activity
                     VStack(alignment: .leading, spacing: 15) {
@@ -190,6 +322,23 @@ struct AdminHomeView: View {
             }
             .navigationBarBackButtonHidden(true)
             .navigationBarHidden(true)
+            .task {
+                await checkLoginAndFetchData()
+            }
+            .overlay {
+                if isLoading {
+                    ProgressView("Loading...")
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(10)
+                        .shadow(radius: 5)
+                }
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
             .sheet(isPresented: $showAddDoctor) {
                 AddDoctorView { activity in
                     recentActivities.insert(activity, at: 0)
@@ -206,9 +355,72 @@ struct AdminHomeView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showBloodDonationRequest) {
+                BloodDonationRequestView()
+            }
+            .sheet(isPresented: $showAllBloodDonors) {
+                AllBloodDonorsView()
+            }
+            .sheet(isPresented: $showHospitalAnalytics) {
+                HospitalAnalyticsView()
+            }
             .sheet(isPresented: $showProfile) {
                 HospitalAdminProfileView()
             }
+        }
+    }
+    
+    private func checkLoginAndFetchData() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        // Check if user is logged in by verifying hospital_id in UserDefaults
+        if let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") {
+            isLoggedIn = true
+            
+            // Activity logging has been disabled
+            
+            do {
+                // Fetch doctors
+                let fetchedDoctors = try await adminController.getDoctorsByHospitalAdmin(hospitalAdminId: hospitalId)
+                doctors = fetchedDoctors.map { doctor in
+                    UIDoctor(
+                        id: doctor.id,
+                        fullName: doctor.name,
+                        specialization: doctor.specialization,
+                        email: doctor.email,
+                        phone: doctor.contactNumber ?? "",
+                        gender: .male, // Default value
+                        dateOfBirth: Date(), // Default value
+                        experience: doctor.experience,
+                        qualification: doctor.qualifications.joined(separator: ", "),
+                        license: doctor.licenseNo,
+                        address: doctor.addressLine
+                    )
+                }
+                
+                // Fetch lab admins
+                let fetchedLabAdmins = try await adminController.getLabAdmins(hospitalAdminId: hospitalId)
+                labAdmins = fetchedLabAdmins.map { labAdmin in
+                    UILabAdmin(
+                        originalId: labAdmin.id,
+                        fullName: labAdmin.name,
+                        email: labAdmin.email,
+                        phone: labAdmin.contactNumber ?? "",
+                        gender: .male, // Default value
+                        dateOfBirth: labAdmin.dateOfBirth ?? Date(), // Use actual DOB from Supabase with fallback
+                        experience: labAdmin.experience, // Use actual experience from Supabase
+                        qualification: labAdmin.department,
+                        license: labAdmin.licenseNo,
+                        address: labAdmin.address
+                    )
+                }
+            } catch {
+                errorMessage = "Failed to fetch data: \(error.localizedDescription)"
+                showError = true
+            }
+        } else {
+            isLoggedIn = false
         }
     }
 }

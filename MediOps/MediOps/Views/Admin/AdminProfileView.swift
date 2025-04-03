@@ -155,19 +155,61 @@ struct AdminProfileView: View {
             return
         }
         
-        // In a real app, call the authentication service to change the password
-        // For now, we'll simulate a successful password change
+        // Get the current admin's ID from UserDefaults
+        guard let adminId = UserDefaults.standard.string(forKey: "current_admin_id") else {
+            resetErrorMessage = "Admin session not found. Please login again."
+            showResetError = true
+            return
+        }
         
-        // Clear the form
-        currentPassword = ""
-        newPassword = ""
-        confirmPassword = ""
-        
-        // Close the password reset sheet
-        showResetPasswordSheet = false
-        
-        // Show success message
-        showResetSuccess = true
+        // Call the AdminController to reset the password
+        Task {
+            do {
+                print("PROFILE: Attempting password reset for admin ID: \(adminId)")
+                
+                // Use the AdminController's method which handles both tables
+                try await AdminController.shared.resetHospitalAdminPassword(
+                    adminId: adminId,
+                    currentPassword: currentPassword,
+                    newPassword: newPassword
+                )
+                
+                // Clear the form and show success message
+                await MainActor.run {
+                    currentPassword = ""
+                    newPassword = ""
+                    confirmPassword = ""
+                    
+                    // Close the password reset sheet
+                    showResetPasswordSheet = false
+                    
+                    // Show success message
+                    showResetSuccess = true
+                }
+                
+            } catch let error as AdminError {
+                await MainActor.run {
+                    switch error {
+                    case .invalidPassword(let message):
+                        if message.contains("Current password is incorrect") {
+                            resetErrorMessage = "Wrong current password"
+                        } else {
+                            resetErrorMessage = message
+                        }
+                    case .adminNotFound:
+                        resetErrorMessage = "Admin account not found. Please login again."
+                    default:
+                        resetErrorMessage = "Failed to reset password: \(error.localizedDescription)"
+                    }
+                    showResetError = true
+                }
+            } catch {
+                await MainActor.run {
+                    resetErrorMessage = "Failed to reset password: \(error.localizedDescription)"
+                    showResetError = true
+                }
+            }
+        }
     }
     
     private func isValidPassword(_ password: String) -> Bool {

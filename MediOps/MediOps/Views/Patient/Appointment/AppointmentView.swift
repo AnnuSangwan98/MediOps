@@ -32,6 +32,43 @@ struct AppointmentView: View {
         return inputDate < today
     }
     
+    // Function to check if a time slot is in the past
+    private func isSlotInPast(_ slot: DoctorAvailabilityModels.AppointmentSlot) -> Bool {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // If the date is in the past, the slot is in the past
+        if isDateInPast(slot.date) {
+            return true
+        }
+        
+        // If it's today, check the time
+        if calendar.isDateInToday(slot.date) {
+            // Parse the slot's raw start time
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "HH:mm"
+            
+            // Convert substring to string before using it
+            let timeString = String(slot.rawStartTime.prefix(5))
+            
+            if let slotTime = timeFormatter.date(from: timeString) {
+                // Create a date by combining today's date with the slot time
+                var components = calendar.dateComponents([.year, .month, .day], from: now)
+                let slotTimeComponents = calendar.dateComponents([.hour, .minute], from: slotTime)
+                components.hour = slotTimeComponents.hour
+                components.minute = slotTimeComponents.minute
+                
+                if let slotDateTime = calendar.date(from: components) {
+                    // Add a buffer of 15 minutes
+                    let bufferedNow = calendar.date(byAdding: .minute, value: 15, to: now) ?? now
+                    return slotDateTime < bufferedNow
+                }
+            }
+        }
+        
+        return false
+    }
+    
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
@@ -70,11 +107,15 @@ struct AppointmentView: View {
                         LazyVGrid(columns: Array(repeating: .init(.flexible(), spacing: 10), count: 2), spacing: 15) {
                             ForEach(availableSlots) { slot in
                                 let isSelected = selectedSlot?.id == slot.id
+                                let isPast = isSlotInPast(slot)
+                                let isFullyBooked = slot.remainingSlots == 0
                                 
                                 Button(action: {
-                                    print("🕒 SELECTED SLOT - Display: \(slot.startTime) to \(slot.endTime)")
-                                    print("🕒 SELECTED SLOT - Raw: \(slot.rawStartTime) to \(slot.rawEndTime)")
-                                    selectedSlot = slot
+                                    if !isPast && !isFullyBooked {
+                                        print("🕒 SELECTED SLOT - Display: \(slot.startTime) to \(slot.endTime)")
+                                        print("🕒 SELECTED SLOT - Raw: \(slot.rawStartTime) to \(slot.rawEndTime)")
+                                        selectedSlot = slot
+                                    }
                                 }) {
                                     VStack(spacing: 4) {
                                         Text("\(slot.startTime) - \(slot.endTime)")
@@ -84,19 +125,21 @@ struct AppointmentView: View {
                                         
                                         Text("\(slot.remainingSlots)/\(slot.totalSlots) slots".localized)
                                             .font(.system(size: 11))
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(isFullyBooked ? .red : .secondary)
                                     }
                                     .padding(.vertical, 12)
                                     .padding(.horizontal, 8)
                                     .frame(maxWidth: .infinity)
                                     .background(isSelected ? Color.teal : Color.white)
-                                    .foregroundColor(isSelected ? .white : .black)
+                                    .foregroundColor(isSelected ? .white : (isFullyBooked ? .gray : .black))
                                     .cornerRadius(8)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8)
-                                            .stroke(Color.teal, lineWidth: 1)
+                                            .stroke(isFullyBooked ? Color.gray : Color.teal, lineWidth: 1)
                                     )
+                                    .opacity(isPast || isFullyBooked ? 0.5 : 1.0) // Blur effect for past or fully booked slots
                                 }
+                                .disabled(isPast || isFullyBooked) // Disable past or fully booked slots
                             }
                         }
                         .padding()
@@ -226,6 +269,21 @@ struct AppointmentView: View {
         let calendar = Calendar.current
         
         do {
+            // First, fetch the doctor's max_appointments limit
+            let supabase = SupabaseController.shared
+            let doctorResults = try await supabase.select(
+                from: "doctors",
+                where: "id",
+                equals: doctor.id
+            )
+            
+            guard let doctorData = doctorResults.first,
+                  let maxAppointments = doctorData["max_appointments"] as? Int else {
+                errorMessage = "Could not fetch doctor's appointment limit"
+                isLoading = false
+                return
+            }
+            
             // Get the day of week
             let weekday = calendar.component(.weekday, from: date)
             let dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
@@ -243,7 +301,7 @@ struct AppointmentView: View {
             dateFormatter.dateFormat = "yyyy-MM-dd"
             let dateString = dateFormatter.string(from: date)
             
-            let supabase = SupabaseController.shared
+            // Fetch all upcoming appointments for this doctor and date
             let existingAppointments = try await supabase.select(
                 from: "appointments",
                 where: "doctor_id",
@@ -254,11 +312,15 @@ struct AppointmentView: View {
                 return appointmentDate == dateString && status == "upcoming"
             }
             
+            print("📊 Found \(existingAppointments.count) existing appointments for date: \(dateString)")
+            
             // Count appointments per slot time
             var slotCounts: [String: Int] = [:]
             for appointment in existingAppointments {
                 if let startTime = appointment["slot_start_time"] as? String {
-                    slotCounts[startTime, default: 0] += 1
+                    let standardizedTime = standardizeRawTime(startTime)
+                    slotCounts[standardizedTime] = (slotCounts[standardizedTime] ?? 0) + 1
+                    print("📝 Slot \(standardizedTime) has \(slotCounts[standardizedTime]!) bookings")
                 }
             }
             
@@ -278,45 +340,50 @@ struct AppointmentView: View {
                 let startTime = String(components[0]).trimmingCharacters(in: .whitespaces)
                 let endTime = String(components[1]).trimmingCharacters(in: .whitespaces)
                 
-                // Calculate max and remaining slots
-                let maxSlots = availability.maxNormalPatients + availability.maxPremiumPatients
-                let bookedSlots = slotCounts[startTime] ?? 0
-                let remainingSlots = maxSlots - bookedSlots
+                // Standardize the time format for comparison
+                let standardizedStartTime = standardizeRawTime(startTime)
                 
-                // Only include slot if there are available slots remaining
-                if remainingSlots > 0 {
-                    // Generate a deterministic integer ID based on the components
-                    let timeComponents = startTime.split(separator: ":").map { String($0) }
-                    let hour = Int(timeComponents[0]) ?? 0
-                    let minute = Int(timeComponents[1]) ?? 0
-                    let dayComponent = calendar.component(.day, from: date)
-                    let monthComponent = calendar.component(.month, from: date)
-                    
-                    // Create a unique integer ID combining date and time components
-                    let slotId = (dayComponent * 10000) + (monthComponent * 100) + hour
-                    
-                    // Format time properly for 12-hour format with AM/PM
-                    let displayStartTime = formatTimeWithAMPM(startTime)
-                    let displayEndTime = formatTimeWithAMPM(endTime)
-                    
-                    // Store standardized raw times for database (24-hour format)
-                    let rawStartTime = standardizeRawTime(startTime)
-                    let rawEndTime = standardizeRawTime(endTime)
-                    
-                    let slot = DoctorAvailabilityModels.AppointmentSlot(
-                        id: slotId,
-                        doctorId: doctor.id,
-                        date: date,
-                        startTime: displayStartTime,
-                        endTime: displayEndTime,
-                        rawStartTime: rawStartTime,
-                        rawEndTime: rawEndTime,
-                        isAvailable: true,
-                        remainingSlots: remainingSlots,
-                        totalSlots: maxSlots
-                    )
-                    availableSlots.append(slot)
-                }
+                // Calculate remaining slots for this specific time slot
+                let bookedSlots = slotCounts[standardizedStartTime] ?? 0
+                let remainingSlots = maxAppointments - bookedSlots
+                
+                print("🕒 Processing slot \(standardizedStartTime): booked=\(bookedSlots), remaining=\(remainingSlots), max=\(maxAppointments)")
+                
+                // Create slot even if no remaining slots (to show as fully booked)
+                let timeComponents = startTime.split(separator: ":").map { String($0) }
+                let hour = Int(timeComponents[0]) ?? 0
+                let minute = Int(timeComponents[1]) ?? 0
+                let dayComponent = calendar.component(.day, from: date)
+                let monthComponent = calendar.component(.month, from: date)
+                
+                // Create a unique integer ID combining date and time components
+                let slotId = (dayComponent * 10000) + (monthComponent * 100) + hour
+                
+                // Format time properly for 12-hour format with AM/PM
+                let displayStartTime = formatTimeWithAMPM(startTime)
+                let displayEndTime = formatTimeWithAMPM(endTime)
+                
+                // Store standardized raw times for database (24-hour format)
+                let rawStartTime = standardizeRawTime(startTime)
+                let rawEndTime = standardizeRawTime(endTime)
+                
+                let isSlotAvailable = remainingSlots > 0
+                
+                let slot = DoctorAvailabilityModels.AppointmentSlot(
+                    id: slotId,
+                    doctorId: doctor.id,
+                    date: date,
+                    startTime: displayStartTime,
+                    endTime: displayEndTime,
+                    rawStartTime: rawStartTime,
+                    rawEndTime: rawEndTime,
+                    isAvailable: isSlotAvailable,
+                    remainingSlots: remainingSlots,
+                    totalSlots: maxAppointments
+                )
+                
+                print("🎫 Created slot: \(displayStartTime)-\(displayEndTime) (Available: \(isSlotAvailable), Remaining: \(remainingSlots))")
+                availableSlots.append(slot)
             }
             
             // Sort slots by start time using 24-hour format raw times for accurate sorting

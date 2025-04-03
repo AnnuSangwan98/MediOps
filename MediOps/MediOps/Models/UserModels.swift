@@ -136,8 +136,10 @@ enum Models {
         let contactNumber: String?
         let emergencyContactNumber: String?
         let doctorStatus: String
+        let dateOfBirth: Date?
         let createdAt: Date
         let updatedAt: Date
+        let maxAppointments: Int
         
         enum CodingKeys: String, CodingKey {
             case id
@@ -156,8 +158,10 @@ enum Models {
             case contactNumber = "contact_number"
             case emergencyContactNumber = "emergency_contact_number"
             case doctorStatus = "doctor_status"
+            case dateOfBirth = "dob"
             case createdAt = "created_at"
             case updatedAt = "updated_at"
+            case maxAppointments = "max_appointments"
         }
     }
 
@@ -170,6 +174,10 @@ enum Models {
         let contactNumber: String
         let department: String
         let address: String
+        let qualification: [String]?
+        let licenseNo: String?
+        let dateOfBirth: Date?
+        let experience: Int
         let createdAt: Date
         let updatedAt: Date
         
@@ -181,6 +189,10 @@ enum Models {
             case contactNumber = "contact_number"
             case department
             case address = "Address"
+            case qualification
+            case licenseNo = "license_no"
+            case dateOfBirth = "dob"
+            case experience
             case createdAt = "created_at"
             case updatedAt = "updated_at"
         }
