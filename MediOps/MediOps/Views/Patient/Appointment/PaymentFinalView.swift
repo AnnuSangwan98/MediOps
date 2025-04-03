@@ -205,7 +205,7 @@ struct PaymentFinalView: View {
                 
                 print("🔍 Fetching patient record for user ID: \(userId)")
                 
-                // Get patient_id from the patients table - try multiple approaches
+                // Get patient_id (PAT format) from the patients table
                 let patientResults = try await SupabaseController.shared.select(
                     from: "patients",
                     where: "user_id", 
@@ -214,16 +214,10 @@ struct PaymentFinalView: View {
                 
                 print("Found \(patientResults.count) patient records")
                 
-                // Check if we have patients data and extract patient ID
-                var patientId: String? = nil
-                
-                if let patientData = patientResults.first {
-                    // Try different possible keys for patient ID
-                    patientId = patientData["id"] as? String ?? patientData["patient_id"] as? String
-                }
-                
-                guard let patientId = patientId else {
-                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not find patient record"])
+                // Extract the PAT format patient_id
+                guard let patientData = patientResults.first,
+                      let patientId = patientData["patient_id"] as? String else {
+                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not find PAT format patient_id"])
                 }
                 
                 print("📝 Creating appointment for patient: \(patientId)")
@@ -281,10 +275,10 @@ struct PaymentFinalView: View {
                 
                 let currentFilledSlots = doctorData["filled_slots"] as? Int ?? 0
                 
-                // Create appointment in database
+                // Create appointment in database using PAT format patient_id
                 let appointmentData: [String: Any] = [
                     "id": appointmentId,
-                    "patient_id": patientId,
+                    "patient_id": patientId,  // Using PAT format ID from patients table
                     "doctor_id": doctor.id,
                     "hospital_id": doctor.hospitalId,
                     "appointment_date": dateString,
@@ -297,9 +291,9 @@ struct PaymentFinalView: View {
                     "slot": slotJson
                 ]
                 
-                // Use the insert method (which uses REST API)
+                // Insert appointment with PAT format patient_id
                 try await SupabaseController.shared.insert(into: "appointments", values: appointmentData)
-                print("✅ Successfully inserted appointment")
+                print("✅ Successfully inserted appointment with patient_id: \(patientId)")
                 
                 // Update the filled_slots count in the doctors table
                 let updatedFilledSlots = currentFilledSlots + 1
@@ -312,7 +306,6 @@ struct PaymentFinalView: View {
                 print("✅ Updated filled_slots count to \(updatedFilledSlots)")
                 
                 // Create and add local appointment object for state management
-                // Convert formatted database times to display format
                 let displayStartTime = formatTimeForDisplay(formattedStartTime)
                 let displayEndTime = formatTimeForDisplay(formattedEndTime)
                 
@@ -332,20 +325,15 @@ struct PaymentFinalView: View {
                 // Add to appointment manager
                 await MainActor.run {
                     AppointmentManager.shared.addAppointment(appointment)
-                    
-                    // Success! Navigate to success screen
                     isProcessing = false
                     navigateToSuccess = true
                 }
                 
-                // Refresh appointments from database
-                if let userId = UserDefaults.standard.string(forKey: "current_user_id") {
-                    print("🔄 Refreshing appointments after booking with user ID: \(userId)")
-                    try await HospitalViewModel.shared.fetchAppointments(for: patientId)
-                }
+                // Refresh appointments from database using PAT format ID
+                print("🔄 Refreshing appointments for patient_id: \(patientId)")
+                try await HospitalViewModel.shared.fetchAppointments(for: patientId)
                 
             } catch {
-                // Handle error with detailed logging
                 print("❌ Error creating appointment: \(error.localizedDescription)")
                 DispatchQueue.main.async {
                     isProcessing = false
