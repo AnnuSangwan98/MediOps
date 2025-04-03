@@ -85,7 +85,7 @@ class HospitalViewModel: ObservableObject {
     @Published var selectedSpecialization: String? = nil
     @Published var doctors: [HospitalDoctor] = []
     @Published var selectedDoctor: HospitalDoctor? = nil
-    @Published var availableSlots: [AppointmentModels.DoctorAvailabilitySlot] = []
+    @Published var availableSlots: [DoctorAvailabilityModels.AppointmentSlot] = []
     @Published var isLoading = false
     @Published var error: Error? = nil
     
@@ -344,40 +344,147 @@ class HospitalViewModel: ObservableObject {
             dateFormatter.dateFormat = "yyyy-MM-dd"
             let dateString = dateFormatter.string(from: date)
             
-            let results = try await supabase.select(
-                from: "doctor_availability",
+            print("📆 Fetching slots for doctor \(doctor.name) (ID: \(doctor.id)) on \(dateString)")
+            
+            // Get the day of week for useful debugging
+            let calendar = Calendar.current
+            let weekday = calendar.component(.weekday, from: date)
+            let dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+            let dayName = dayNames[weekday - 1]
+            print("📅 Selected day is \(dayName)")
+            
+            // Query the doctor_availability_efficient table
+            let availabilityResults = try await supabase.select(
+                from: "doctor_availability_efficient",
                 where: "doctor_id",
                 equals: doctor.id
             )
             
-            self.availableSlots = results.compactMap { data in
-                guard let id = data["id"] as? Int,
-                      let doctorId = data["doctor_id"] as? String,
-                      let date = dateFormatter.date(from: data["date"] as? String ?? ""),
-                      let startTime = data["slot_time"] as? String,
-                      let endTime = data["slot_end_time"] as? String
-                else { 
-                    print("Failed to parse doctor availability data: \(data)")
-                    return nil 
+            print("📊 Found \(availabilityResults.count) availability records for doctor")
+            
+            guard let availabilityData = availabilityResults.first else {
+                print("❌ No schedule found for doctor")
+                await MainActor.run {
+                    self.availableSlots = []
+                    self.isLoading = false
                 }
-                
-                // Default to true for isAvailable field
-                let isAvailable = true
-                
-                return AppointmentModels.DoctorAvailabilitySlot(
-                    id: id,
-                    doctorId: doctorId,
-                    date: date,
-                    startTime: startTime,
-                    endTime: endTime,
-                    isAvailable: isAvailable
-                )
+                return
             }
-            isLoading = false
+            
+            // Debug: Print raw availability data
+            print("📋 Raw availability data: \(availabilityData)")
+            
+            // Parse the availability data
+            let availability = try DoctorAvailabilityModels.EfficientAvailability(
+                id: availabilityData["id"] as? Int ?? 0,
+                doctorId: availabilityData["doctor_id"] as? String ?? "",
+                hospitalId: availabilityData["hospital_id"] as? String ?? "",
+                weeklySchedule: parseWeeklySchedule(availabilityData["weekly_schedule"]),
+                effectiveFrom: parseDate(availabilityData["effective_from"]) ?? Date(),
+                effectiveUntil: parseDate(availabilityData["effective_until"]),
+                maxNormalPatients: availabilityData["max_normal_patients"] as? Int ?? 5,
+                maxPremiumPatients: availabilityData["max_premium_patients"] as? Int ?? 2,
+                createdAt: parseDate(availabilityData["created_at"]),
+                updatedAt: parseDate(availabilityData["updated_at"])
+            )
+            
+            // Debug: Print parsed weekly schedule 
+            if let weeklySchedule = availability.weeklySchedule[dayName] {
+                print("📅 \(dayName) schedule has \(weeklySchedule.count) time slots")
+                let availableSlots = weeklySchedule.filter { $0.value == true }
+                print("  - Available slots: \(availableSlots.count)")
+                print("  - Unavailable slots: \(weeklySchedule.count - availableSlots.count)")
+                
+                // Print some sample slots
+                if !availableSlots.isEmpty {
+                    print("  - Sample available slots: \(Array(availableSlots.keys.prefix(3)))")
+                }
+            } else {
+                print("❌ No schedule defined for \(dayName)")
+            }
+            
+            // Get available slots for the date
+            let availableTimeSlots = availability.getAvailableSlots(for: date)
+            print("🕒 getAvailableSlots returned \(availableTimeSlots.count) slots")
+            
+            // Debug: Print available time slots
+            for (index, slot) in availableTimeSlots.enumerated() {
+                print("  \(index+1). \(slot.startTime) - \(slot.endTime)")
+            }
+            
+            // Get existing appointments for this date to check slot capacity
+            let existingAppointments = try await supabase.select(
+                from: "appointments",
+                where: "doctor_id",
+                equals: doctor.id
+            ).filter { appointment in
+                guard let appointmentDate = appointment["appointment_date"] as? String,
+                      let status = appointment["status"] as? String else {
+                    return false
+                }
+                return appointmentDate == dateString && status == "upcoming"
+            }
+            
+            print("📝 Found \(existingAppointments.count) existing appointments for this date")
+            
+            // Count appointments per slot
+            var slotCounts: [String: Int] = [:]
+            for appointment in existingAppointments {
+                if let startTime = appointment["slot_start_time"] as? String {
+                    slotCounts[startTime, default: 0] += 1
+                    print("  - Slot \(startTime) has \(slotCounts[startTime]!) bookings")
+                }
+            }
+            
+            // Convert available time slots to AppointmentSlot
+            var availableSlots: [DoctorAvailabilityModels.AppointmentSlot] = []
+            var slotId = 1
+            
+            for (index, timeSlot) in availableTimeSlots.enumerated() {
+                let currentCount = slotCounts[timeSlot.startTime] ?? 0
+                let maxPatientsPerSlot = availability.maxNormalPatients + availability.maxPremiumPatients
+                let remainingSlots = maxPatientsPerSlot - currentCount
+                
+                print("  • Slot \(timeSlot.startTime)-\(timeSlot.endTime): \(remainingSlots)/\(maxPatientsPerSlot) available")
+                
+                if remainingSlots > 0 {
+                    let formattedStartTime = DoctorAvailabilityModels.AppointmentSlot.formatTimeForDisplay(timeSlot.startTime)
+                    let formattedEndTime = DoctorAvailabilityModels.AppointmentSlot.formatTimeForDisplay(timeSlot.endTime)
+                    
+                    let slot = DoctorAvailabilityModels.AppointmentSlot(
+                        id: slotId,
+                        doctorId: doctor.id,
+                    date: date,
+                        startTime: formattedStartTime,
+                        endTime: formattedEndTime,
+                        rawStartTime: timeSlot.startTime,
+                        rawEndTime: timeSlot.endTime,
+                        isAvailable: true,
+                        remainingSlots: remainingSlots,
+                        totalSlots: maxPatientsPerSlot
+                    )
+                    availableSlots.append(slot)
+                    print("    ✓ Added to available slots")
+                    slotId += 1
+                } else {
+                    print("    ✗ Skipped (fully booked)")
+                }
+            }
+            
+            print("📊 Final available slots: \(availableSlots.count)")
+            
+            await MainActor.run {
+                self.availableSlots = availableSlots
+                self.isLoading = false
+            }
+            
         } catch {
+            print("❌ Error fetching available slots: \(error)")
+            await MainActor.run {
             self.error = error
-            isLoading = false
-            print("Error fetching available slots: \(error)")
+                self.availableSlots = []
+                self.isLoading = false
+            }
         }
     }
     
@@ -442,219 +549,133 @@ class HospitalViewModel: ObservableObject {
             // Refresh appointments from database
             if let userId = UserDefaults.standard.string(forKey: "current_user_id") {
                 print("🔄 Refreshing appointments after booking with user ID: \(userId)")
+                try await fetchAppointments(for: userId)
                 
-                // We should get the patient ID again and use that to fetch appointments
-                let patientResults = try await supabase.select(
-                    from: "patients",
-                    where: "user_id",
-                    equals: userId
-                )
-                
-                if let patientData = patientResults.first, let fetchedPatientId = patientData["id"] as? String {
-                    try await fetchAppointments(for: fetchedPatientId)
-                } else {
-                    print("⚠️ Could not find patient ID after booking - using provided patient ID")
-                    try await fetchAppointments(for: patientId)
-                }
-            } else {
-                print("⚠️ No user ID found when trying to refresh appointments")
+                // Refresh available slots to update counts
+                await fetchAvailableSlots(for: date)
             }
+            
         } catch {
-            print("Error booking appointment: \(error)")
-            print("Error details: \(String(describing: error))")
+            print("Error booking appointment: \(error.localizedDescription)")
             throw error
         }
     }
     
     /// Fetch appointments for a patient
     func fetchAppointments(for patientId: String) async throws {
-        // Skip if patient ID is invalid
-        if patientId.isEmpty {
-            print("❌ Invalid patient ID")
-            throw NSError(domain: "AppointmentError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid patient ID"])
-        }
-            
-        print("🔍 Fetching appointments for patient_id: \(patientId)")
+        print("🔄 Fetching appointments for patient: \(patientId)")
         
-        // First, try to get the correct patient ID if we were given a user ID
-        var finalPatientId = patientId
-        if patientId.count > 10 { // Likely a user ID
-            do {
-                let patientResults = try await supabase.select(
-                    from: "patients",
-                    where: "user_id",
+        let supabase = SupabaseController.shared
+        
+        // Use select with filter conditions instead of raw SQL
+        let results = try await supabase.select(
+            from: "appointments",
+            where: "patient_id",
                     equals: patientId
-                )
-                if let patientData = patientResults.first,
-                   let pid = patientData["patient_id"] as? String {
-                    finalPatientId = pid
-                    print("✅ Resolved patient_id: \(finalPatientId) from user_id: \(patientId)")
-                }
-            } catch {
-                print("⚠️ Error resolving patient ID: \(error.localizedDescription)")
-                // Continue with original patientId
-            }
+        ).filter { appointment in
+            guard let status = appointment["status"] as? String else { return false }
+            return ["completed", "cancelled", "missed"].contains(status)
         }
         
-        print("🔍 Fetching appointments using patient_id: \(finalPatientId)")
+        print("📋 Found \(results.count) appointments")
         
-        do {
-            // First fetch appointments
-            let appointmentResults = try await supabase.select(
-                from: "appointments",
-                where: "patient_id",
-                equals: finalPatientId
-            )
-            
-            print("📊 Found \(appointmentResults.count) appointments")
-            
-            // Use temporary arrays to build new appointment lists
-            var appointmentsArray: [Appointment] = []
-            var modelAppointments: [AppointmentModels.Appointment] = []
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
-            
-            // Process each appointment
-            for appointmentData in appointmentResults {
+        // Clear existing data first
+        await MainActor.run {
+            self.upcomingAppointments = []
+            self.completedAppointments = []
+            self.missedAppointments = []
+        }
+        
+        var completed: [Appointment] = []
+        var cancelled: [Appointment] = []
+        var missed: [Appointment] = []
+        
+        for appointmentData in results {
                 guard let id = appointmentData["id"] as? String,
                       let doctorId = appointmentData["doctor_id"] as? String,
                       let hospitalId = appointmentData["hospital_id"] as? String,
-                      let dateString = appointmentData["appointment_date"] as? String,
-                      let statusString = appointmentData["status"] as? String else {
-                    print("⚠️ Skipping appointment due to missing required fields")
+                  let appointmentDateStr = appointmentData["appointment_date"] as? String,
+                  let statusStr = appointmentData["status"] as? String else {
+                print("⚠️ Skipping appointment with missing required data")
                     continue
                 }
                 
-                // Only process upcoming or cancelled appointments
-                let status = statusString.lowercased()
-                guard status == "upcoming" || status == "cancelled" else {
-                    continue
-                }
-                
-                // Parse appointment date
-                guard let date = dateFormatter.date(from: dateString) else {
-                    print("⚠️ Could not parse date: \(dateString)")
-                    continue
-                }
-                
-                // Fetch doctor details
-                do {
-                    let doctorResults = try await supabase.select(
-                        from: "doctors",
-                        where: "id",
-                        equals: doctorId
-                    )
-                    
-                    guard let doctorData = doctorResults.first,
-                          let doctorName = doctorData["name"] as? String,
-                          let specialization = doctorData["specialization"] as? String else {
-                        print("⚠️ Could not fetch doctor details for appointment: \(id)")
+            print("📝 Processing appointment: \(id) with status: \(statusStr)")
+            
+            // Get raw time from the appointment data
+            let rawStartTime = appointmentData["slot_start_time"] as? String ?? "12:00:00"
+            let rawEndTime = appointmentData["slot_end_time"] as? String ?? "13:00:00"
+            
+            // Format the times for display
+            let displayStartTime = formatSlotTime(rawStartTime)
+            let displayEndTime = formatSlotTime(rawEndTime)
+            
+            // Parse appointment date
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            
+            guard let appointmentDate = dateFormatter.date(from: appointmentDateStr) else {
+                print("⚠️ Could not parse appointment date: \(appointmentDateStr)")
                         continue
                     }
                     
-                    // Create doctor object
-                    let doctor = HospitalDoctor(
-                        id: doctorId,
-                        hospitalId: hospitalId,
-                        name: doctorName,
-                        specialization: specialization,
-                        qualifications: doctorData["qualifications"] as? [String] ?? [],
-                        licenseNo: doctorData["license_no"] as? String ?? "",
-                        experience: doctorData["experience"] as? Int ?? 0,
-                        email: doctorData["email"] as? String ?? "",
-                        contactNumber: doctorData["contact_number"] as? String,
-                        doctorStatus: doctorData["doctor_status"] as? String ?? "active",
-                        rating: doctorData["rating"] as? Double ?? 4.0,
-                        consultationFee: doctorData["consultation_fee"] as? Double ?? 0.0
-                    )
-                    
-                    // Get slot times
-                    let slotStartTime = appointmentData["slot_start_time"] as? String
-                    let slotEndTime = appointmentData["slot_end_time"] as? String
-                    
-                    // Create time components for the appointment time
-                    var timeComponents = DateComponents()
-                    if let startTime = slotStartTime?.split(separator: ":"),
-                       startTime.count >= 2,
-                       let hour = Int(startTime[0]),
-                       let minute = Int(startTime[1]) {
-                        timeComponents.hour = hour
-                        timeComponents.minute = minute
-                    }
-                    
-                    // Combine date with time
-                    let calendar = Calendar.current
-                    let appointmentTime = calendar.date(bySettingHour: timeComponents.hour ?? 0,
-                                                     minute: timeComponents.minute ?? 0,
-                                                     second: 0,
-                                                     of: date) ?? date
-                    
-                    // Create appointment objects
-                    let appointmentStatus = AppointmentStatus(rawValue: status) ?? .upcoming
-                    
+            // Create the appointment time as a Date object for sorting
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "HH:mm:ss" 
+            let timeDate = timeFormatter.date(from: rawStartTime) ?? Date()
+            
+            // Fetch doctor details
+            if let doctor = await fetchDoctor(id: doctorId, hospitalId: hospitalId) {
+                let status = AppointmentStatus(rawValue: statusStr.lowercased()) ?? .upcoming
                     let appointment = Appointment(
                         id: id,
-                        doctor: doctor.toModelDoctor(),
-                        date: date,
-                        time: appointmentTime,
-                        status: appointmentStatus,
-                        startTime: slotStartTime,
-                        endTime: slotEndTime,
-                        isPremium: appointmentData["is_premium"] as? Bool ?? false  // Get is_premium from Supabase
-                    )
-                    
-                    let modelAppointment = AppointmentModels.Appointment(
-                        id: id,
-                        patientId: finalPatientId,
-                        doctorId: doctorId,
-                        hospitalId: hospitalId,
-                        availabilitySlotId: 0,
-                        appointmentDate: date,
-                        bookingTime: appointmentTime,
-                        status: convertToModelStatus(appointmentStatus),
-                        createdAt: Date(),
-                        updatedAt: Date(),
-                        reason: appointmentData["reason"] as? String ?? "Medical consultation"
-                    )
-                    
-                    appointmentsArray.append(appointment)
-                    modelAppointments.append(modelAppointment)
-                    print("✅ Successfully processed appointment: \(id)")
-                    
-                } catch {
-                    print("⚠️ Error fetching doctor details for appointment \(id): \(error.localizedDescription)")
-                    continue
+                    doctor: doctor,
+                    date: appointmentDate,
+                    time: timeDate,
+                    status: status,
+                    startTime: displayStartTime,
+                    endTime: displayEndTime,
+                    isPremium: appointmentData["is_premium"] as? Bool ?? false
+                )
+                
+                // Categorize the appointment based on status
+                switch status {
+                case .completed:
+                    completed.append(appointment)
+                    print("✅ Added completed appointment: \(id)")
+                case .cancelled:
+                    cancelled.append(appointment)
+                    print("❌ Added cancelled appointment: \(id)")
+                case .missed:
+                    missed.append(appointment)
+                    print("⚠️ Added missed appointment: \(id)")
+                default:
+                    break
                 }
             }
-            
-            // Sort appointments by date and time
-            appointmentsArray.sort { (a1, a2) -> Bool in
-                if a1.date == a2.date {
-                    return a1.time < a2.time
-                }
-                return a1.date < a2.date
-            }
-            
-            modelAppointments.sort { (a1, a2) -> Bool in
-                if a1.appointmentDate == a2.appointmentDate {
-                    return a1.bookingTime < a2.bookingTime
-                }
-                return a1.appointmentDate < a2.appointmentDate
-            }
-            
-            // Update the appointments list on the main thread
-            await MainActor.run {
-                AppointmentManager.shared.setAppointments(appointmentsArray)
-                self.appointments = modelAppointments
-                print("✅ Updated appointments: \(appointmentsArray.count) local, \(modelAppointments.count) model")
-            }
-            
-        } catch {
-            print("❌ Error fetching appointments: \(error.localizedDescription)")
-            throw NSError(domain: "AppointmentError", 
-                        code: 2, 
-                        userInfo: [NSLocalizedDescriptionKey: "Failed to fetch appointments: \(error.localizedDescription)"])
         }
+        
+        // Sort appointments by date/time in descending order
+        let sortByDateTime: (Appointment, Appointment) -> Bool = { (a1, a2) in
+            if Calendar.current.isDate(a1.date, inSameDayAs: a2.date) {
+                return a1.time > a2.time // Changed to descending order
+            }
+            return a1.date > a2.date // Changed to descending order
+        }
+        
+        completed.sort(by: sortByDateTime)
+        cancelled.sort(by: sortByDateTime)
+        missed.sort(by: sortByDateTime)
+        
+            await MainActor.run {
+            self.completedAppointments = completed + cancelled
+            self.missedAppointments = missed
+        }
+        
+        print("✅ Successfully processed appointments:")
+        print("   - Completed: \(completed.count)")
+        print("   - Cancelled: \(cancelled.count)")
+        print("   - Missed: \(missed.count)")
     }
     
     // MARK: - Helper Methods
@@ -900,6 +921,9 @@ class HospitalViewModel: ObservableObject {
     // MARK: - Published Properties
     @Published var availableCities: [String] = []
     @Published var appointments: [AppointmentModels.Appointment] = []
+    @Published var upcomingAppointments: [Appointment] = []
+    @Published var completedAppointments: [Appointment] = []
+    @Published var missedAppointments: [Appointment] = []
     
     // Helper function to convert between status types
     private func convertToModelStatus(_ status: AppointmentStatus) -> AppointmentModels.Status {
@@ -910,8 +934,8 @@ class HospitalViewModel: ObservableObject {
             return .completed
         case .cancelled:
             return .cancelled
-        // If we need to handle .missed, we can default to cancelled
-        // since AppointmentStatus doesn't have a .missed case
+        case .missed:
+            return .missed
         }
     }
     
@@ -933,8 +957,10 @@ class HospitalViewModel: ObservableObject {
             return .upcoming
         case .completed:
             return .completed
-        case .cancelled, .missed:
-            return .cancelled  // Since AppointmentStatus doesn't have a missed case
+        case .cancelled:
+            return .cancelled
+        case .missed:
+            return .missed
         }
     }
     
@@ -1000,6 +1026,189 @@ class HospitalViewModel: ObservableObject {
             }
         } else {
             print("❌ No user ID found in UserDefaults")
+        }
+    }
+    
+    // MARK: - Helper Parsing Functions
+    
+    /// Parse weekly schedule data from JSON
+    private func parseWeeklySchedule(_ data: Any?) -> [String: [String: Bool]] {
+        print("🔍 Parsing weekly schedule: \(String(describing: data))")
+        
+        // If data is already in correct format, use it directly
+        if let scheduleData = data as? [String: [String: Bool]] {
+            print("✅ Weekly schedule is already in correct format")
+            return scheduleData
+        }
+        
+        // If data is a string (JSON string), try to parse it
+        if let jsonString = data as? String {
+            print("🔄 Weekly schedule is a JSON string, attempting to parse")
+            
+            if let jsonData = jsonString.data(using: .utf8) {
+                do {
+                    if let parsed = try JSONSerialization.jsonObject(with: jsonData) as? [String: [String: Bool]] {
+                        print("✅ Successfully parsed JSON string to dictionary")
+                        return parsed
+                    }
+                    
+                    // Handle possible nested structure
+                    if let parsed = try JSONSerialization.jsonObject(with: jsonData) as? [String: [String: Any]] {
+                        print("🔄 Parsed to [String: [String: Any]], converting to [String: [String: Bool]]")
+                        
+                        var result: [String: [String: Bool]] = [:]
+                        for (day, slots) in parsed {
+                            var daySlots: [String: Bool] = [:]
+                            for (time, value) in slots {
+                                if let boolValue = value as? Bool {
+                                    daySlots[time] = boolValue
+                                } else if let intValue = value as? Int {
+                                    daySlots[time] = intValue != 0
+                                } else if let stringValue = value as? String {
+                                    daySlots[time] = stringValue.lowercased() == "true"
+                                }
+                            }
+                            result[day] = daySlots
+                        }
+                        return result
+                    }
+                } catch {
+                    print("❌ Error parsing JSON string: \(error)")
+                }
+            }
+        }
+        
+        // If it's a dictionary with different structure, try to convert it
+        if let dictData = data as? [String: Any] {
+            print("🔄 Weekly schedule is a dictionary with different structure")
+            
+            var result: [String: [String: Bool]] = [:]
+            let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+            
+            for day in days {
+                if let dayData = dictData[day] as? [String: Any] {
+                    var daySlots: [String: Bool] = [:]
+                    
+                    for (slot, value) in dayData {
+                        if let boolValue = value as? Bool {
+                            daySlots[slot] = boolValue
+                        } else if let intValue = value as? Int {
+                            daySlots[slot] = intValue != 0
+                        } else if let stringValue = value as? String {
+                            daySlots[slot] = stringValue.lowercased() == "true"
+                        }
+                    }
+                    
+                    result[day] = daySlots
+                }
+            }
+            
+            if !result.isEmpty {
+                print("✅ Successfully converted dictionary to required format")
+                return result
+            }
+        }
+        
+        print("⚠️ Failed to parse weekly schedule data")
+        return [:]
+    }
+    
+    /// Parse date string from Supabase into Date object
+    private func parseDate(_ dateString: Any?) -> Date? {
+        guard let dateStr = dateString as? String else {
+            return nil
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+        
+        if let date = dateFormatter.date(from: dateStr) {
+            return date
+        }
+        
+        // Try alternative format
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        return dateFormatter.date(from: dateStr)
+    }
+    
+    // MARK: - Helper Methods for time formatting
+    
+    /// Format a database time string (HH:mm:ss) to display format (h:mm a)
+    func formatSlotTime(_ rawTime: String) -> String {
+        // Create input formatter for parsing the raw time
+        let inputFormatter = DateFormatter()
+        inputFormatter.dateFormat = "HH:mm:ss"
+        
+        // Create output formatter for display format
+        let outputFormatter = DateFormatter()
+        outputFormatter.dateFormat = "h:mm a"
+        
+        // Try to parse using the standard format first
+        if let date = inputFormatter.date(from: rawTime) {
+            return outputFormatter.string(from: date)
+        }
+        
+        // If standard format fails, try alternative formats
+        let alternativeFormats = ["HH:mm", "h:mm a", "hh:mm a", "h:mm"]
+        for format in alternativeFormats {
+            inputFormatter.dateFormat = format
+            if let date = inputFormatter.date(from: rawTime) {
+                return outputFormatter.string(from: date)
+            }
+        }
+        
+        // If all parsing attempts fail, return the original string with a warning
+        print("⚠️ Warning: Could not parse time format: \(rawTime)")
+        return rawTime
+    }
+    
+    // Add the fetchDoctor function if it's missing
+    private func fetchDoctor(id doctorId: String, hospitalId: String) async -> Models.Doctor? {
+        do {
+            let results = try await supabase.select(
+                from: "doctors",
+                where: "id",
+                equals: doctorId
+            )
+            
+            guard let doctorData = results.first,
+                  let name = doctorData["name"] as? String,
+                  let specialization = doctorData["specialization"] as? String else {
+                print("⚠️ Could not find doctor with ID: \(doctorId)")
+                return nil
+            }
+            
+            // Get additional fields with defaults if missing
+            let qualifications = doctorData["qualifications"] as? [String] ?? []
+            let licenseNo = doctorData["license_no"] as? String ?? ""
+            let experience = doctorData["experience"] as? Int ?? 0
+            let email = doctorData["email"] as? String ?? ""
+            let contactNumber = doctorData["contact_number"] as? String
+            let status = doctorData["doctor_status"] as? String ?? "active"
+            
+            return Models.Doctor(
+                id: doctorId,
+                userId: nil,
+                name: name,
+                specialization: specialization,
+                hospitalId: hospitalId,
+                qualifications: qualifications,
+                licenseNo: licenseNo,
+                experience: experience,
+                addressLine: "",
+                state: "",
+                city: "",
+                pincode: "",
+                email: email,
+                contactNumber: contactNumber,
+                emergencyContactNumber: nil,
+                doctorStatus: status,
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+        } catch {
+            print("⚠️ Error fetching doctor details: \(error.localizedDescription)")
+            return nil
         }
     }
 }

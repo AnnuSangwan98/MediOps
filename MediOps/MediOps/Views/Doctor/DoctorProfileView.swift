@@ -4,34 +4,95 @@ import SwiftUI
 import class MediOps.SupabaseController
 import struct MediOps.RoleSelectionView
 
-// Doctor Availability Model
-// struct DoctorAvailability {
-//     let id: Int
-//     let doctorId: String
-//     let hospitalId: String
-//     let weeklySchedule: WeeklySchedule
-//     let effectiveFrom: Date
-//     let effectiveUntil: Date?
-//     let maxNormalPatients: Int
-//     let maxPremiumPatients: Int
-// }
+// Doctor Schedule Model (for profile view)
+struct DoctorSchedule {
+    let id: Int
+    let doctorId: String
+    let hospitalId: String
+    let weeklySchedule: [String: [String: Bool]]
+    let effectiveFrom: Date
+    let effectiveUntil: Date?
+    let maxNormalPatients: Int
+    let maxPremiumPatients: Int
+    let createdAt: Date?
+    let updatedAt: Date?
+    
+    // Convert to EfficientAvailability
+    func toEfficientAvailability() -> DoctorAvailabilityModels.EfficientAvailability {
+        return DoctorAvailabilityModels.EfficientAvailability(
+            id: id,
+            doctorId: doctorId,
+            hospitalId: hospitalId,
+            weeklySchedule: weeklySchedule,
+            effectiveFrom: effectiveFrom,
+            effectiveUntil: effectiveUntil,
+            maxNormalPatients: maxNormalPatients,
+            maxPremiumPatients: maxPremiumPatients,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+    
+    // Create from EfficientAvailability
+    static func fromEfficientAvailability(_ availability: DoctorAvailabilityModels.EfficientAvailability) -> DoctorSchedule {
+        return DoctorSchedule(
+            id: availability.id,
+            doctorId: availability.doctorId,
+            hospitalId: availability.hospitalId,
+            weeklySchedule: availability.weeklySchedule,
+            effectiveFrom: availability.effectiveFrom,
+            effectiveUntil: availability.effectiveUntil,
+            maxNormalPatients: availability.maxNormalPatients,
+            maxPremiumPatients: availability.maxPremiumPatients,
+            createdAt: availability.createdAt,
+            updatedAt: availability.updatedAt
+        )
+    }
+}
 
 // Weekly Schedule Structure
-// struct WeeklySchedule: Codable {
-//     var monday: [TimeSlot]?
-//     var tuesday: [TimeSlot]?
-//     var wednesday: [TimeSlot]?
-//     var thursday: [TimeSlot]?
-//     var friday: [TimeSlot]?
-//     var saturday: [TimeSlot]?
-//     var sunday: [TimeSlot]?
+struct WeeklySchedule: Codable {
+    var monday: [TimeSlot]?
+    var tuesday: [TimeSlot]?
+    var wednesday: [TimeSlot]?
+    var thursday: [TimeSlot]?
+    var friday: [TimeSlot]?
+    var saturday: [TimeSlot]?
+    var sunday: [TimeSlot]?
     
-//     struct TimeSlot: Codable, Identifiable {
-//         let start: String
-//         let end: String
-//         var id: String { start + end }
-//     }
-// }
+    struct TimeSlot: Codable, Identifiable {
+        let start: String
+        let end: String
+        var id: String { start + end }
+    }
+    
+    // Convert to dictionary format
+    func toDictionary() -> [String: [String: Bool]] {
+        var result: [String: [String: Bool]] = [:]
+        
+        let daysAndSlots: [(String, [TimeSlot]?)] = [
+            ("monday", monday),
+            ("tuesday", tuesday),
+            ("wednesday", wednesday),
+            ("thursday", thursday),
+            ("friday", friday),
+            ("saturday", saturday),
+            ("sunday", sunday)
+        ]
+        
+        for (day, slots) in daysAndSlots {
+            if let timeSlots = slots {
+                var daySlots: [String: Bool] = [:]
+                for slot in timeSlots {
+                    daySlots["\(slot.start)-\(slot.end)"] = true
+                }
+                result[day] = daySlots
+            }
+        }
+        
+        return result
+    }
+}
 
 struct DoctorProfileView: View {
     @Environment(\.dismiss) private var dismiss
@@ -43,7 +104,8 @@ struct DoctorProfileView: View {
     @State private var showPasswordSheet = false
     @State private var showLogoutAlert = false
     @State private var navigateToRoleSelection = false
-    @State private var availability: DoctorAvailability?
+    @State private var schedule: DoctorSchedule?
+    @State private var availability: DoctorAvailabilityModels.EfficientAvailability?
     
     // Editable fields (moved to EditDoctorProfileView)
     
@@ -263,12 +325,12 @@ struct DoctorProfileView: View {
                             VStack(alignment: .leading, spacing: 15) {
                                 SectionTitle(title: "Weekly Schedule")
                                 
-                                if let availability = availability {
+                                if let schedule = availability {
                                     // Days selector with horizontal scroll
                                     ScrollView(.horizontal, showsIndicators: false) {
                                         LazyHStack(spacing: 15) {
                                             ForEach(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], id: \.self) { day in
-                                                let slots = getTimeSlotsForDay(day.lowercased(), in: availability.weeklySchedule)
+                                                let slots = getTimeSlotsForDay(day.lowercased(), in: schedule.weeklySchedule)
                                                 DayScheduleCard(day: day, slots: slots)
                                             }
                                         }
@@ -417,51 +479,71 @@ struct DoctorProfileView: View {
         }
         
         do {
-            // Fetch doctor data from Supabase
-            let supabase = SupabaseController.shared
-            let result = try await supabase.select(
-                from: "doctors",
-                where: "id",
-                equals: doctorId
-            )
+            print("🔍 Starting doctor profile refresh for ID: \(doctorId)")
             
-            guard let doctorData = result.first else {
-                await MainActor.run {
-                    errorMessage = "Doctor profile not found"
-                    showError = true
-                    isLoading = false
+            // Create a task group to fetch all data concurrently
+            await withTaskGroup(of: Void.self) { group in
+                // Fetch doctor data
+                group.addTask {
+                    do {
+                        // Fetch doctor data from Supabase
+                        let supabase = SupabaseController.shared
+                        let result = try await supabase.select(
+                            from: "doctors",
+                            where: "id",
+                            equals: doctorId
+                        )
+                        
+                        guard let doctorData = result.first else {
+                            await MainActor.run {
+                                errorMessage = "Doctor profile not found"
+                                showError = true
+                            }
+                            return
+                        }
+                        
+                        // Parse the doctor data
+                        let doctorProfile = try parseDoctorData(doctorData)
+                        
+                        // Update UI
+                        await MainActor.run {
+                            self.doctor = doctorProfile
+                            print("✅ Doctor profile loaded: \(doctorProfile.name)")
+                        }
+                    } catch {
+                        await MainActor.run {
+                            errorMessage = "Failed to load doctor profile: \(error.localizedDescription)"
+                            showError = true
+                            print("❌ Doctor profile fetch error: \(error.localizedDescription)")
+                        }
+                    }
                 }
-                return
+                
+                // Fetch schedule data
+                group.addTask {
+                    do {
+                        try await fetchDoctorSchedule()
+                        print("✅ Schedule fetching completed")
+                    } catch {
+                        print("❌ Schedule fetch error: \(error.localizedDescription)")
+                    }
+                }
+                
+                // Wait for all tasks to complete
+                await group.waitForAll()
             }
             
-            // Parse the doctor data
-            let doctorProfile = try parseDoctorData(doctorData)
-            
-            // Fetch availability data
-            let availabilityResult = try await supabase.select(
-                from: "doctor_availability_efficient",
-                where: "doctor_id",
-                equals: doctorId
-            )
-            
-            // Create a variable to store the availability
-            var doctorAvailability: DoctorAvailability? = nil
-            
-            if let availabilityData = availabilityResult.first {
-                doctorAvailability = try parseAvailabilityData(availabilityData)
-            }
-            
-            // Update UI
+            // Update UI status
             await MainActor.run {
-                self.doctor = doctorProfile
-                self.availability = doctorAvailability
                 isLoading = false
+                print("✅ All profile data refreshed successfully")
             }
         } catch {
             await MainActor.run {
                 errorMessage = "Failed to load profile: \(error.localizedDescription)"
                 showError = true
                 isLoading = false
+                print("❌ Profile refresh error: \(error.localizedDescription)")
             }
         }
     }
@@ -532,119 +614,276 @@ struct DoctorProfileView: View {
         )
     }
     
-    private func parseAvailabilityData(_ data: [String: Any]) throws -> DoctorAvailability {
-        guard let id = data["id"] as? Int,
-              let doctorId = data["doctor_id"] as? String,
-              let hospitalId = data["hospital_id"] as? String,
-              let weeklySchedule = data["weekly_schedule"] as? [String: [String: Bool]],
-              let maxNormalPatients = data["max_normal_patients"] as? Int,
-              let maxPremiumPatients = data["max_premium_patients"] as? Int else {
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid availability data"])
+    private func fetchDoctorSchedule() async throws {
+        guard let doctorId = UserDefaults.standard.string(forKey: "current_doctor_id") else { 
+            print("⚠️ No doctor ID found in UserDefaults")
+            return 
         }
         
-        // Parse dates
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
+        print("🔍 Fetching schedule for doctor: \(doctorId)")
         
-        guard let effectiveFromStr = data["effective_from"] as? String,
-              let effectiveFrom = dateFormatter.date(from: effectiveFromStr) else {
-            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid effective_from date"])
-        }
-        
-        var effectiveUntil: Date? = nil
-        if let effectiveUntilStr = data["effective_until"] as? String {
-            effectiveUntil = dateFormatter.date(from: effectiveUntilStr)
-        }
-        
-        // Create DoctorAvailability using the convenience initializer
-        return DoctorAvailability(
-            doctorId: doctorId,
-            weeklySchedule: weeklySchedule,
-            maxNormalPatients: maxNormalPatients,
-            maxPremiumPatients: maxPremiumPatients
+        let supabase = SupabaseController.shared
+        let results = try await supabase.select(
+            from: "doctor_availability_efficient",
+            columns: "id, doctor_id, hospital_id, weekly_schedule, effective_from, effective_until, max_normal_patients, max_premium_patients, created_at, updated_at",
+            where: "doctor_id",
+            equals: doctorId
         )
+        
+        print("📊 Found \(results.count) schedule records")
+        
+        guard let scheduleData = results.first else {
+            print("❌ No schedule found for doctor")
+            return
+        }
+        
+        print("🧩 Schedule data: \(scheduleData)")
+        
+        let doctorSchedule = try parseScheduleData(scheduleData)
+        
+        await MainActor.run {
+            self.schedule = doctorSchedule
+            self.availability = doctorSchedule.toEfficientAvailability()
+            print("✅ Schedule successfully loaded")
+        }
     }
     
-    private func parseWeeklySchedule(_ data: [String: Any]) throws -> [String: [String: Bool]] {
-        var schedule: [String: [String: Bool]] = [:]
+    private func parseScheduleData(_ data: [String: Any]) throws -> DoctorSchedule {
+        print("📝 Parsing schedule data: \(data)")
         
-        let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        // Extract required fields
+        guard let id = data["id"] as? Int else {
+            print("❌ Missing or invalid id")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing or invalid ID"])
+        }
         
-        for day in days {
-            // Debug print to see the raw data
-            print("Raw data for \(day): \(data[day] ?? "nil")")
+        guard let doctorId = data["doctor_id"] as? String else {
+            print("❌ Missing or invalid doctor_id")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing or invalid doctor ID"])
+        }
+        
+        guard let hospitalId = data["hospital_id"] as? String else {
+            print("❌ Missing or invalid hospital_id")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing or invalid hospital ID"])
+        }
+        
+        // Extract and process weekly schedule
+        var weeklySchedule: [String: [String: Bool]] = [:]
+        
+        // Debug the weekly_schedule field type
+        print("🔍 weekly_schedule type: \(type(of: data["weekly_schedule"]))")
+        print("🔍 weekly_schedule value: \(String(describing: data["weekly_schedule"]))")
+        
+        if let scheduleData = data["weekly_schedule"] as? [String: [String: Bool]] {
+            // Already in the right format
+            print("✅ weekly_schedule is already in the correct format")
+            weeklySchedule = scheduleData
+        } else if let scheduleDict = data["weekly_schedule"] as? [String: Any] {
+            // Try to convert nested dictionary
+            print("🔄 Converting nested dictionary to weekly schedule format")
             
-            // Handle the new schedule format where each day is a dictionary of time slots
-            if let dayData = data[day] as? [String: Bool] {
-                schedule[day] = dayData
-            } else {
-                schedule[day] = [:]
+            for (day, slots) in scheduleDict {
+                if let daySlots = slots as? [String: Bool] {
+                    weeklySchedule[day] = daySlots
+                } else if let daySlots = slots as? [String: Any] {
+                    // Handle case where values might not be boolean
+                    var convertedSlots: [String: Bool] = [:]
+                    for (time, value) in daySlots {
+                        if let boolValue = value as? Bool {
+                            convertedSlots[time] = boolValue
+                        } else {
+                            // Convert non-boolean values (like numbers) to boolean
+                            convertedSlots[time] = true
+                        }
+                    }
+                    weeklySchedule[day] = convertedSlots
+                }
+            }
+            
+            print("✅ Converted weekly schedule: \(weeklySchedule)")
+        } else if let jsonString = data["weekly_schedule"] as? String {
+            // Try to parse as JSON string
+            print("🔄 Trying to parse weekly_schedule from JSON string")
+            
+            do {
+                if let jsonData = jsonString.data(using: .utf8) {
+                    if let parsedJson = try JSONSerialization.jsonObject(with: jsonData) as? [String: [String: Bool]] {
+                        weeklySchedule = parsedJson
+                        print("✅ Successfully parsed weekly_schedule from string")
+                    } else if let parsedDict = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                        // Try to convert the dictionary
+                        for (day, slots) in parsedDict {
+                            if let daySlots = slots as? [String: Bool] {
+                                weeklySchedule[day] = daySlots
+                            } else if let daySlots = slots as? [String: Any] {
+                                var convertedSlots: [String: Bool] = [:]
+                                for (time, value) in daySlots {
+                                    if let boolValue = value as? Bool {
+                                        convertedSlots[time] = boolValue
+                                    } else {
+                                        // Convert non-boolean values to boolean
+                                        convertedSlots[time] = true
+                                    }
+                                }
+                                weeklySchedule[day] = convertedSlots
+                            }
+                        }
+                        print("✅ Converted JSON to weekly schedule format")
+                    }
+                }
+            } catch {
+                print("❌ JSON parsing error: \(error)")
             }
         }
         
-        return schedule
-    }
-    
-    // Helper function to format time for storage
-    private func formatTimeForStorage(_ timeString: String) -> String {
-        // Handle cases like "0:00" or "9:00"
-        let components = timeString.split(separator: ":")
-        guard components.count == 2 else { return timeString }
-        
-        let hour = Int(components[0]) ?? 0
-        let minute = String(components[1])  // Convert SubString to String
-        
-        // Pad hour with leading zero if needed
-        return String(format: "%02d:%@", hour, minute)
-    }
-    
-    // Helper function to convert time to 24-hour format for sorting
-    private func convertTo24Hour(_ timeString: String) -> String {
-        let components = timeString.split(separator: ":")
-        guard components.count == 2 else { return timeString }
-        
-        let hour = Int(components[0]) ?? 0
-        return String(format: "%02d:%@", hour, String(components[1]))  // Convert SubString to String
-    }
-    
-    private func formatTime(_ timeString: String) -> String {
-        let inputFormatter = DateFormatter()
-        inputFormatter.dateFormat = "HH:mm"
-        
-        if let date = inputFormatter.date(from: timeString) {
-            let outputFormatter = DateFormatter()
-            outputFormatter.dateFormat = "h:mm a"
-            return outputFormatter.string(from: date)
+        // If we still don't have a valid schedule, create an empty one
+        if weeklySchedule.isEmpty {
+            print("⚠️ Using empty schedule as fallback")
+            weeklySchedule = [
+                "monday": [:], "tuesday": [:], "wednesday": [:],
+                "thursday": [:], "friday": [:], "saturday": [:], "sunday": [:]
+            ]
         }
         
-        // If parsing fails, try to handle edge case of "0:00"
-        if timeString == "0:00" {
-            return "12:00 AM"
+        // Make sure all days are represented
+        let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        for day in days {
+            if weeklySchedule[day] == nil {
+                weeklySchedule[day] = [:]
+            }
         }
         
-        return timeString
+        // Parse dates
+        var effectiveFrom = Date()
+        if let dateString = data["effective_from"] as? String {
+            print("📅 Parsing effective_from date: \(dateString)")
+            
+            // Try ISO8601 format first
+            if let date = ISO8601DateFormatter().date(from: dateString) {
+                effectiveFrom = date
+            } else {
+                // Try other date formats
+                let dateFormatter = DateFormatter()
+                for format in ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", "yyyy-MM-dd", "yyyy-MM-dd'T'HH:mm:ssZ"] {
+                    dateFormatter.dateFormat = format
+                    if let date = dateFormatter.date(from: dateString) {
+                        effectiveFrom = date
+                        break
+                    }
+                }
+            }
+        }
+        
+        var effectiveUntil: Date? = nil
+        if let untilStr = data["effective_until"] as? String {
+            print("📅 Parsing effective_until date: \(untilStr)")
+            
+            // Try ISO8601 format first
+            if let date = ISO8601DateFormatter().date(from: untilStr) {
+                effectiveUntil = date
+            } else {
+                // Try other date formats
+                let dateFormatter = DateFormatter()
+                for format in ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", "yyyy-MM-dd", "yyyy-MM-dd'T'HH:mm:ssZ"] {
+                    dateFormatter.dateFormat = format
+                    if let date = dateFormatter.date(from: untilStr) {
+                        effectiveUntil = date
+                        break
+                    }
+                }
+            }
+        }
+        
+        var createdAt: Date? = nil
+        if let createdAtStr = data["created_at"] as? String {
+            print("📅 Parsing created_at date: \(createdAtStr)")
+            
+            // Try ISO8601 format first
+            if let date = ISO8601DateFormatter().date(from: createdAtStr) {
+                createdAt = date
+            } else {
+                // Try other date formats
+                let dateFormatter = DateFormatter()
+                for format in ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", "yyyy-MM-dd", "yyyy-MM-dd'T'HH:mm:ssZ"] {
+                    dateFormatter.dateFormat = format
+                    if let date = dateFormatter.date(from: createdAtStr) {
+                        createdAt = date
+                        break
+                    }
+                }
+            }
+        }
+        
+        var updatedAt: Date? = nil
+        if let updatedAtStr = data["updated_at"] as? String {
+            print("📅 Parsing updated_at date: \(updatedAtStr)")
+            
+            // Try ISO8601 format first
+            if let date = ISO8601DateFormatter().date(from: updatedAtStr) {
+                updatedAt = date
+            } else {
+                // Try other date formats
+                let dateFormatter = DateFormatter()
+                for format in ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", "yyyy-MM-dd", "yyyy-MM-dd'T'HH:mm:ssZ"] {
+                    dateFormatter.dateFormat = format
+                    if let date = dateFormatter.date(from: updatedAtStr) {
+                        updatedAt = date
+                        break
+                    }
+                }
+            }
+        }
+        
+        // Get patient limits with defaults
+        let maxNormalPatients = data["max_normal_patients"] as? Int ?? 5
+        let maxPremiumPatients = data["max_premium_patients"] as? Int ?? 2
+        
+        print("✅ Successfully parsed schedule data")
+        
+        return DoctorSchedule(
+            id: id,
+            doctorId: doctorId,
+            hospitalId: hospitalId,
+            weeklySchedule: weeklySchedule,
+            effectiveFrom: effectiveFrom,
+            effectiveUntil: effectiveUntil,
+            maxNormalPatients: maxNormalPatients,
+            maxPremiumPatients: maxPremiumPatients,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
     }
     
-    // Add helper functions at the bottom of the struct
-    private func getTimeSlotsForDay(_ day: String, in schedule: [String: [String: Bool]]) -> [TimeSlot] {
-        guard let daySchedule = schedule[day.lowercased()] else {
+    // Update the getTimeSlotsForDay function to better handle the schedule format
+    private func getTimeSlotsForDay(_ day: String, in schedule: [String: [String: Bool]]) -> [WeeklySchedule.TimeSlot] {
+        print("🔍 Getting time slots for day: \(day) in schedule")
+        
+        guard let daySlots = schedule[day] else {
+            print("⚠️ No slots found for \(day)")
             return []
         }
         
-        // Convert the schedule dictionary to TimeSlot array
-        return daySchedule.compactMap { timeRange, isAvailable -> TimeSlot? in
-            guard isAvailable else { return nil }
-            
+        print("📊 Found \(daySlots.count) slots for \(day): \(daySlots.keys)")
+        
+        // Filter to only include active slots (value is true)
+        let activeSlots = daySlots.filter { $0.value }
+        
+        return activeSlots.keys.compactMap { timeRange in
             let components = timeRange.split(separator: "-")
-            guard components.count == 2 else { return nil }
+            guard components.count == 2 else {
+                print("⚠️ Invalid time range format: \(timeRange)")
+                return nil
+            }
             
             let start = String(components[0])
             let end = String(components[1])
             
-            return TimeSlot(start: start, end: end)
+            print("✅ Added slot: \(start) - \(end)")
+            return WeeklySchedule.TimeSlot(start: start, end: end)
         }.sorted { slot1, slot2 in
-            let time1 = convertTo24Hour(slot1.start)
-            let time2 = convertTo24Hour(slot2.start)
+            // Sort by start time
+            let time1 = slot1.start
+            let time2 = slot2.start
             return time1 < time2
         }
     }
@@ -1307,7 +1546,7 @@ struct ChangePasswordView: View {
 // DayScheduleCard - New component for displaying a day's schedule
 struct DayScheduleCard: View {
     let day: String
-    let slots: [TimeSlot]
+    let slots: [WeeklySchedule.TimeSlot]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

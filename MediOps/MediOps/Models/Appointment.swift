@@ -4,6 +4,7 @@ enum AppointmentStatus: String, Codable {
     case upcoming
     case completed
     case cancelled
+    case missed
 }
 
 struct Appointment: Identifiable, Codable {

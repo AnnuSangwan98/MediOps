@@ -225,14 +225,6 @@ struct DoctorCard: View {
                 }
                 
                 Spacer()
-                
-                // Rating
-                HStack {
-                    Image(systemName: "star.fill")
-                        .foregroundColor(.yellow)
-                    Text(String(format: "%.1f", doctor.rating))
-                        .font(.headline)
-                }
             }
             
             NavigationLink(destination: AppointmentView(doctor: doctor), isActive: $showAppointment) {
@@ -245,16 +237,16 @@ struct DoctorCard: View {
             }) {
                 Text("Book Appointment")
                     .fontWeight(.medium)
-                    .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(Color.teal)
-                    .cornerRadius(10)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
             }
         }
         .padding()
         .background(Color.white)
         .cornerRadius(12)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
     }
 }

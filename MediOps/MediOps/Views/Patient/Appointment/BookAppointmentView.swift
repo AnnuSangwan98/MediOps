@@ -10,11 +10,12 @@ struct BookAppointmentView: View {
     @State private var selectedDoctor: HospitalDoctor? = nil
     @State private var selectedHospital: HospitalModel? = nil
     @State private var selectedDate = Date()
-    @State private var selectedSlot: AppointmentModels.DoctorAvailabilitySlot?
+    @State private var selectedSlot: DoctorAvailabilityModels.AppointmentSlot?
     @State private var reason: String = ""
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var isLoading = false
+    @State private var doctorAvailability: DoctorAvailabilityModels.EfficientAvailability?
     
     // Minimum date is today
     private let minDate = Date()
@@ -41,6 +42,9 @@ struct BookAppointmentView: View {
                         }
                         .onChange(of: selectedHospital) { newHospital in
                             selectedDoctor = nil
+                            doctorAvailability = nil
+                            selectedSlot = nil
+                            hospitalVM.availableSlots = []
                             if newHospital != nil {
                                 hospitalVM.selectedHospital = newHospital
                                 Task {
@@ -68,10 +72,13 @@ struct BookAppointmentView: View {
                                 }
                             }
                             .onChange(of: selectedDoctor) { newDoctor in
+                                selectedSlot = nil
+                                doctorAvailability = nil
+                                hospitalVM.availableSlots = []
                                 if newDoctor != nil {
                                     hospitalVM.selectedDoctor = newDoctor
                                     Task {
-                                        await hospitalVM.fetchAvailableSlots(for: selectedDate)
+                                        await fetchDoctorAvailability()
                                     }
                                 }
                             }
@@ -86,43 +93,16 @@ struct BookAppointmentView: View {
                         displayedComponents: [.date]
                     )
                     .onChange(of: selectedDate) { newDate in
-                        if selectedDoctor != nil {
+                        selectedSlot = nil
+                        if selectedDoctor != nil && doctorAvailability != nil {
                             Task {
-                                await hospitalVM.fetchAvailableSlots(for: newDate)
+                                await fetchAvailableSlots(for: newDate)
                             }
                         }
                     }
                     
                     // Available Time Slots
-                    if selectedDoctor != nil {
-                        if hospitalVM.isLoading {
-                            HStack {
-                                Text("Loading available slots...")
-                                Spacer()
-                                ProgressView()
-                            }
-                        } else if hospitalVM.availableSlots.isEmpty {
-                            Text("No available slots on this date")
-                                .foregroundColor(.red)
-                        } else {
-                            Section(header: Text("Available Time Slots")) {
-                                ForEach(hospitalVM.availableSlots) { slot in
-                                    Button(action: {
-                                        selectedSlot = slot
-                                    }) {
-                                        HStack {
-                                            Text("\(slot.startTime) - \(slot.endTime)")
-                                            Spacer()
-                                            if selectedSlot?.id == slot.id {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .foregroundColor(.teal)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    timeSlotSection
                     
                     // Reason
                     TextField("Reason for Visit", text: $reason)
@@ -166,6 +146,17 @@ struct BookAppointmentView: View {
                 if hospitalVM.hospitals.isEmpty {
                     await hospitalVM.fetchHospitals()
                 }
+                
+                // Ensure any lingering state is cleared
+                selectedDoctor = nil
+                doctorAvailability = nil
+                selectedSlot = nil
+                hospitalVM.availableSlots = []
+            }
+            .onDisappear {
+                // Clean up when view disappears
+                hospitalVM.availableSlots = []
+                doctorAvailability = nil
             }
         }
     }
@@ -175,6 +166,376 @@ struct BookAppointmentView: View {
         selectedHospital != nil &&
         selectedSlot != nil &&
         !reason.isEmpty
+    }
+    
+    private func fetchDoctorAvailability() async {
+        guard let doctor = selectedDoctor else { return }
+        
+        print("==========================================================")
+        print("🔍 START FETCHING AVAILABILITY FOR DOCTOR: \(doctor.name) (ID: \(doctor.id))")
+        print("==========================================================")
+        
+        do {
+            let supabase = SupabaseController.shared
+            print("⏳ Querying doctor_availability_efficient table for doctor_id: \(doctor.id)")
+            
+            // Reset availability data when doctor changes
+            await MainActor.run {
+                self.doctorAvailability = nil
+                self.hospitalVM.availableSlots = []
+            }
+            
+            let results = try await supabase.select(
+                from: "doctor_availability_efficient",
+                where: "doctor_id",
+                equals: doctor.id
+            )
+            
+            print("📊 Query results count for doctor \(doctor.name): \(results.count)")
+            
+            guard let availabilityData = results.first else {
+                print("❌ No availability found for doctor \(doctor.name) (ID: \(doctor.id))")
+                
+                // Display a message to the user about missing availability data
+                await MainActor.run {
+                    alertMessage = "This doctor doesn't have any availability schedule set up yet. Please select another doctor or contact the hospital."
+                    showAlert = true
+                    hospitalVM.isLoading = false
+                }
+                return
+            }
+            
+            // Print the raw data we got for debugging
+            print("📅 Raw availability data for doctor \(doctor.name): \(availabilityData)")
+            
+            // Get the day of week for the selected date
+            let calendar = Calendar.current
+            let weekday = calendar.component(.weekday, from: selectedDate)
+            let dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+            let dayName = dayNames[weekday - 1]
+            print("📅 Selected day for initial fetch: \(dayName)")
+            
+            // Parse the availability data
+            let availability = try parseDoctorAvailability(availabilityData)
+            await MainActor.run {
+                self.doctorAvailability = availability
+            }
+            
+            // Debug: Check for specific days in the schedule
+            let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+            print("🗓️ WEEKLY SCHEDULE SUMMARY FOR DOCTOR: \(doctor.name)")
+            for day in days {
+                if let daySchedule = availability.weeklySchedule[day] {
+                    let availableSlots = daySchedule.filter { $0.value == true }
+                    print("📆 \(day.capitalized) schedule: \(daySchedule.count) time slots, \(availableSlots.count) available")
+                    // Print sample slots
+                    if !availableSlots.isEmpty {
+                        let sampleSlots = availableSlots.keys.prefix(3)
+                        print("   Sample available slots: \(Array(sampleSlots))")
+                    } else {
+                        print("   No available slots for \(day)")
+                    }
+                } else {
+                    print("❌ No schedule found for \(day)")
+                }
+            }
+            
+            // Fetch available slots for the selected date
+            await fetchAvailableSlots(for: selectedDate)
+            
+        } catch {
+            print("❌ Error fetching doctor availability: \(error)")
+            await MainActor.run {
+                alertMessage = "Failed to load doctor's availability: \(error.localizedDescription)"
+                showAlert = true
+                hospitalVM.isLoading = false
+            }
+        }
+        
+        print("==========================================================")
+        print("🔍 END FETCHING AVAILABILITY FOR DOCTOR: \(doctor.name)")
+        print("==========================================================")
+    }
+    
+    private func parseDoctorAvailability(_ data: [String: Any]) throws -> DoctorAvailabilityModels.EfficientAvailability {
+        // Debug print for availability data
+        print("📅 Parsing doctor availability data: \(data)")
+        
+        // First check if weekly_schedule exists but might be in a different format than expected
+        if let weeklyScheduleRaw = data["weekly_schedule"] {
+            print("📅 Weekly schedule data type: \(type(of: weeklyScheduleRaw))")
+            
+            // If it's a string (JSON string), try to parse it
+            if let weeklyScheduleString = weeklyScheduleRaw as? String {
+                print("📝 Weekly schedule is stored as a JSON string, attempting to parse")
+                if let data = weeklyScheduleString.data(using: .utf8),
+                   let jsonObject = try? JSONSerialization.jsonObject(with: data, options: []),
+                   let parsedSchedule = jsonObject as? [String: [String: Bool]] {
+                    print("✅ Successfully parsed JSON string to dictionary")
+                    // Continue with the parsed schedule
+                    // Note: We'll let the original guard statement handle the rest of the validation
+                }
+            }
+        }
+        
+        guard let id = data["id"] as? Int,
+              let doctorId = data["doctor_id"] as? String,
+              let hospitalId = data["hospital_id"] as? String,
+              let weeklySchedule = data["weekly_schedule"] as? [String: [String: Bool]],
+              let effectiveFromStr = data["effective_from"] as? String else {
+            // Print what's missing from the data
+            print("❌ Invalid availability data: id=\(data["id"] ?? "missing"), doctorId=\(data["doctor_id"] ?? "missing"), hospitalId=\(data["hospital_id"] ?? "missing"), weeklySchedule type=\(type(of: data["weekly_schedule"] ?? "missing")), effectiveFrom=\(data["effective_from"] ?? "missing")")
+            
+            // Detailed check of weekly_schedule if it exists but has wrong format
+            if let wrongFormat = data["weekly_schedule"] {
+                print("🛑 weekly_schedule exists but has unexpected format: \(type(of: wrongFormat))")
+                print("🛑 Value: \(wrongFormat)")
+                
+                // Try to cast to common types to understand what we're dealing with
+                if let asDict = wrongFormat as? [String: Any] {
+                    print("🔍 It's a dictionary with keys: \(asDict.keys)")
+                    // Check the first value to understand structure
+                    if let firstValue = asDict.values.first {
+                        print("🔍 First value type: \(type(of: firstValue))")
+                    }
+                } else if let asArray = wrongFormat as? [Any] {
+                    print("🔍 It's an array with \(asArray.count) items")
+                } else if let asString = wrongFormat as? String {
+                    print("🔍 It's a string: \(asString)")
+                }
+            }
+            
+            throw NSError(domain: "AvailabilityError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid availability data format. Please check the database."])
+        }
+        
+        // Debug print for weekly schedule
+        print("📅 Weekly schedule data: \(weeklySchedule)")
+        // Check if any days have available slots
+        let availableDays = weeklySchedule.filter { !$0.value.isEmpty }
+        if availableDays.isEmpty {
+            print("⚠️ No days have any time slots defined in weekly schedule")
+        } else {
+            print("✅ Found available slots for days: \(availableDays.keys.joined(separator: ", "))")
+        }
+        
+        // Format validation check for the slots
+        for (day, slots) in weeklySchedule {
+            for (timeRange, isAvailable) in slots {
+                let components = timeRange.split(separator: "-")
+                if components.count != 2 {
+                    print("⚠️ Invalid time range format for \(day): \(timeRange)")
+                }
+            }
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+        
+        guard let effectiveFrom = dateFormatter.date(from: effectiveFromStr) else {
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid date format"])
+        }
+        
+        var effectiveUntil: Date? = nil
+        if let untilStr = data["effective_until"] as? String {
+            effectiveUntil = dateFormatter.date(from: untilStr)
+        }
+        
+        var createdAt: Date? = nil
+        if let createdAtStr = data["created_at"] as? String {
+            createdAt = dateFormatter.date(from: createdAtStr)
+        }
+        
+        var updatedAt: Date? = nil
+        if let updatedAtStr = data["updated_at"] as? String {
+            updatedAt = dateFormatter.date(from: updatedAtStr)
+        }
+        
+        return DoctorAvailabilityModels.EfficientAvailability(
+            id: id,
+            doctorId: doctorId,
+            hospitalId: hospitalId,
+            weeklySchedule: weeklySchedule,
+            effectiveFrom: effectiveFrom,
+            effectiveUntil: effectiveUntil,
+            maxNormalPatients: data["max_normal_patients"] as? Int ?? 5,
+            maxPremiumPatients: data["max_premium_patients"] as? Int ?? 2,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+    
+    private func fetchAvailableSlots(for date: Date) async {
+        guard let availability = doctorAvailability,
+              let doctor = selectedDoctor else { return }
+        
+        print("==========================================================")
+        print("🔄 START FETCHING SLOTS FOR DOCTOR: \(doctor.name) (ID: \(doctor.id))")
+        print("🗓️ Date selected: \(date.formatted(date: .long, time: .omitted))")
+        print("==========================================================")
+        
+        await MainActor.run {
+            hospitalVM.isLoading = true
+            hospitalVM.availableSlots = []
+        }
+        
+        do {
+            // Get the day of week
+            let calendar = Calendar.current
+            let weekday = calendar.component(.weekday, from: date)
+            let dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+            let dayName = dayNames[weekday - 1]
+            
+            print("🗓️ Selected day: \(dayName) for doctor \(doctor.name)")
+            
+            // Get available slots for the day
+            guard let daySlots = availability.weeklySchedule[dayName] else {
+                print("❌ No schedule defined for \(dayName) in weekly schedule for doctor \(doctor.name)")
+                await MainActor.run {
+                    hospitalVM.isLoading = false
+                }
+                return
+            }
+            
+            print("🔍 RAW day slots data for doctor \(doctor.name) on \(dayName):")
+            for (slot, isAvailable) in daySlots {
+                print("   \(slot): \(isAvailable ? "Available" : "Not available")")
+            }
+            
+            // Count how many slots are available vs unavailable
+            let availableCount = daySlots.filter { $0.value == true }.count
+            let unavailableCount = daySlots.filter { $0.value == false }.count
+            print("📊 Day slots summary for \(doctor.name): \(availableCount) available, \(unavailableCount) unavailable")
+            
+            // Get existing appointments for the date
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let dateString = dateFormatter.string(from: date)
+            
+            print("📅 Fetching existing appointments for date: \(dateString)")
+            let supabase = SupabaseController.shared
+            let existingAppointments = try await supabase.select(
+                from: "appointments",
+                where: "doctor_id",
+                equals: doctor.id
+            ).filter { appointment in
+                guard let appointmentDate = appointment["appointment_date"] as? String,
+                      let status = appointment["status"] as? String else { return false }
+                return appointmentDate == dateString && status == "upcoming"
+            }
+            
+            print("📊 Found \(existingAppointments.count) existing appointments for doctor \(doctor.name) on this day")
+            
+            // Count appointments per slot time
+            var slotCounts: [String: Int] = [:]
+            for appointment in existingAppointments {
+                if let startTime = appointment["slot_start_time"] as? String {
+                    slotCounts[startTime, default: 0] += 1
+                    print("  - Slot \(startTime) has \(slotCounts[startTime]!) bookings")
+                }
+            }
+            
+            // Convert slots to AppointmentSlot objects
+            var availableSlots: [DoctorAvailabilityModels.AppointmentSlot] = []
+            
+            // CRITICAL FIX: Only process slots that are marked as available (true) in the weekly schedule
+            for (timeRange, isAvailable) in daySlots {
+                print("⏰ Processing time range: \(timeRange), available: \(isAvailable)")
+                
+                // Skip slots that are not available in doctor's schedule
+                if !isAvailable {
+                    print("⏭️ Skipping unavailable slot: \(timeRange) for doctor \(doctor.name)")
+                    continue
+                }
+                
+                let components = timeRange.split(separator: "-")
+                guard components.count == 2 else { 
+                    print("⚠️ Invalid time range format: \(timeRange)")
+                    continue 
+                }
+                
+                let startTime = String(components[0])
+                let endTime = String(components[1])
+                
+                // Calculate max and remaining slots
+                let maxSlots = availability.maxNormalPatients + availability.maxPremiumPatients
+                let bookedSlots = slotCounts[startTime] ?? 0
+                let remainingSlots = maxSlots - bookedSlots
+                
+                // Only include slot if there are available slots remaining
+                if remainingSlots > 0 {
+                    // Generate a deterministic integer ID based on the components
+                    let timeComponents = startTime.split(separator: ":").map { String($0) }
+                    let hour = Int(timeComponents[0]) ?? 0
+                    let minute = Int(timeComponents[1]) ?? 0
+                    let dayComponent = Calendar.current.component(.day, from: date)
+                    let monthComponent = Calendar.current.component(.month, from: date)
+                    
+                    // Create a unique integer ID combining date and time components
+                    let slotId = (dayComponent * 10000) + (monthComponent * 100) + hour
+                    
+                    // Format times for display
+                    let formattedStartTime = DoctorAvailabilityModels.AppointmentSlot.formatTimeForDisplay(startTime)
+                    let formattedEndTime = DoctorAvailabilityModels.AppointmentSlot.formatTimeForDisplay(endTime)
+                    
+                    print("✅ Adding available slot for doctor \(doctor.name): \(formattedStartTime) - \(formattedEndTime)")
+                    
+                    let slot = DoctorAvailabilityModels.AppointmentSlot(
+                        id: slotId,
+                        doctorId: doctor.id,
+                        date: date,
+                        startTime: formattedStartTime,
+                        endTime: formattedEndTime,
+                        rawStartTime: startTime,
+                        rawEndTime: endTime,
+                        isAvailable: true,
+                        remainingSlots: remainingSlots,
+                        totalSlots: maxSlots
+                    )
+                    availableSlots.append(slot)
+                } else {
+                    print("⏭️ Skipping fully booked slot: \(startTime) - \(endTime) for doctor \(doctor.name)")
+                }
+            }
+            
+            // Sort slots by start time
+            availableSlots.sort { slot1, slot2 in
+                return slot1.startTime < slot2.startTime
+            }
+            
+            // After processing all slots
+            print("📋 FINAL AVAILABLE SLOTS FOR DOCTOR \(doctor.name): \(availableSlots.count)")
+            for (index, slot) in availableSlots.enumerated() {
+                print("  \(index+1). \(slot.startTime) - \(slot.endTime) (\(slot.remainingSlots)/\(slot.totalSlots) slots)")
+            }
+            
+            // ADDED: Check if slots might be hardcoded elsewhere
+            await MainActor.run {
+                print("⚠️ Before updating hospitalVM.availableSlots: \(hospitalVM.availableSlots.count) slots")
+                hospitalVM.availableSlots = availableSlots
+                print("✅ After updating hospitalVM.availableSlots: \(hospitalVM.availableSlots.count) slots for doctor \(doctor.name)")
+                hospitalVM.isLoading = false
+            }
+            
+        } catch {
+            print("❌ Error fetching available slots: \(error)")
+            await MainActor.run {
+                hospitalVM.isLoading = false
+                alertMessage = "Failed to load available slots: \(error.localizedDescription)"
+                showAlert = true
+            }
+        }
+        
+        print("==========================================================")
+        print("🔄 END FETCHING SLOTS FOR DOCTOR: \(doctor.name)")
+        print("==========================================================")
+    }
+    
+    private func refreshAvailabilityAfterBooking() async {
+        // Refresh the available slots to update the counts
+        if let doctor = selectedDoctor {
+            hospitalVM.selectedDoctor = doctor
+            await hospitalVM.fetchAvailableSlots(for: selectedDate)
+        }
     }
     
     private func bookAppointment() async {
@@ -363,7 +724,15 @@ struct BookAppointmentView: View {
                     "status": "upcoming",
                     "reason": reason.isEmpty ? "Medical consultation" : reason,
                     "isdone": false,
-                    "is_premium": false
+                    "is_premium": false,
+                    "slot_start_time": slot.startTime,
+                    "slot_end_time": slot.endTime,
+                    "slot": [
+                        "start_time": slot.startTime,
+                        "end_time": slot.endTime, 
+                        "remaining_slots": slot.remainingSlots - 1, // Subtract one for the slot being booked
+                        "total_slots": slot.totalSlots
+                    ]
                 ]
                 
                 print("📊 Direct insert appointment data:")
@@ -393,10 +762,13 @@ struct BookAppointmentView: View {
             
             // Add to local state
             appointmentManager.addAppointment(appointment)
-            
+
             // Refresh appointments from database to ensure consistency
             try await hospitalVM.fetchAppointments(for: patientId)
-            
+
+            // Refresh availability slots to update counts
+            await refreshAvailabilityAfterBooking()
+
             // Display success message
             isLoading = false
             alertMessage = "Appointment booked successfully for \(selectedDate.formatted(date: .long, time: .omitted))!"
@@ -421,6 +793,43 @@ struct BookAppointmentView: View {
             }
             
             showAlert = true
+        }
+    }
+    
+    var timeSlotSection: some View {
+        Section {
+            if selectedDoctor != nil {
+                if hospitalVM.isLoading {
+                    HStack {
+                        Text("Loading available slots...")
+                        Spacer()
+                        ProgressView()
+                    }
+                } else if hospitalVM.availableSlots.isEmpty {
+                    Text("No available slots on this date. Please select another date or doctor.")
+                        .foregroundColor(.red)
+                } else {
+                    Section(header: Text("Available Time Slots")) {
+                        ForEach(hospitalVM.availableSlots) { slot in
+                            Button(action: {
+                                selectedSlot = slot
+                            }) {
+                                HStack {
+                                    Text("\(slot.startTime) - \(slot.endTime)")
+                                    Spacer()
+                                    Text("\(slot.remainingSlots)/\(slot.totalSlots) slots")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    if selectedSlot?.id == slot.id {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.teal)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 } 
