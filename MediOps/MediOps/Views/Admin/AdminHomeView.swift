@@ -205,7 +205,6 @@ struct AdminHomeView: View {
     @State private var showBloodDonationRequest = false
     @State private var showAllBloodDonors = false
     @State private var showHospitalAnalytics = false
-    @State private var recentActivities: [UIActivity] = []
     @State private var doctors: [UIDoctor] = []
     @State private var labAdmins: [UILabAdmin] = []
     @State private var isLoggedIn = false
@@ -287,37 +286,6 @@ struct AdminHomeView: View {
                         }
                         .padding(.horizontal)
                     }
-                    
-                    // Recent Activity
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Recent Activity")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .padding(.horizontal)
-                        
-                        if recentActivities.isEmpty {
-                            Text("No recent activity")
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(10)
-                                .shadow(color: .gray.opacity(0.1), radius: 5)
-                        } else {
-                            ForEach(recentActivities) { activity in
-                                ActivityRow(activity: activity) { updatedActivity in
-                                    if let index = recentActivities.firstIndex(where: { $0.id == activity.id }) {
-                                        recentActivities[index] = updatedActivity
-                                    }
-                                } onDelete: { deletedActivity in
-                                    if let index = recentActivities.firstIndex(where: { $0.id == deletedActivity.id }) {
-                                        recentActivities.remove(at: index)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding()
                 }
             }
             .navigationBarBackButtonHidden(true)
@@ -341,7 +309,6 @@ struct AdminHomeView: View {
             }
             .sheet(isPresented: $showAddDoctor) {
                 AddDoctorView { activity in
-                    recentActivities.insert(activity, at: 0)
                     if let doctor = activity.doctorDetails {
                         doctors.append(doctor)
                     }
@@ -349,7 +316,6 @@ struct AdminHomeView: View {
             }
             .sheet(isPresented: $showAddLabAdmin) {
                 AddLabAdminView { activity in
-                    recentActivities.insert(activity, at: 0)
                     if let labAdmin = activity.labAdminDetails {
                         labAdmins.append(labAdmin)
                     }

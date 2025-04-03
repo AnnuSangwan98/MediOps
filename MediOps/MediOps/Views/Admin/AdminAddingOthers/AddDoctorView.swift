@@ -425,6 +425,31 @@ struct AddDoctorView: View {
                     maxAppointments: maxAppointments
                 )
                 
+                // Send credentials email
+                let emailData: [String: Any] = [
+                    "to": email,
+                    "accountType": "doctor",
+                    "details": [
+                        "fullName": fullName,
+                        "specialization": specialization.rawValue,
+                        "license": license,
+                        "phone": phoneNumber
+                    ]
+                ]
+                
+                // Send credentials email using the email server
+                let url = URL(string: "http://localhost:8082/send-credentials")!
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try? JSONSerialization.data(withJSONObject: emailData)
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 else {
+                    throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to send credentials email"])
+                }
+                
                 // Create weekly schedule using the helper function
                 let weeklySchedule = createWeeklySchedule()
                 
@@ -562,14 +587,28 @@ struct AddDoctorView: View {
     
     // Create a secure password that meets constraints
     private func generateSecurePassword() -> String {
-        // Create password with at least 8 chars including uppercase, lowercase, number and special char
-        let uppercaseLetter = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".randomElement()!
-        let lowercaseLetter = "abcdefghijklmnopqrstuvwxyz".randomElement()!
-        let number = "0123456789".randomElement()!
-        let specialChar = "!@#$%^&*".randomElement()!
+        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
+        let numbers = "0123456789"
+        let specialChars = "@$!%*?&"  // Only allowed special characters per constraint
         
-        // Basic info plus random chars to make 8+ length
-        return "Doc\(uppercaseLetter)\(lowercaseLetter)\(number)\(specialChar)\(phoneNumber.suffix(4))"
+        // Ensure at least one of each required character type
+        var passwordChars: [String] = []
+        passwordChars.append(String(uppercaseLetters.randomElement()!)) // Guarantee uppercase
+        passwordChars.append(String(lowercaseLetters.randomElement()!)) // Guarantee lowercase
+        passwordChars.append(String(numbers.randomElement()!))          // Guarantee digit
+        passwordChars.append(String(specialChars.randomElement()!))     // Guarantee special char
+        
+        // Add more random characters to reach at least 8 characters
+        let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
+        let additionalLength = 4 // Results in an 8-character password (4 guaranteed + 4 additional)
+        
+        for _ in 0..<additionalLength {
+            passwordChars.append(String(allChars.randomElement()!))
+        }
+        
+        // Shuffle and join the characters
+        return passwordChars.shuffled().joined()
     }
 }
 

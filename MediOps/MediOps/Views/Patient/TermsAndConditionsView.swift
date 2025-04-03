@@ -21,12 +21,13 @@ struct TermsAndConditionsView: View {
                         Text("By registering as a blood donor, you agree to:")
                             .font(.headline)
                         
-                        VStack(alignment: .leading, spacing: 10) {
-                            TermRow(text: "Provide accurate personal and medical information")
-                            TermRow(text: "Be available for blood donation when contacted")
-                            TermRow(text: "Maintain good health practices")
-                            TermRow(text: "Notify us of any changes in your health status")
-                            TermRow(text: "Follow pre-donation guidelines")
+                        VStack(alignment: .leading, spacing: 12) {
+                            TermRow(text: "You must be at least 18 years old and in good health.")
+                            TermRow(text: "Minimum weight: 50kg (110 lbs).")
+                            TermRow(text: "No blood donation in the last 3 months.")
+                            TermRow(text: "No recent infections, surgeries, or chronic illnesses.")
+                            TermRow(text: "No high-risk behaviors affecting blood safety.")
+                            TermRow(text: "You must pass the health screening before donation.")
                         }
                         .padding(.leading)
                         
