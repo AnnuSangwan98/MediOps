@@ -93,21 +93,37 @@ struct SplashScreenAlt: View {
                         
                         // Medical cross element
                         ZStack {
-                            Circle()
-                                .fill(
+                            // 3D Heart with gradient
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 48))
+                                .foregroundStyle(
                                     LinearGradient(
-                                        gradient: Gradient(colors: [accentOrange, accentOrange.opacity(0.8)]),
+                                        gradient: Gradient(colors: [.red, .red.opacity(1.0)]),
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
                                 )
-                                .frame(width: 60, height: 60)
-                                .shadow(color: accentOrange.opacity(0.3), radius: 8, x: 0, y: 4)
+                                .overlay(
+                                    Image(systemName: "heart.fill")
+                                        .font(.system(size: 48))
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                gradient: Gradient(colors: [Color.red.opacity(0.7), Color.clear]),
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                )
+                                .shadow(color: .red.opacity(0.6), radius: 4, x: 2, y: 2)
+                                .shadow(color: Color.black.opacity(0.2), radius: 8, x: 3, y: 3)
                                 .scaleEffect(pulsate ? 1.1 : 1.0)
                             
+                            // Plus icon overlay
                             Image(systemName: "plus")
-                                .font(.system(size: 30, weight: .bold))
+                                .font(.system(size: 24, weight: .bold))
                                 .foregroundColor(.white)
+                                .shadow(color: Color.black.opacity(0.3), radius: 1, x: 1, y: 1)
+                                .scaleEffect(pulsate ? 1.1 : 1.0) // Match the heart's animation
                         }
                         .opacity(iconOpacity)
                         .offset(x: 70, y: 70)

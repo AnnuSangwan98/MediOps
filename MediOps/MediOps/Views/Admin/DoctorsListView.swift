@@ -188,11 +188,12 @@ struct DoctorsListView: View {
                         email: doctor.email,
                         phone: doctor.contactNumber ?? "",
                         gender: .male, // Default gender
-                        dateOfBirth: Date(), // Default date
+                        dateOfBirth: doctor.dateOfBirth ?? Date(), // Use actual DOB from Supabase with fallback
                         experience: doctor.experience,
                         qualification: doctor.qualifications.joined(separator: ", "),
                         license: doctor.licenseNo,
-                        address: doctor.addressLine
+                        address: doctor.addressLine,
+                        maxAppointments: doctor.maxAppointments
                     )
                 }
                 isLoading = false

@@ -139,10 +139,11 @@ class AuthService {
             email: email,
             password: password,
             name: name,
-            labName: labName,
+            qualification: ["MLT"], // Use default qualification
             hospitalAdminId: hospitalAdminId,
             contactNumber: "", // Default empty contactNumber
-            department: "Pathology & Laboratory" // Default department to match constraint
+            department: "Pathology & Laboratory", // Default department to match constraint
+            experience: 0 // Add missing experience parameter
         )
         
         // Send credentials via email

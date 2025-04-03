@@ -98,8 +98,10 @@ extension Models.Doctor {
             contactNumber: nil,
             emergencyContactNumber: nil,
             doctorStatus: "active",
+            dateOfBirth: nil,
             createdAt: Date(),
-            updatedAt: Date()
+            updatedAt: Date(),
+            maxAppointments: 10
         )
     }
 } 

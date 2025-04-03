@@ -190,6 +190,7 @@ class AdminController {
         let adminId = UUID().uuidString
         let now = Date()
         let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let createdAt = dateFormatter.string(from: now)
         
         let adminData: [String: String] = [
@@ -271,8 +272,8 @@ class AdminController {
         
         // First try to find the admin in the hospital_admins table
         let admins = try await supabase.select(
-            from: "hospital_admins", 
-            where: "user_id", 
+            from: "hospital_admins",
+            where: "user_id",
             equals: userId
         )
         
@@ -332,7 +333,8 @@ class AdminController {
         pincode: String,
         contactNumber: String,
         emergencyContactNumber: String? = nil,
-        doctorStatus: String = "active"
+        doctorStatus: String = "active",
+        maxAppointments: Int = 8
     ) async throws -> (Doctor, String) {
         // 1. Register the base user
         let authResponse = try await userController.register(
@@ -348,6 +350,7 @@ class AdminController {
         // 3. Prepare creation timestamp
         let now = Date()
         let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let createdAt = dateFormatter.string(from: now)
         
         // 4. Create an Encodable struct for doctor data
@@ -368,11 +371,11 @@ class AdminController {
             let password: String
             let created_at: String
             let updated_at: String
+            let max_appointments: Int
             var contact_number: String?
             var emergency_contact_number: String?
         }
         
-        // Create the doctor data
         var doctorData = DoctorData(
             id: doctorId,
             name: name,
@@ -390,6 +393,7 @@ class AdminController {
             password: password,
             created_at: createdAt,
             updated_at: createdAt,
+            max_appointments: maxAppointments,
             contact_number: nil,
             emergency_contact_number: nil
         )
@@ -427,11 +431,32 @@ class AdminController {
             contactNumber: contactNumber.isEmpty ? nil : contactNumber,
             emergencyContactNumber: emergencyContactNumber,
             doctorStatus: doctorStatus,
+            dateOfBirth: nil, // Add missing dateOfBirth parameter
             createdAt: now,
-            updatedAt: now
+            updatedAt: now,
+            maxAppointments: maxAppointments
         )
         
-        return (doctor, authResponse.token)
+        // Log the activity with structured data
+        await logActivity(
+            action: "create",
+            entityType: "doctor",
+            entityId: doctorId,
+            entityName: name,
+            details: [
+                "hospital_id": hospitalId,
+                "specialization": specialization,
+                "qualifications": qualifications,
+                "email": email,
+                "contact_number": contactNumber.isEmpty ? "" : contactNumber,
+                "license_no": licenseNo,
+                "experience": experience
+            ]
+        )
+        
+        // Return doctor object with a dummy token
+        print("CREATE DOCTOR: Successfully created doctor with ID: \(doctorId)")
+        return (doctor, "doctor-token")
     }
     
     /// Get doctor by ID
@@ -493,7 +518,8 @@ class AdminController {
         experience: Int,
         addressLine: String,
         email: String,
-        contactNumber: String
+        contactNumber: String,
+        maxAppointments: Int = 10
     ) async throws {
         print("UPDATE DOCTOR: Updating doctor with ID: \(doctorId)")
         
@@ -508,6 +534,7 @@ class AdminController {
             let email: String
             let contact_number: String
             let updated_at: String
+            let max_appointments: Int
         }
         
         // Prepare the update data with fields that can be updated
@@ -520,7 +547,8 @@ class AdminController {
             address_line: addressLine,
             email: email,
             contact_number: contactNumber,
-            updated_at: ISO8601DateFormatter().string(from: Date())
+            updated_at: ISO8601DateFormatter().string(from: Date()),
+            max_appointments: maxAppointments
         )
         
         // Update the doctor record in Supabase
@@ -531,16 +559,81 @@ class AdminController {
             equals: doctorId
         )
         
+        // Add before return or at the end of the function:
+        await logActivity(
+            action: "update",
+            entityType: "doctor",
+            entityId: doctorId,
+            entityName: name,
+            details: [
+                "specialization": specialization,
+                "qualifications": qualifications,
+                "license_no": licenseNo,
+                "experience": experience,
+                "address_line": addressLine,
+                "email": email,
+                "contact_number": contactNumber
+            ]
+        )
+        
         print("UPDATE DOCTOR: Successfully updated doctor with ID: \(doctorId)")
     }
     
     /// Delete a doctor
     func deleteDoctor(id: String) async throws {
+        // Get the doctor name before deletion for logging
+        let doctor = try await getDoctor(id: id)
+        let doctorName = doctor.name
+        let hospitalId = doctor.hospitalId
+        
         print("DELETE DOCTOR: Attempting to delete doctor with ID: \(id)")
         
-        // First try direct deletion (most reliable)
+        // First, attempt to delete any related records that might cause foreign key constraint issues
         do {
-            print("DELETE DOCTOR: Attempting full deletion first")
+            // Delete from doctor_availability_efficient table
+            print("DELETE DOCTOR: Removing doctor availability records")
+            try await supabase.delete(
+                from: "doctor_availability_efficient",
+                where: "doctor_id",
+                equals: id
+            )
+            print("DELETE DOCTOR: Successfully removed availability records")
+        } catch {
+            print("DELETE DOCTOR: No availability records found or error removing them: \(error.localizedDescription)")
+            // Continue with deletion even if this fails
+        }
+        
+        do {
+            // Delete from doctor_slots table if it exists
+            print("DELETE DOCTOR: Removing doctor slots records")
+            try await supabase.delete(
+                from: "doctor_slots",
+                where: "doctor_id",
+                equals: id
+            )
+            print("DELETE DOCTOR: Successfully removed slot records")
+        } catch {
+            print("DELETE DOCTOR: No slot records found or error removing them: \(error.localizedDescription)")
+            // Continue with deletion even if this fails
+        }
+        
+        do {
+            // Delete from appointments table if it exists
+            print("DELETE DOCTOR: Removing appointment records")
+            try await supabase.delete(
+                from: "appointments",
+                where: "doctor_id",
+                equals: id
+            )
+            print("DELETE DOCTOR: Successfully removed appointment records")
+        } catch {
+            print("DELETE DOCTOR: No appointment records found or error removing them: \(error.localizedDescription)")
+            // Continue with deletion even if this fails
+        }
+        
+        // Now try to delete the doctor record
+        do {
+            print("DELETE DOCTOR: Attempting to delete doctor record")
             try await supabase.delete(
                 from: "doctors",
                 where: "id",
@@ -549,84 +642,88 @@ class AdminController {
             print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id)")
             return // Exit if deletion was successful
         } catch {
-            print("DELETE DOCTOR ERROR on full deletion: \(error.localizedDescription)")
-            // If direct deletion fails, try status updates
-        }
-        
-        // Create an Encodable struct for the status update
-        struct DoctorStatusUpdate: Encodable {
-            let doctor_status: String
-            let updated_at: String
-        }
-        
-        // Try various possible status values that might be allowed by the check constraint
-        let possibleStatuses = ["inactive", "deleted", "disabled", "removed", "deactivated", "closed"]
-        
-        for status in possibleStatuses {
+            print("DELETE DOCTOR ERROR on deletion: \(error.localizedDescription)")
+            
+            // Try with a direct URL request instead of executeSql
             do {
-                print("DELETE DOCTOR: Trying status update to '\(status)'")
-                let doctorData = DoctorStatusUpdate(
-                    doctor_status: status,
-                    updated_at: ISO8601DateFormatter().string(from: Date())
-                )
+                print("DELETE DOCTOR: Attempting direct API delete")
                 
-                try await supabase.update(
-                    table: "doctors",
-                    data: doctorData,
-                    where: "id",
-                    equals: id
-                )
+                let url = URL(string: "\(supabase.supabaseURL)/rest/v1/doctors?id=eq.\(id)")!
+                var request = URLRequest(url: url)
+                request.httpMethod = "DELETE"
+                request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.addValue(supabase.supabaseAnonKey, forHTTPHeaderField: "apikey")
+                request.addValue("Bearer \(supabase.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
                 
-                print("DELETE DOCTOR: Successfully updated doctor status to '\(status)' with ID: \(id)")
-                return // Exit the function if this status update works
+                let (_, response) = try await URLSession.shared.data(for: request)
+                
+                if let httpResponse = response as? HTTPURLResponse, 
+                   httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                    print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id) via direct API")
+                    return
+                } else {
+                    print("DELETE DOCTOR: Direct API deletion failed")
+                }
             } catch {
                 print("DELETE DOCTOR ERROR on direct API deletion: \(error.localizedDescription)")
             }
             
             // As a last resort, try to update status (but we prefer actual deletion)
-        struct DoctorStatusUpdate: Encodable {
-            let doctor_status: String
-            let updated_at: String
-        }
-        
-        // Try various possible status values that might be allowed by the check constraint
+            struct DoctorStatusUpdate: Encodable {
+                let doctor_status: String
+                let updated_at: String
+            }
+            
+            // Try various possible status values that might be allowed by the check constraint
             let possibleStatuses = ["inactive", "suspended", "terminated"]
-        
-        for status in possibleStatuses {
-            do {
+            
+            for status in possibleStatuses {
+                do {
                     print("DELETE DOCTOR: Deletion failed, trying status update to '\(status)'")
-                let doctorData = DoctorStatusUpdate(
-                    doctor_status: status,
-                    updated_at: ISO8601DateFormatter().string(from: Date())
-                )
-                
-                try await supabase.update(
-                    table: "doctors",
-                    data: doctorData,
-                    where: "id",
-                    equals: id
-                )
-                
+                    let doctorData = DoctorStatusUpdate(
+                        doctor_status: status,
+                        updated_at: ISO8601DateFormatter().string(from: Date())
+                    )
+                    
+                    try await supabase.update(
+                        table: "doctors",
+                        data: doctorData,
+                        where: "id",
+                        equals: id
+                    )
+                    
                     print("DELETE DOCTOR: Successfully performed soft delete with status: \(status)")
                     return
-            } catch {
-                print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
-                // Continue trying other statuses
+                } catch {
+                    print("DELETE DOCTOR: Status '\(status)' update failed: \(error.localizedDescription)")
+                    // Continue trying other statuses
+                }
             }
+            
+            // If we reach here, none of our approaches worked
+            throw AdminError.doctorDeleteFailed
         }
         
-        // If we reach here, none of our approaches worked
-        throw AdminError.doctorDeleteFailed
-        }
+        // Add at the end of the function:
+        await logActivity(
+            action: "delete",
+            entityType: "doctor",
+            entityId: id,
+            entityName: doctorName,
+            details: [
+                "hospital_id": hospitalId,
+                "deletion_type": "permanent",
+                "related_records_deleted": true
+            ]
+        )
         
-        // If we reach here, none of our approaches worked
-        throw AdminError.doctorDeleteFailed
+        print("DELETE DOCTOR: Successfully deleted doctor with ID: \(id)")
     }
     
     // MARK: - Lab Admin Management
     
     /// Register a new lab admin (independent of users table)
-    func createLabAdmin(email: String, password: String, name: String, labName: String, hospitalAdminId: String, contactNumber: String = "", department: String = "Pathology & Laboratory") async throws -> (LabAdmin, String) {
+    func createLabAdmin(email: String, password: String, name: String, qualification: [String], hospitalAdminId: String, contactNumber: String = "", department: String = "Pathology & Laboratory", license: String? = nil, dateOfBirth: Date? = nil, experience: Int = 0) async throws -> (LabAdmin, String) {
         print("CREATE LAB ADMIN: Creating lab admin with hospital ID: \(hospitalAdminId)")
         
         // Verify that the hospital admin exists and get their correct ID
@@ -636,6 +733,19 @@ class AdminController {
         if verifiedHospitalId.isEmpty {
             print("CREATE LAB ADMIN ERROR: Empty hospital ID provided")
             throw AdminError.invalidData("Hospital ID cannot be empty")
+        }
+        
+        // Validate qualifications against allowed values
+        let allowedQualifications = ["MLT", "DMLT", "M.Sc"]
+        if qualification.isEmpty {
+            throw AdminError.invalidData("Qualification cannot be empty")
+        }
+        
+        // Check that all qualifications are from the allowed set
+        for qual in qualification {
+            if !allowedQualifications.contains(qual) {
+                throw AdminError.invalidFormat("Invalid qualification: \(qual). Allowed values are: \(allowedQualifications.joined(separator: ", "))")
+            }
         }
         
         // Try to verify hospital admin exists
@@ -677,6 +787,7 @@ class AdminController {
         
         let now = Date()
         let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let createdAt = dateFormatter.string(from: now)
         
         // Validate data against table constraints
@@ -706,8 +817,8 @@ class AdminController {
             throw AdminError.invalidPassword(message: "Password does not meet security requirements")
         }
         
-        // Create lab admin record directly (no user record)
-        let labAdminData: [String: String] = [
+        // Create lab admin record with qualifications as array
+        var labAdminData: [String: Any] = [
             "id": labAdminId,
             "hospital_id": verifiedHospitalId,
             "password": password,
@@ -715,10 +826,18 @@ class AdminController {
             "email": email,
             "contact_number": contactNumberToUse,
             "department": "Pathology & Laboratory", // Always use the fixed value to match constraint
+            "qualification": qualification, // Store as array
+            "license_no": license, // Use license parameter directly
+            "experience": experience, // Add experience field
             "Address": "", // Default empty address
             "created_at": createdAt,
             "updated_at": createdAt
         ]
+        
+        // Add date of birth if available
+        if let dob = dateOfBirth {
+            labAdminData["dob"] = dateFormatter.string(from: dob)
+        }
         
         // Validate data against table constraints one more time before submission
         print("CREATE LAB ADMIN: Validating lab admin data before submission")
@@ -726,12 +845,53 @@ class AdminController {
         print("- Hospital ID: \(verifiedHospitalId)")
         print("- Name: \(name)")
         print("- Email: \(email)")
+        print("- Qualifications: \(qualification.joined(separator: ", "))")
         print("- Contact number: \(contactNumberToUse.isEmpty ? "[empty]" : contactNumberToUse) (format: \(contactNumberToUse.isEmpty || contactNumberToUse.range(of: "^[0-9]{10}$", options: .regularExpression) != nil ? "✓" : "✗"))")
         print("- Password: [hidden] (length: \(password.count), meets requirements: \(password.count >= 8 && password.range(of: ".*[A-Z].*", options: .regularExpression) != nil && password.range(of: ".*[a-z].*", options: .regularExpression) != nil && password.range(of: ".*[0-9].*", options: .regularExpression) != nil && password.range(of: ".*[@$!%*?&].*", options: .regularExpression) != nil ? "✓" : "✗"))")
         print("- Department: \(labAdminData["department"] ?? "") (required: 'Pathology & Laboratory')")
         
         do {
-        try await supabase.insert(into: "lab_admins", data: labAdminData)
+            // Create an Encodable struct for database insertion
+            struct LabAdminInsertData: Encodable {
+                let id: String
+                let hospital_id: String
+                let password: String
+                let name: String
+                let email: String
+                let contact_number: String
+                let department: String
+                let qualification: [String]
+                let license_no: String?
+                let dob: String?
+                let experience: Int
+                let Address: String
+                let created_at: String
+                let updated_at: String
+            }
+            
+            // Format date of birth for insertion
+            let dateOfBirthString = dateOfBirth.map { dateFormatter.string(from: $0) }
+            
+            // Create encodable struct from the data
+            let encodableData = LabAdminInsertData(
+                id: labAdminId,
+                hospital_id: verifiedHospitalId,
+                password: password,
+                name: name,
+                email: email,
+                contact_number: contactNumberToUse,
+                department: "Pathology & Laboratory",
+                qualification: qualification,
+                license_no: license, // Use license parameter directly
+                dob: dateOfBirthString,
+                experience: experience,
+                Address: "",
+                created_at: createdAt,
+                updated_at: createdAt
+            )
+            
+            // Insert with the encodable struct
+            try await supabase.insert(into: "lab_admins", data: encodableData)
             print("CREATE LAB ADMIN: Successfully inserted data into lab_admins table")
         } catch {
             print("CREATE LAB ADMIN ERROR: Failed to insert lab admin: \(error.localizedDescription)")
@@ -763,6 +923,8 @@ class AdminController {
                     throw AdminError.invalidPassword(message: "Password does not meet security requirements")
                 } else if errorDesc.contains("lab_admins_department_check") {
                     throw AdminError.invalidFormat("Department must be 'Pathology & Laboratory'")
+                } else if errorDesc.contains("qualification_check") {
+                    throw AdminError.invalidFormat("Invalid qualification. Allowed values are: MLT, DMLT, M.Sc")
                 } else {
                     throw AdminError.invalidFormat("Database constraint violation: \(error.localizedDescription)")
                 }
@@ -780,12 +942,34 @@ class AdminController {
             contactNumber: contactNumberToUse,
             department: "Pathology & Laboratory", // Fixed to match the constraint
             address: "",
+            qualification: qualification, // Add the qualification array
+            licenseNo: license, // Add license number
+            dateOfBirth: dateOfBirth, // Add dateOfBirth field (will update parsing later)
+            experience: experience, // Add experience field
             createdAt: now,
             updatedAt: now
         )
         
+        // Log the activity with structured data
+        await logActivity(
+            action: "create",
+            entityType: "lab_admin",
+            entityId: labAdminId,
+            entityName: name,
+            details: [
+                "hospital_id": verifiedHospitalId,
+                "qualification": qualification,
+                "email": email,
+                "contact_number": contactNumberToUse,
+                "license_no": license ?? "",
+                "experience": experience,
+                "date_of_birth": dateOfBirth != nil ? dateFormatter.string(from: dateOfBirth!) : ""
+            ]
+        )
+        
+        // Return lab admin object with a dummy token
         print("CREATE LAB ADMIN: Successfully created lab admin with ID: \(labAdminId)")
-        return (labAdmin, "lab-admin-token") // Return a dummy token
+        return (labAdmin, "lab-admin-token")
     }
     
     /// Get lab admin by ID
@@ -886,6 +1070,7 @@ class AdminController {
     func updateLabAdmin(_ labAdmin: LabAdmin) async throws {
         let now = Date()
         let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let updatedAt = dateFormatter.string(from: now)
         
         // Create an Encodable struct for lab admin updates
@@ -895,7 +1080,19 @@ class AdminController {
             let contact_number: String
             let department: String
             let Address: String
+            let qualification: [String]?
+            let license_no: String?
+            let dob: String?
+            let experience: Int
             let updated_at: String
+        }
+        
+        // Format date of birth to ISO8601 string if available
+        let dateOfBirthString: String?
+        if let dob = labAdmin.dateOfBirth {
+            dateOfBirthString = dateFormatter.string(from: dob)
+        } else {
+            dateOfBirthString = nil
         }
         
         let labAdminData = LabAdminUpdateData(
@@ -904,6 +1101,10 @@ class AdminController {
             contact_number: labAdmin.contactNumber,
             department: labAdmin.department,
             Address: labAdmin.address,
+            qualification: labAdmin.qualification,
+            license_no: labAdmin.licenseNo,
+            dob: dateOfBirthString,
+            experience: labAdmin.experience,
             updated_at: updatedAt
         )
         
@@ -913,10 +1114,36 @@ class AdminController {
             where: "id",
             equals: labAdmin.id
         )
+        
+        // Add before the end of the function:
+        await logActivity(
+            action: "update",
+            entityType: "lab_admin",
+            entityId: labAdmin.id,
+            entityName: labAdmin.name,
+            details: [
+                "hospital_id": labAdmin.hospitalId,
+                "email": labAdmin.email,
+                "contact_number": labAdmin.contactNumber,
+                "department": labAdmin.department,
+                "qualification": labAdmin.qualification as Any,
+                "license_no": labAdmin.licenseNo as Any,
+                "experience": labAdmin.experience,
+                "address": labAdmin.address,
+                "date_of_birth": dateOfBirthString as Any
+            ]
+        )
+        
+        print("UPDATE LAB ADMIN: Successfully updated lab admin with ID: \(labAdmin.id)")
     }
     
     /// Delete lab admin
     func deleteLabAdmin(id: String) async throws {
+        // Get the lab admin name before deletion for logging
+        let labAdmin = try await getLabAdmin(id: id)
+        let labAdminName = labAdmin.name
+        let hospitalId = labAdmin.hospitalId
+        
         print("DELETE LAB ADMIN: Attempting to delete lab admin with ID: \(id)")
         
         // First verify if the lab admin exists
@@ -1059,6 +1286,21 @@ class AdminController {
             print("DELETE LAB ADMIN ERROR: \(details)")
             throw AdminError.customError(details)
         }
+        
+        // Add at the end of the function:
+        await logActivity(
+            action: "delete",
+            entityType: "lab_admin",
+            entityId: id,
+            entityName: labAdminName,
+            details: [
+                "hospital_id": hospitalId,
+                "deletion_type": "permanent",
+                "verification_performed": true
+            ]
+        )
+        
+        print("DELETE LAB ADMIN: Successfully deleted lab admin with ID: \(id)")
     }
     
     // MARK: - Activity Management
@@ -1068,6 +1310,7 @@ class AdminController {
         let activityId = UUID().uuidString
         let now = Date()
         let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let timestamp = dateFormatter.string(from: now)
         
         // Create a base dictionary with required values
@@ -1291,7 +1534,7 @@ class AdminController {
             let isoFormatter = ISO8601DateFormatter()
             if let parsedDate = isoFormatter.date(from: createdAtString) {
                 createdAt = parsedDate
-        } else {
+            } else {
                 // Try other formats
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
@@ -1316,7 +1559,7 @@ class AdminController {
             let isoFormatter = ISO8601DateFormatter()
             if let parsedDate = isoFormatter.date(from: updatedAtString) {
                 updatedAt = parsedDate
-        } else {
+            } else {
                 // Try other formats
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
@@ -1441,6 +1684,17 @@ class AdminController {
             experience = 0
         }
         
+        // Handle max appointments with fallback
+        let maxAppointments: Int
+        if let max = data["max_appointments"] as? Int {
+            maxAppointments = max
+        } else if let maxString = data["max_appointments"] as? String, let max = Int(maxString) {
+            maxAppointments = max
+        } else {
+            print("PARSE DOCTOR WARNING: Missing or invalid max_appointments field, using default")
+            maxAppointments = 8
+        }
+        
         // Handle address fields with fallbacks
         let addressLine = data["address_line"] as? String ?? "No Address"
         let state = data["state"] as? String ?? "Unknown State"
@@ -1471,6 +1725,40 @@ class AdminController {
             updatedAt = dateFormatter.date(from: updatedAtString) ?? now
         }
         
+        // Handle date_of_birth field if it exists
+        var dateOfBirth: Date? = nil
+        if let dobString = data["dob"] as? String {
+            // Try to parse the date of birth with timestampz format
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            dateOfBirth = dateFormatter.date(from: dobString)
+            
+            // If ISO8601 fails, try other formats
+            if dateOfBirth == nil {
+                let pgFormatter = DateFormatter()
+                pgFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
+                dateOfBirth = pgFormatter.date(from: dobString)
+                
+                if dateOfBirth == nil {
+                    pgFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSSZ"
+                    dateOfBirth = pgFormatter.date(from: dobString)
+                    
+                    if dateOfBirth == nil {
+                        pgFormatter.dateFormat = "yyyy-MM-dd"
+                        dateOfBirth = pgFormatter.date(from: dobString)
+                    }
+                }
+            }
+            
+            if dateOfBirth != nil {
+                print("PARSE LAB ADMIN: Found date of birth: \(dobString), parsed as: \(dateOfBirth!)")
+            } else {
+                print("PARSE LAB ADMIN WARNING: Could not parse dob: '\(dobString)'")
+            }
+        } else {
+            print("PARSE LAB ADMIN INFO: No dob found")
+        }
+        
         print("PARSE DOCTOR: Successfully parsed doctor with ID: \(id)")
         
         return Doctor(
@@ -1490,8 +1778,10 @@ class AdminController {
             contactNumber: contactNumber,
             emergencyContactNumber: emergencyContactNumber,
             doctorStatus: doctorStatus,
+            dateOfBirth: dateOfBirth,
             createdAt: createdAt,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            maxAppointments: maxAppointments
         )
     }
     
@@ -1557,19 +1847,87 @@ class AdminController {
             throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid 'updated_at' field format"])
         }
         
+        // Get license_no field if it exists
+        let licenseNo = data["license_no"] as? String
+        if licenseNo != nil {
+            print("PARSE LAB ADMIN: Found license number: \(licenseNo!)")
+        } else {
+            print("PARSE LAB ADMIN INFO: No license number found")
+        }
+        
+        // Handle experience field (int)
+        let experience: Int
+        if let expInt = data["experience"] as? Int {
+            experience = expInt
+            print("PARSE LAB ADMIN: Found experience: \(experience) years")
+        } else if let expString = data["experience"] as? String, let expInt = Int(expString) {
+            experience = expInt
+            print("PARSE LAB ADMIN: Converted experience from string to int: \(experience) years")
+        } else {
+            experience = 0
+            print("PARSE LAB ADMIN WARNING: No valid experience found, using default value of 0")
+        }
+        
+        // Handle date_of_birth field if it exists
+        var dateOfBirth: Date? = nil
+        if let dobString = data["dob"] as? String {
+            // Try to parse the date of birth with timestampz format
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            dateOfBirth = dateFormatter.date(from: dobString)
+            
+            // If ISO8601 fails, try other formats
+            if dateOfBirth == nil {
+                let pgFormatter = DateFormatter()
+                pgFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
+                dateOfBirth = pgFormatter.date(from: dobString)
+                
+                if dateOfBirth == nil {
+                    pgFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSSZ"
+                    dateOfBirth = pgFormatter.date(from: dobString)
+                    
+                    if dateOfBirth == nil {
+                        pgFormatter.dateFormat = "yyyy-MM-dd"
+                        dateOfBirth = pgFormatter.date(from: dobString)
+                    }
+                }
+            }
+            
+            if dateOfBirth != nil {
+                print("PARSE LAB ADMIN: Found date of birth: \(dobString), parsed as: \(dateOfBirth!)")
+            } else {
+                print("PARSE LAB ADMIN WARNING: Could not parse dob: '\(dobString)'")
+            }
+        } else {
+            print("PARSE LAB ADMIN INFO: No dob found")
+        }
+        
+        // Handle qualifications field (may be an array or might not exist yet)
+        let qualification: [String]?
+        if let qualArray = data["qualification"] as? [String] {
+            qualification = qualArray
+            print("PARSE LAB ADMIN: Found qualification array with \(qualArray.count) items")
+        } else if let qualString = data["qualification"] as? String {
+            // Handle case where it might be stored as comma-separated string
+            qualification = qualString.split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) }
+            print("PARSE LAB ADMIN: Converted qualification string to array with \(qualification?.count ?? 0) items")
+        } else {
+            qualification = nil
+            print("PARSE LAB ADMIN WARNING: No qualification data found")
+        }
+        
         // Parse dates with multiple format support
         let dateFormatter = ISO8601DateFormatter()
-        var createdAt: Date?
-        var updatedAt: Date?
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         
         // Try ISO 8601 format first
-        createdAt = dateFormatter.date(from: createdAtString)
-        updatedAt = dateFormatter.date(from: updatedAtString)
+        var createdAt = dateFormatter.date(from: createdAtString)
+        var updatedAt = dateFormatter.date(from: updatedAtString)
         
         // If ISO 8601 fails, try PostgreSQL timestamp format
         if createdAt == nil || updatedAt == nil {
             let pgFormatter = DateFormatter()
-            pgFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            pgFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
             
             if createdAt == nil {
                 createdAt = pgFormatter.date(from: createdAtString)
@@ -1581,7 +1939,7 @@ class AdminController {
             
             // Try another common PostgreSQL format
             if createdAt == nil || updatedAt == nil {
-                pgFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                pgFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSSZ"
                 
                 if createdAt == nil {
                     createdAt = pgFormatter.date(from: createdAtString)
@@ -1624,9 +1982,14 @@ class AdminController {
             contactNumber: contactNumber,
             department: department,
             address: address,
+            qualification: qualification,
+            licenseNo: licenseNo,
+            dateOfBirth: dateOfBirth,
+            experience: experience, // Add the missing experience parameter
             createdAt: createdAt!,
             updatedAt: updatedAt!
         )
+        
         
         print("PARSE LAB ADMIN: Successfully parsed lab admin with ID: \(id), Name: \(name)")
         return labAdmin
@@ -1806,6 +2169,558 @@ class AdminController {
         result["message"] = "Lab admin can be safely deleted"
         
         return result
+    }
+    
+    /// Create doctor availability
+    func createDoctorAvailability(
+        doctorId: String,
+        hospitalId: String,
+        weeklySchedule: [String: [String: Bool]],
+        maxNormalPatients: Int = 5,
+        maxPremiumPatients: Int = 2
+    ) async throws {
+        let now = Date()
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let createdAt = dateFormatter.string(from: now)
+        
+        // Create a struct for the availability data
+        struct DoctorAvailabilityData: Encodable {
+            let doctor_id: String
+            let hospital_id: String
+            let weekly_schedule: [String: [String: Bool]]
+            let effective_from: String
+            let max_normal_patients: Int
+            let max_premium_patients: Int
+            let created_at: String
+            let updated_at: String
+        }
+        
+        // Create availability data using the struct
+        let availabilityData = DoctorAvailabilityData(
+            doctor_id: doctorId,
+            hospital_id: hospitalId,
+            weekly_schedule: weeklySchedule,
+            effective_from: dateFormatter.string(from: now),
+            max_normal_patients: maxNormalPatients,
+            max_premium_patients: maxPremiumPatients,
+            created_at: createdAt,
+            updated_at: createdAt
+        )
+        
+        // Insert into doctor_availability_efficient table
+        try await supabase.insert(
+            into: "doctor_availability_efficient",
+            data: availabilityData
+        )
+    }
+    
+    // MARK: - Doctor Availability Methods
+    
+    /// Simple struct to represent doctor availability
+    struct DoctorAvailability {
+        let doctorId: String
+        let weeklySchedule: [String: [String: Bool]]
+        let maxNormalPatients: Int
+        let maxPremiumPatients: Int
+    }
+    
+    /// Get doctor's availability schedule and patient limits
+    func getDoctorAvailability(doctorId: String) async throws -> DoctorAvailability? {
+        let availabilityData = try await supabase.select(
+            from: "doctor_availability_efficient",
+            where: "doctor_id",
+            equals: doctorId
+        )
+        
+        guard let data = availabilityData.first,
+              let weeklySchedule = data["weekly_schedule"] as? [String: [String: Bool]],
+              let maxNormalPatients = data["max_normal_patients"] as? Int,
+              let maxPremiumPatients = data["max_premium_patients"] as? Int else {
+            return nil
+        }
+        
+        return DoctorAvailability(
+            doctorId: doctorId,
+            weeklySchedule: weeklySchedule,
+            maxNormalPatients: maxNormalPatients,
+            maxPremiumPatients: maxPremiumPatients
+        )
+    }
+    
+    /// Update doctor's availability schedule and patient limits
+    func updateDoctorAvailability(
+        doctorId: String,
+        weeklySchedule: [String: [String: Bool]],
+        maxNormalPatients: Int,
+        maxPremiumPatients: Int
+    ) async throws {
+        struct AvailabilityData: Encodable {
+            let weekly_schedule: [String: [String: Bool]]
+            let max_normal_patients: Int
+            let max_premium_patients: Int
+            let updated_at: String
+        }
+        
+        let updateData = AvailabilityData(
+            weekly_schedule: weeklySchedule,
+            max_normal_patients: maxNormalPatients,
+            max_premium_patients: maxPremiumPatients,
+            updated_at: ISO8601DateFormatter().string(from: Date())
+        )
+        
+        // Check if record exists
+        let existingData = try await supabase.select(
+            from: "doctor_availability_efficient",
+            where: "doctor_id",
+            equals: doctorId
+        )
+        
+        if existingData.isEmpty {
+            // Insert new record
+            struct InsertData: Encodable {
+                let doctor_id: String
+                let weekly_schedule: [String: [String: Bool]]
+                let max_normal_patients: Int
+                let max_premium_patients: Int
+                let created_at: String
+                let updated_at: String
+            }
+            
+            let insertData = InsertData(
+                doctor_id: doctorId,
+                weekly_schedule: weeklySchedule,
+                max_normal_patients: maxNormalPatients,
+                max_premium_patients: maxPremiumPatients,
+                created_at: ISO8601DateFormatter().string(from: Date()),
+                updated_at: ISO8601DateFormatter().string(from: Date())
+            )
+            
+            try await supabase.insert(into: "doctor_availability_efficient", data: insertData)
+        } else {
+            // Update existing record
+            try await supabase.update(
+                table: "doctor_availability_efficient",
+                data: updateData,
+                where: "doctor_id",
+                equals: doctorId
+            )
+        }
+    }
+    
+    // MARK: - Blood Donation Request Methods
+    
+    /// Get all patients who are registered as blood donors
+    /// Optionally filter by blood group
+    func getRegisteredBloodDonors(bloodGroup: String? = nil) async throws -> [BloodDonor] {
+        // Get the current admin ID
+        guard let adminId = UserDefaults.standard.string(forKey: "hospital_id") else {
+            throw AdminError.adminNotFound
+        }
+        
+        // Get all blood donors
+        let allDonors = try await supabase.select(
+            from: "patients",
+            where: "is_blood_donor",
+            equals: "true"
+        )
+        
+        var donors: [BloodDonor] = []
+        
+        for donorData in allDonors {
+            guard let patientId = donorData["patient_id"] as? String,
+                  let name = donorData["name"] as? String,
+                  let donorBloodGroup = donorData["bloodGroup"] as? String,
+                  let contactNumber = donorData["phoneNumber"] as? String,
+                  let email = donorData["email"] as? String else {
+                continue
+            }
+            
+            // If blood group filter is specified, only include matching donors
+            if let requestedGroup = bloodGroup {
+                // Only return donors with matching blood group
+                if donorBloodGroup.lowercased() != requestedGroup.lowercased() {
+                    continue // Skip donors with non-matching blood group
+                }
+            }
+            
+            // Get the donor's request status
+            let donorRequests = try await supabase.select(
+                from: "blood_donor_requests",
+                where: "donor_id",
+                equals: patientId
+            )
+            
+            // Find requests from this admin and for the specified blood group
+            let matchingRequests = donorRequests.filter { request in
+                guard let requestedByAdmin = request["requested_by_admin"] as? String,
+                      let bloodRequestedFor = request["blood_requested_for"] as? String,
+                      let requestStatus = request["request_status"] as? String else {
+                    return false
+                }
+                
+                let matchesAdmin = requestedByAdmin == adminId
+                let matchesBloodGroup = bloodGroup == nil || bloodRequestedFor == bloodGroup
+                
+                return matchesAdmin && matchesBloodGroup
+            }
+            
+            // Get the most recent request status
+            var requestStatus: String? = nil
+            if let latestRequest = matchingRequests.first {
+                requestStatus = latestRequest["request_status"] as? String
+            }
+            
+            // Create the donor object with request status
+            let donor = BloodDonor(
+                id: patientId,
+                name: name,
+                bloodGroup: donorBloodGroup,
+                contactNumber: contactNumber,
+                email: email,
+                requestStatus: requestStatus
+            )
+            
+            donors.append(donor)
+        }
+        
+        return donors
+    }
+    
+    /// Send blood donation request to specified donors
+    func sendBloodDonationRequest(donorIds: [String], bloodGroup: String) async throws {
+        guard !donorIds.isEmpty else {
+            throw AdminError.invalidData("No donors selected")
+        }
+        
+        // Validate blood group against allowed values
+        let validBloodGroups = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"]
+        guard validBloodGroups.contains(bloodGroup) else {
+            throw AdminError.invalidData("Invalid blood group: \(bloodGroup)")
+        }
+        
+        // Get the current admin ID from hospital_id key in UserDefaults
+        guard let adminId = UserDefaults.standard.string(forKey: "hospital_id") else {
+            throw AdminError.adminNotFound
+        }
+        
+        print("BLOOD DONATION: Using admin ID: \(adminId) for blood donation request")
+        
+        // Define the request data structure that matches table constraints
+        struct BloodDonorRequestData: Encodable {
+            let donor_id: String
+            let requested_by_admin: String
+            let blood_requested_for: String
+            let requested_activity_status: Bool
+            let request_status: String
+        }
+        
+        // Send request to each selected donor
+        for donorId in donorIds {
+            // Get all requests for this donor
+            let donorRequests = try await supabase.select(
+                from: "blood_donor_requests",
+                where: "donor_id",
+                equals: donorId
+            )
+            
+            // Filter for active requests matching our criteria
+            let existingActiveRequest = donorRequests.first { request in
+                guard let requestedByAdmin = request["requested_by_admin"] as? String,
+                      let bloodRequestedFor = request["blood_requested_for"] as? String,
+                      let requestedActivityStatus = request["requested_activity_status"] as? Bool,
+                      let requestStatus = request["request_status"] as? String else {
+                    return false
+                }
+                
+                return requestedByAdmin == adminId &&
+                       bloodRequestedFor == bloodGroup &&
+                       requestedActivityStatus == true &&
+                       (requestStatus == "Pending" || requestStatus == "Accepted")
+            }
+            
+            // If an active request already exists, skip creating a new one
+            if existingActiveRequest != nil {
+                print("BLOOD DONATION: Active request already exists for donor \(donorId). Skipping.")
+                continue
+            }
+            
+            // Always create a new request (even if there was a rejected/cancelled/completed one before)
+            let requestData = BloodDonorRequestData(
+                donor_id: donorId,
+                requested_by_admin: adminId,
+                blood_requested_for: bloodGroup,
+                requested_activity_status: true,
+                request_status: "Pending"
+            )
+            
+            // Insert the request into the database (creating a new row)
+            try await supabase.insert(
+                into: "blood_donor_requests",
+                data: requestData
+            )
+        }
+    }
+    
+    /// Cancel blood donation request for specified donors
+    func cancelBloodDonationRequest(donorIds: [String], bloodGroup: String) async throws {
+        guard !donorIds.isEmpty else {
+            throw AdminError.invalidData("No donors selected")
+        }
+        
+        // Get the current admin ID from hospital_id key in UserDefaults
+        guard let adminId = UserDefaults.standard.string(forKey: "hospital_id") else {
+            throw AdminError.adminNotFound
+        }
+        
+        print("BLOOD DONATION: Using admin ID: \(adminId) for canceling blood donation request")
+        
+        // Define the update data structure
+        struct BloodDonorRequestUpdateData: Encodable {
+            let requested_activity_status: Bool
+            let request_status: String
+        }
+        
+        // Set update data with cancelled status
+        let updateData = BloodDonorRequestUpdateData(
+            requested_activity_status: false,
+            request_status: "Cancelled"
+        )
+        
+        // For each donor, update the request status
+        for donorId in donorIds {
+            let conditions: [String: String] = [
+                "donor_id": donorId,
+                "requested_by_admin": adminId,
+                "blood_requested_for": bloodGroup
+            ]
+            
+            try await supabase.update(
+                table: "blood_donor_requests",
+                data: updateData,
+                where: conditions
+            )
+        }
+    }
+    
+    /// Complete blood donation request for specified donors
+    func completeBloodDonationRequest(donorIds: [String], bloodGroup: String) async throws {
+        guard !donorIds.isEmpty else {
+            throw AdminError.invalidData("No donors selected")
+        }
+        
+        // Get the current admin ID from hospital_id key in UserDefaults
+        guard let adminId = UserDefaults.standard.string(forKey: "hospital_id") else {
+            throw AdminError.adminNotFound
+        }
+        
+        print("BLOOD DONATION: Using admin ID: \(adminId) for completing blood donation request")
+        
+        // Define the update data structure
+        struct BloodDonorRequestUpdateData: Encodable {
+            let requested_activity_status: Bool
+            let request_status: String
+        }
+        
+        // Set update data with completed status
+        let updateData = BloodDonorRequestUpdateData(
+            requested_activity_status: true,
+            request_status: "Completed"
+        )
+        
+        // For each donor, update the request status
+        for donorId in donorIds {
+            let conditions: [String: String] = [
+                "donor_id": donorId,
+                "requested_by_admin": adminId,
+                "blood_requested_for": bloodGroup
+            ]
+            
+            try await supabase.update(
+                table: "blood_donor_requests",
+                data: updateData,
+                where: conditions
+            )
+        }
+    }
+    
+    /// Get blood donation request history for the current admin
+    func getBloodDonationRequestHistory() async throws -> [[String: Any]] {
+        // Get the current admin ID from hospital_id key in UserDefaults
+        guard let adminId = UserDefaults.standard.string(forKey: "hospital_id") else {
+            throw AdminError.adminNotFound
+        }
+        
+        // Get all requests for this admin
+        let requests = try await supabase.select(
+            from: "blood_donor_requests",
+            where: "requested_by_admin",
+            equals: adminId
+        )
+        
+        // Filter for completed, cancelled, or rejected requests
+        let filteredRequests = requests.filter { request in
+            guard let requestStatus = request["request_status"] as? String else {
+                return false
+            }
+            
+            return requestStatus == "Completed" || requestStatus == "Cancelled" || requestStatus == "Rejected"
+        }
+        
+        // Enrich with donor information
+        var enrichedRequests: [[String: Any]] = []
+        
+        for request in filteredRequests {
+            var enrichedRequest = request
+            
+            // Add donor information if available
+            if let donorId = request["donor_id"] as? String {
+                let donorInfo = try await supabase.select(
+                    from: "patients",
+                    where: "patient_id",
+                    equals: donorId
+                )
+                
+                if let donor = donorInfo.first {
+                    if let name = donor["name"] as? String {
+                        enrichedRequest["donor_name"] = name
+                    }
+                    if let bloodGroup = donor["bloodGroup"] as? String {
+                        enrichedRequest["donor_blood_group"] = bloodGroup
+                    }
+                }
+            }
+            
+            enrichedRequests.append(enrichedRequest)
+        }
+        
+        // Sort by request time (newest first)
+        return enrichedRequests.sorted { first, second in
+            guard let firstTime = first["blood_requested_time"] as? String,
+                  let secondTime = second["blood_requested_time"] as? String else {
+                return false
+            }
+            
+            return firstTime > secondTime
+        }
+    }
+    
+    // MARK: - Activity Logging
+    
+    /// Log an activity to the activity_logs table with all details in description field
+    func logActivity(action: String, entityType: String, entityId: String, entityName: String, details: [String: Any]? = nil) async {
+        // Activity logging disabled
+        print("ADMIN: Activity logging is disabled")
+        /*
+        do {
+            print("ADMIN: Logging activity - \(action) \(entityType): \(entityName)")
+            
+            let now = Date()
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let timestamp = dateFormatter.string(from: now)
+            
+            // Format detailed description to include all information
+            var actionVerb = ""
+            switch action.lowercased() {
+            case "create": actionVerb = "Added"
+            case "update": actionVerb = "Updated"
+            case "delete": actionVerb = "Deleted"
+            case "login": actionVerb = "Login by"
+            default: actionVerb = action.capitalized
+            }
+            
+            // Create a structured description with all important details
+            var descriptionParts = ["\(actionVerb) \(entityType): \(entityName)"]
+            descriptionParts.append("ID: \(entityId)")
+            
+            // Add hospital ID if available
+            if let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") {
+                descriptionParts.append("Hospital: \(hospitalId)")
+            }
+            
+            // Add user ID if available
+            if let userId = UserDefaults.standard.string(forKey: "hospitalAdminId") {
+                descriptionParts.append("User: \(userId)")
+            }
+            
+            // Add important details if provided
+            if let details = details {
+                for (key, value) in details {
+                    // Only include non-empty values
+                    if let stringValue = value as? String, !stringValue.isEmpty {
+                        descriptionParts.append("\(key.replacingOccurrences(of: "_", with: " ").capitalized): \(stringValue)")
+                    } else if let intValue = value as? Int {
+                        descriptionParts.append("\(key.replacingOccurrences(of: "_", with: " ").capitalized): \(intValue)")
+                    } else if let doubleValue = value as? Double {
+                        descriptionParts.append("\(key.replacingOccurrences(of: "_", with: " ").capitalized): \(doubleValue)")
+                    } else if let boolValue = value as? Bool {
+                        descriptionParts.append("\(key.replacingOccurrences(of: "_", with: " ").capitalized): \(boolValue)")
+                    } else if let dateValue = value as? Date {
+                        descriptionParts.append("\(key.replacingOccurrences(of: "_", with: " ").capitalized): \(dateFormatter.string(from: dateValue))")
+                    } else if value is NSNull {
+                        // Skip null values
+                    } else {
+                        let stringValue = String(describing: value)
+                        if stringValue != "nil" && !stringValue.isEmpty {
+                            descriptionParts.append("\(key.replacingOccurrences(of: "_", with: " ").capitalized): \(stringValue)")
+                        }
+                    }
+                }
+            }
+            
+            // Combine all parts with semicolons for easier parsing
+            let description = descriptionParts.joined(separator: "; ")
+            
+            // Create an encodable struct for inserting into the database
+            struct ActivityLogData: Encodable {
+                let created_at: String
+                let description: String
+            }
+            
+            let activityLogData = ActivityLogData(
+                created_at: timestamp,
+                description: description
+            )
+            
+            // Insert into database
+            try await supabase.insert(
+                into: "activity_logs",
+                data: activityLogData
+            )
+            
+            print("ADMIN: Successfully logged activity")
+        } catch {
+            print("ADMIN ERROR: Failed to log activity: \(error.localizedDescription)")
+        }
+        */
+    }
+    
+    // Backwards compatibility method
+    func logActivity(description: String, remarks: String? = nil) async {
+        // Activity logging disabled
+        print("ADMIN: Activity logging is disabled (legacy method)")
+        /*
+        let parts = description.split(separator: ":")
+        let action = (parts.first?.contains("Added") ?? false) ? "create" : 
+                     (parts.first?.contains("Updated") ?? false) ? "update" : 
+                     (parts.first?.contains("Deleted") ?? false) ? "delete" : "action"
+        
+        let entityType = description.lowercased().contains("doctor") ? "doctor" : 
+                        description.lowercased().contains("lab admin") ? "lab_admin" : 
+                        "entity"
+        
+        let entityName = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespaces) : "Unknown"
+        let entityId = "unknown"
+        
+        await logActivity(
+            action: action,
+            entityType: entityType,
+            entityId: entityId,
+            entityName: entityName,
+            details: remarks != nil ? ["note": remarks!] : nil
+        )
+        */
     }
 }
 
