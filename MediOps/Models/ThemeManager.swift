@@ -1,54 +1,3 @@
-import SwiftUI
-
-enum AppTheme: String, CaseIterable {
-    case standard = "Standard"
-    case highContrast = "High Contrast"
-    case colorblindFriendly = "Colorblind Friendly"
-    case lowVision = "Low Vision Friendly"
-    
-    var description: String {
-        switch self {
-        case .standard:
-            return "Default app appearance"
-        case .highContrast:
-            return "Maximizes readability with high contrast colors"
-        case .colorblindFriendly:
-            return "Optimized for users with color vision deficiency"
-        case .lowVision:
-            return "Reduces glare and enhances comfort for extended viewing"
-        }
-    }
-    
-    var themeColors: [Color] {
-        switch self {
-        case .standard:
-            return [
-                Color(red: 0.350, green: 0.681, blue: 0.769),  // Teal
-                Color.black,
-                Color.gray
-            ]
-        case .highContrast:
-            return [
-                Color.black,          // Primary
-                Color(red: 0.0, green: 0.32, blue: 0.73),  // Secondary (navy blue)
-                Color(red: 1.0, green: 0.84, blue: 0.0)   // Accent (yellow)
-            ]
-        case .colorblindFriendly:
-            return [
-                Color(red: 0.0, green: 0.45, blue: 0.7),   // Primary (blue)
-                Color(red: 0.85, green: 0.55, blue: 0.0),   // Secondary (orange)
-                Color(red: 0.2, green: 0.6, blue: 0.4)     // Accent (green)
-            ]
-        case .lowVision:
-            return [
-                Color(red: 0.2, green: 0.4, blue: 0.3),    // Primary (dark green)
-                Color(red: 0.45, green: 0.35, blue: 0.3),   // Secondary (brown)
-                Color(red: 0.5, green: 0.6, blue: 0.5)      // Accent (sage)
-            ]
-        }
-    }
-}
-
 struct ThemeColors {
     let primary: Color      // Main brand color
     let secondary: Color    // Secondary elements
@@ -77,14 +26,15 @@ class ThemeManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "selectedTheme")
         self.currentTheme = .standard
         
+        // Initialize with standard theme colors
         self.colors = ThemeColors(
             primary: Color(red: 0.351, green: 0.680, blue: 0.769),  // Teal
-            secondary: Color.black,
-            accent: Color.gray,
+            secondary: Color(red: 1.0, green: 0.65, blue: 0.0),     // Orange/Gold
+            accent: Color(red: 1.0, green: 0.65, blue: 0.0),        // Orange/Gold
             background: .white,
-            text: Color.black,
+            text: .black,
             subtext: Color.gray,
-            error: .red
+            error: Color(red: 1.0, green: 0.65, blue: 0.0)          // Orange/Gold for consistency
         )
         
         updateColors()
@@ -94,13 +44,13 @@ class ThemeManager: ObservableObject {
         switch currentTheme {
         case .standard:
             colors = ThemeColors(
-                primary: Color(red: 0.4, green: 0.7, blue: 0.8),  // Teal
-                secondary: Color.black,
-                accent: Color.gray,
+                primary: Color(red: 0.351, green: 0.680, blue: 0.769),  // Teal
+                secondary: Color(red: 1.0, green: 0.65, blue: 0.0),     // Orange/Gold
+                accent: Color(red: 1.0, green: 0.65, blue: 0.0),        // Orange/Gold
                 background: .white,
-                text: Color.black,
+                text: .black,
                 subtext: Color.gray,
-                error: .red
+                error: Color(red: 1.0, green: 0.65, blue: 0.0)          // Orange/Gold for consistency
             )
             
         case .highContrast:
