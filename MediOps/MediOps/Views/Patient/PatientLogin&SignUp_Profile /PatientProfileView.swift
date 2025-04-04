@@ -86,7 +86,7 @@ struct PatientProfileView: View {
                     
                     if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
                         Text("unknown".localized)
-                            .foregroundColor(themeManager.colors.warning)
+                            .foregroundColor(themeManager.colors.error)
                             .font(.title3)
                             .fontWeight(.semibold)
                             .onTapGesture {
@@ -183,7 +183,7 @@ struct PatientProfileView: View {
         VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 50))
-                .foregroundColor(themeManager.colors.warning)
+                .foregroundColor(themeManager.colors.error)
             
             Text("Could not load profile")
                 .font(.title3)
