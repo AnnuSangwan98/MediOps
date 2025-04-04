@@ -18,6 +18,9 @@ struct BloodDonationRequestView: View {
     @State private var donorToUpdate: BloodDonor? = nil
     @State private var showStatusActionSheet = false
     @State private var activeTab = 0 // 0: Available, 1: Active Requests, 2: History
+    @State private var showingStatusUpdateSheet = false
+    @State private var selectedDonor: BloodDonor? = nil
+    @State private var showStatusUpdateDialog = false
     
     private let bloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
     private let adminController = AdminController.shared
@@ -30,34 +33,69 @@ struct BloodDonationRequestView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Custom segment control
-                tabSelector
-                    .padding(.horizontal)
-                    .padding(.top, 10)
-                
-                // Main content based on selected tab
-                ScrollView {
-                    VStack(spacing: 0) {
-                        switch activeTab {
-                        case 0: // Available Donors
-                            requestDetailsSection
-                            availableDonorsSection
-                            if requestStatus == .sent {
-                                sentRequestSection
-                            } else if !selectedDonors.isEmpty && requestStatus == .notSent {
-                                sendRequestButton
+            ZStack {
+                VStack(spacing: 0) {
+                    // Custom segment control
+                    tabSelector
+                        .padding(.horizontal)
+                        .padding(.top, 10)
+                    
+                    // Main content based on selected tab
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            switch activeTab {
+                            case 0: // Available Donors
+                                requestDetailsSection
+                                availableDonorsSection
+                                
+                            case 1: // Active Requests
+                                activeRequestsContent
+                                
+                            case 2: // History
+                                historyContent
+                                    .padding()
+                            default:
+                                EmptyView()
                             }
-                        case 1: // Active Requests
-                            activeRequestsContent
-                        case 2: // History
-                            historyContent
-                                .padding()
-                        default:
-                            EmptyView()
                         }
+                        .padding(.bottom, 80) // Add padding at the bottom for the floating button
                     }
-                    .padding(.bottom, 20)
+                }
+                
+                // Floating Send Request Button (only on available tab with selected donors)
+                if activeTab == 0 && !selectedDonors.isEmpty {
+                    VStack {
+                        Spacer()
+                        
+                        // Debug text to confirm donors are selected
+                        Text("Debug: \(selectedDonors.count) donors selected")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                        
+                        Button(action: sendBloodDonationRequest) {
+                            HStack {
+                                if isLoading {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle())
+                                        .tint(.white)
+                                } else {
+                                    Image(systemName: "paperplane.fill")
+                                        .font(.headline)
+                                    Text("Send Request (\(selectedDonors.count))")
+                                        .font(.headline)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                                    .cornerRadius(10)
+                                    .shadow(color: Color.black.opacity(0.2), radius: 5, x: 0, y: 3)
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 20)
+                        .disabled(isLoading)
+                    }
                 }
             }
             .navigationTitle("Blood Donation")
@@ -264,32 +302,50 @@ struct BloodDonationRequestView: View {
     private var availableDonorsList: some View {
         VStack(spacing: 0) {
             ForEach(availableDonors()) { donor in
-                donorRow(donor: donor, isSelectable: true)
-                    .background(
-                        selectedDonors.contains(donor.id) ? 
-                            Color.blue.opacity(0.05) : Color.clear
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if donor.canBeRequested {
-                            if selectedDonors.contains(donor.id) {
-                                selectedDonors.remove(donor.id)
-                            } else {
-                                selectedDonors.insert(donor.id)
+                Button(action: {
+                    // Toggle selection with print for debugging
+                    if selectedDonors.contains(donor.id) {
+                        selectedDonors.remove(donor.id)
+                        print("Removed donor: \(donor.name), total: \(selectedDonors.count)")
+                    } else {
+                        selectedDonors.insert(donor.id)
+                        print("Added donor: \(donor.name), total: \(selectedDonors.count)")
+                    }
+                }) {
+                    HStack {
+                        // Donor information
+                        VStack(alignment: .leading, spacing: 8) {
+                            // Donor name
+                            Text(donor.name)
+                                .font(.title3)
+                                .fontWeight(.medium)
+                            
+                            // Blood Group row
+                            HStack {
+                                Text("Blood Group:")
+                                    .foregroundColor(.gray)
+                                Text(donor.bloodGroup)
+                                    .fontWeight(.medium)
                             }
                         }
+                        
+                        Spacer()
+                        
+                        // Selection checkmark
+                        Image(systemName: selectedDonors.contains(donor.id) ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(selectedDonors.contains(donor.id) ? .blue : .gray)
+                            .font(.title2)
                     }
-                
-                if donor.id != availableDonors().last?.id {
-                    Divider()
-                        .padding(.horizontal, 16)
+                    .padding()
+                    .background(Color(UIColor.systemBackground))
+                    .cornerRadius(10)
+                    .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
                 }
+                .buttonStyle(PlainButtonStyle())
+                .padding(.horizontal)
+                .padding(.vertical, 4)
             }
         }
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
-        .padding(.horizontal)
     }
     
     private var activeRequestsContent: some View {
@@ -324,309 +380,106 @@ struct BloodDonationRequestView: View {
     }
     
     private var activeRequestsList: some View {
-        VStack(spacing: 0) {
-            ForEach(activeDonors()) { donor in
-                Button(action: {
-                    donorToUpdate = donor
-                    showStatusActionSheet = true
-                }) {
-                    donorRow(donor: donor, isSelectable: false)
-                        .background(Color.white)
-                }
-                .buttonStyle(PlainButtonStyle())
-                
-                if donor.id != activeDonors().last?.id {
-                    Divider()
-                        .padding(.horizontal, 16)
-                }
-            }
-        }
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
-        .padding(.horizontal)
-    }
-    
-    private func donorRow(donor: BloodDonor, isSelectable: Bool) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                // Name section
-                Text(donor.name)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .padding(.bottom, 2)
-                
-                // Blood group with label in a fixed-width layout
-                HStack(spacing: 8) {
-                    Text("Blood Group:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .frame(width: 100, alignment: .leading)
+        VStack {
+            if activeDonors().isEmpty {
+                // Empty state view
+                VStack(spacing: 16) {
+                    Image(systemName: "drop.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(.gray)
                     
-                    Text(donor.bloodGroup)
-                        .font(.subheadline.bold())
-                        .foregroundColor(.primary)
+                    Text("No Active Blood Donation Requests")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                    
+                    Text("Blood donation requests that are pending or accepted will appear here.")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
                 }
-                
-                // Request status section
-                if donor.hasPendingRequest || donor.requestStatus != nil {
-                    HStack(spacing: 8) {
-                        Text("Status:")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .frame(width: 100, alignment: .leading)
-                        
-                        // Show status indicators
-                        if donor.hasPendingRequest {
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(Color.orange)
-                                    .frame(width: 6, height: 6)
-                                
-                                Text("Pending Request")
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(spacing: 20) {
+                        ForEach(activeDonors(), id: \.id) { donor in
+                            // Active donor card
+                            Button(action: {
+                                selectedDonor = donor
+                                showStatusUpdateDialog = true
+                            }) {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    // Donor name and status badge
+                                    HStack {
+                                        Text(donor.name)
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                        
+                                        Spacer()
+                                        
+                                        // Status badge
+                                        Text(donor.requestStatus ?? "Pending")
+                                            .font(.footnote)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 4)
+                                            .background(statusColor(for: donor.requestStatus ?? "Pending").opacity(0.1))
+                                            .foregroundColor(statusColor(for: donor.requestStatus ?? "Pending"))
+                                            .cornerRadius(16)
+                                    }
+                                    
+                                    // Blood Group row
+                                    HStack {
+                                        Text("Blood Group:")
+                                            .foregroundColor(.gray)
+                                            .font(.title3)
+                                        
+                                        Text(donor.bloodGroup)
+                                            .fontWeight(.semibold)
+                                            .font(.title3)
+                                    }
+                                }
+                                .padding()
+                                .background(Color(UIColor.systemBackground))
+                                .cornerRadius(12)
+                                .shadow(color: Color.black.opacity(0.06), radius: 3, x: 0, y: 1)
                             }
-                        } else if let status = donor.requestStatus, status != "Rejected", status != "Cancelled" {
-                            statusBadge(for: status)
+                            .buttonStyle(PlainButtonStyle())
+                            .padding(.horizontal)
                         }
                     }
+                    .padding(.vertical, 8)
                 }
             }
-            
-            Spacer()
-            
-            // Selection indicator or action indicator
-            if isSelectable {
-                if donor.canBeRequested {
-                    if selectedDonors.contains(donor.id) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.blue)
-                            .font(.title2)
-                            .frame(width: 40)
-                    } else {
-                        Image(systemName: "circle")
-                            .foregroundColor(.gray)
-                            .font(.title2)
-                            .frame(width: 40)
+        }
+        .confirmationDialog(
+            "Request sent to \(activeDonors().count) donor(s)",
+            isPresented: $showStatusUpdateDialog,
+            titleVisibility: .visible
+        ) {
+            if let donor = selectedDonor {
+                Button("Complete Request", role: .none) {
+                    Task {
+                        await updateDonorStatus(donor: donor, newStatus: "Completed")
                     }
-                } else {
-                    // Cannot be selected - show a lock icon with reason
-                    VStack(alignment: .center, spacing: 2) {
-                        Image(systemName: "lock.fill")
-                            .foregroundColor(.orange)
-                            .font(.body)
-                        
-                        Text("Unavailable")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                    }
-                    .frame(width: 40)
                 }
+                .foregroundColor(.green)
+                
+                Button("Cancel Request", role: .destructive) {
+                    Task {
+                        await updateDonorStatus(donor: donor, newStatus: "Cancelled")
+                    }
+                }
+                
+                Button("Dismiss", role: .cancel) {}
+            }
+        } message: {
+            if let donor = selectedDonor {
+                Text("What would you like to do with \(donor.name)'s request?")
             } else {
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.gray)
-                    .font(.callout)
-                    .frame(width: 40)
+                Text("Select an action")
             }
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
-        .opacity(donor.canBeRequested || !isSelectable ? 1.0 : 0.7)
-    }
-    
-    private func statusBadge(for status: String) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(statusColor(for: status))
-                .frame(width: 8, height: 8)
-            
-            Text(status)
-                .font(.caption)
-                .foregroundColor(statusColor(for: status))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(statusColor(for: status).opacity(0.15))
-        .cornerRadius(12)
-    }
-    
-    private var loadingIndicator: some View {
-        HStack {
-            Spacer()
-            VStack {
-                ProgressView()
-                Text("Loading...")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .padding(.top, 5)
-            }
-            .padding()
-            Spacer()
-        }
-    }
-    
-    private var actionButtonsSection: some View {
-        VStack(spacing: 15) {
-            if requestStatus == .notSent && !selectedDonors.isEmpty {
-                sendRequestButton
-            } else if requestStatus == .sent {
-                sentRequestButtons
-            } else if requestStatus == .completed {
-                newRequestButton
-            }
-        }
-    }
-    
-    private var sendRequestButton: some View {
-        Button(action: sendBloodDonationRequest) {
-            HStack {
-                if isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle())
-                        .tint(.white)
-                } else {
-                    Image(systemName: "paperplane.fill")
-                    Text("Send Request to \(selectedDonors.count) Donors")
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(isLoading || selectedDonors.isEmpty ? Color.gray : Color.blue)
-            .foregroundColor(.white)
-            .cornerRadius(10)
-            .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 2)
-        }
-        .disabled(selectedDonors.isEmpty || isLoading)
-        .padding(.horizontal)
-        .padding(.top, 15)
-    }
-    
-    private var newRequestButton: some View {
-        Button(action: resetView) {
-            HStack {
-                Image(systemName: "arrow.clockwise")
-                Text("New Request")
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.blue)
-            .foregroundColor(.white)
-            .cornerRadius(10)
-            .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 2)
-        }
-        .disabled(isLoading)
-        .padding(.horizontal)
-        .padding(.top, 15)
-    }
-    
-    private var sentRequestSection: some View {
-        VStack(spacing: 10) {
-            Divider()
-                .padding(.vertical, 10)
-            
-            Text("Request sent to \(selectedDonors.count) donor(s)")
-                .font(.headline)
-                .foregroundColor(.primary)
-                .padding(.horizontal)
-            
-            HStack(spacing: 12) {
-                Button(action: {
-                    Task {
-                        await cancelBloodDonationRequest()
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "xmark.circle.fill")
-                        Text("Cancel")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(isLoading ? Color.gray : Color.red)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                }
-                .disabled(isLoading)
-                
-                Button(action: {
-                    Task {
-                        await completeBloodDonationRequest()
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                        Text("Complete")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(isLoading ? Color.gray : Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                }
-                .disabled(isLoading)
-            }
-            .padding(.horizontal)
-            
-            // Add a timestamp for better user feedback
-            if selectedDonors.count > 0 {
-                HStack {
-                    Image(systemName: "clock")
-                        .font(.caption2)
-                    Text("Request sent \(formatTimeAgo())")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
-                }
-                .padding(.top, 4)
-                .padding(.horizontal)
-            }
-        }
-        .padding(.top, 15)
-    }
-    
-    private var sentRequestButtons: some View {
-        VStack(spacing: 10) {
-            Text("Request sent to \(selectedDonors.count) donor(s)")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            HStack(spacing: 15) {
-                Button(action: {
-                    Task {
-                        await cancelBloodDonationRequest()
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "xmark.circle.fill")
-                        Text("Cancel All")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(isLoading ? Color.gray : Color.red)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                }
-                .disabled(isLoading)
-                
-                Button(action: {
-                    Task {
-                        await completeBloodDonationRequest()
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                        Text("Complete All")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(isLoading ? Color.gray : Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                }
-                .disabled(isLoading)
-            }
-            .padding(.horizontal)
-        }
-        .padding(.top, 15)
     }
     
     private var historyContent: some View {
@@ -679,16 +532,13 @@ struct BloodDonationRequestView: View {
     // MARK: - Helper Methods
     
     private func availableDonors() -> [BloodDonor] {
-        // Include donors with pending requests but show them as locked
-        // Only filter out those that are in history (completed, cancelled, rejected)
-        let filteredDonors = registeredDonors.filter { donor in
-            donor.requestStatus != "Completed" && 
-            donor.requestStatus != "Cancelled" && 
-            donor.requestStatus != "Rejected"
-        }
-        
-        // Sort by name
-        return filteredDonors.sorted { $0.name < $1.name }
+        registeredDonors.filter { donor in
+            // Only show donors that don't have an active request
+            donor.requestStatus == nil ||
+            donor.requestStatus == "Completed" ||
+            donor.requestStatus == "Cancelled" ||
+            donor.requestStatus == "Rejected"
+        }.sorted { $0.name < $1.name } // Sort by name for consistent ordering
     }
     
     private func hasAvailableDonorsForSelection() -> Bool {
@@ -696,8 +546,14 @@ struct BloodDonationRequestView: View {
     }
     
     private func activeDonors() -> [BloodDonor] {
-        return registeredDonors.filter { $0.hasPendingRequest || $0.requestStatus == "Accepted" }
-                               .sorted { $0.name < $1.name }
+        let active = registeredDonors.filter { donor in
+            // Show donors with pending or accepted requests
+            return donor.requestStatus == "Pending" ||
+                  donor.requestStatus == "Accepted"
+        }.sorted { $0.name < $1.name } // Sort by name for consistent ordering
+        
+        print("ACTIVE DONORS FUNCTION: Found \(active.count) active donors")
+        return active
     }
     
     private func refreshAllData() async {
@@ -720,25 +576,28 @@ struct BloodDonationRequestView: View {
         defer { isLoadingDonors = false }
         
         do {
+            // Get all registered donors
             registeredDonors = try await adminController.getRegisteredBloodDonors(bloodGroup: bloodGroup)
             
-            // Auto-select only donors that can be requested
-            for donor in registeredDonors {
-                if donor.canBeRequested {
-                    selectedDonors.insert(donor.id)
+            // Get active blood donation requests
+            let activeRequests = try await adminController.getBloodDonationRequests()
+            
+            // Update donor statuses based on active requests
+            for (index, donor) in registeredDonors.enumerated() {
+                if let activeRequest = activeRequests.first(where: { ($0["donor_id"] as? String) == donor.id }) {
+                    var updatedDonor = donor
+                    updatedDonor.requestStatus = (activeRequest["request_status"] as? String) ?? "Pending"
+                    registeredDonors[index] = updatedDonor
                 }
             }
+            
+            print("DONORS AFTER UPDATE: \(registeredDonors.map { "\($0.name): \($0.requestStatus ?? "none")" }.joined(separator: ", "))")
+            print("ACTIVE DONORS: \(activeDonors().map { $0.name }.joined(separator: ", "))")
             
             // Check if there are active requests
             let activeDonorsList = activeDonors()
             if !activeDonorsList.isEmpty {
                 requestStatus = .sent
-                
-                // Make sure selected donors reflects the active requests
-                selectedDonors.removeAll()
-                for donor in activeDonorsList {
-                    selectedDonors.insert(donor.id)
-                }
             } else if requestStatus != .completed {
                 requestStatus = .notSent
             }
@@ -765,20 +624,27 @@ struct BloodDonationRequestView: View {
         isLoading = true
         
         do {
-            // Only update the specific donor's status
+            // Get the request ID for this donor
+            let requests = try await adminController.getBloodDonationRequests()
+            guard let request = requests.first(where: { ($0["donor_id"] as? String) == donor.id }),
+                  let requestId = request["id"] as? String else {
+                throw AdminError.customError("Could not find active request for this donor")
+            }
+            
             if newStatus == "Completed" {
-                try await adminController.completeBloodDonationRequest(
-                    donorIds: [donor.id],
-                    bloodGroup: donor.bloodGroup
-                )
+                try await adminController.completeBloodDonationRequest(requestId: requestId)
             } else if newStatus == "Cancelled" {
-                try await adminController.cancelBloodDonationRequest(
-                    donorIds: [donor.id],
-                    bloodGroup: donor.bloodGroup
-                )
+                try await adminController.cancelBloodDonationRequest(requestId: requestId)
             }
             
             await MainActor.run {
+                // Update the local donor status
+                if let index = registeredDonors.firstIndex(where: { $0.id == donor.id }) {
+                    var updatedDonor = registeredDonors[index]
+                    updatedDonor.requestStatus = newStatus
+                    registeredDonors[index] = updatedDonor
+                }
+                
                 isLoading = false
                 showSuccess = true
                 
@@ -799,34 +665,26 @@ struct BloodDonationRequestView: View {
     private func sendBloodDonationRequest() {
         guard !selectedDonors.isEmpty else { return }
         
-        // Filter out donors that cannot be requested
-        let requestableDonors = selectedDonors.filter { donorId in
-            registeredDonors.first { $0.id == donorId }?.canBeRequested ?? false
-        }
-        
-        if requestableDonors.isEmpty {
-            errorMessage = "None of the selected donors can be requested at this time."
-            showError = true
-            return
-        }
-        
-        // Check if a request has already been sent
-        if requestStatus == .sent || requestStatus == .completed {
-            errorMessage = "A request has already been sent. Please cancel the current request first."
-            showError = true
-            return
-        }
-        
         isLoading = true
         
         Task {
             do {
+                // Send the blood donation request
                 try await adminController.sendBloodDonationRequest(
-                    donorIds: Array(requestableDonors),
+                    donorIds: Array(selectedDonors),
                     bloodGroup: selectedBloodGroup
                 )
                 
                 await MainActor.run {
+                    // Update local state for immediate UI update
+                    for donorId in selectedDonors {
+                        if let index = registeredDonors.firstIndex(where: { $0.id == donorId }) {
+                            var updatedDonor = registeredDonors[index]
+                            updatedDonor.requestStatus = "Pending"
+                            registeredDonors[index] = updatedDonor
+                        }
+                    }
+                    
                     isLoading = false
                     showSuccess = true
                     requestStatus = .sent
@@ -836,9 +694,29 @@ struct BloodDonationRequestView: View {
                         activeTab = 1
                     }
                     
-                    // Refresh all data
+                    // Clear selected donors
+                    selectedDonors.removeAll()
+                    
+                    // Force refresh active requests data
                     Task {
-                        await refreshAllData()
+                        do {
+                            // Get active blood donation requests
+                            let activeRequests = try await adminController.getBloodDonationRequests()
+                            
+                            await MainActor.run {
+                                for (index, donor) in registeredDonors.enumerated() {
+                                    if let activeRequest = activeRequests.first(where: { ($0["donor_id"] as? String) == donor.id }) {
+                                        var updatedDonor = donor
+                                        updatedDonor.requestStatus = (activeRequest["request_status"] as? String) ?? "Pending"
+                                        registeredDonors[index] = updatedDonor
+                                    }
+                                }
+                                
+                                print("ACTIVE TAB DONORS: \(activeDonors().map { $0.name }.joined(separator: ", "))")
+                            }
+                        } catch {
+                            print("Error refreshing active requests: \(error.localizedDescription)")
+                        }
                     }
                 }
             } catch {
@@ -847,66 +725,6 @@ struct BloodDonationRequestView: View {
                     errorMessage = error.localizedDescription
                     showError = true
                 }
-            }
-        }
-    }
-    
-    private func cancelBloodDonationRequest() async {
-        isLoading = true
-        
-        do {
-            try await adminController.cancelBloodDonationRequest(
-                donorIds: Array(selectedDonors),
-                bloodGroup: selectedBloodGroup
-            )
-            
-            await MainActor.run {
-                isLoading = false
-                requestStatus = .notSent
-                showSuccess = true
-                
-                // Refresh all data
-                Task {
-                    await refreshAllData()
-                }
-            }
-        } catch {
-            await MainActor.run {
-                isLoading = false
-                errorMessage = error.localizedDescription
-                showError = true
-            }
-        }
-    }
-    
-    private func completeBloodDonationRequest() async {
-        isLoading = true
-        
-        do {
-            try await adminController.completeBloodDonationRequest(
-                donorIds: Array(selectedDonors),
-                bloodGroup: selectedBloodGroup
-            )
-            
-            await MainActor.run {
-                isLoading = false
-                requestStatus = .completed
-                showSuccess = true
-                
-                // Refresh all data and switch to history tab
-                Task {
-                    await refreshAllData()
-                    
-                    withAnimation {
-                        activeTab = 2
-                    }
-                }
-            }
-        } catch {
-            await MainActor.run {
-                isLoading = false
-                errorMessage = error.localizedDescription
-                showError = true
             }
         }
     }
@@ -941,9 +759,22 @@ struct BloodDonationRequestView: View {
     }
     
     private func formatTimeAgo() -> String {
-        // In a real app, you'd store the time when the request was sent
-        // For now, we'll just return a placeholder
         return "recently"
+    }
+    
+    private var loadingIndicator: some View {
+        HStack {
+            Spacer()
+            VStack {
+                ProgressView()
+                Text("Loading...")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .padding(.top, 5)
+            }
+            .padding()
+            Spacer()
+        }
     }
 }
 
