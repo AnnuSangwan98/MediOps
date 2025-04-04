@@ -3,16 +3,19 @@ import SwiftUI
 enum AppTheme: String, CaseIterable {
     case standard = "Standard"
     case highContrast = "High Contrast"
+    case colorblindFriendly = "Colorblind Friendly"
     case lowVision = "Low Vision Friendly"
     
     var description: String {
         switch self {
         case .standard:
-            return "Default blue theme with optimal contrast"
+            return "Default app appearance"
         case .highContrast:
-            return "Yellow/Orange theme for enhanced visibility"
+            return "Maximizes readability with high contrast colors"
+        case .colorblindFriendly:
+            return "Optimized for users with color vision deficiency"
         case .lowVision:
-            return "Soft brown theme that reduces eye strain"
+            return "Reduces glare and enhances comfort for extended viewing"
         }
     }
     
@@ -20,21 +23,27 @@ enum AppTheme: String, CaseIterable {
         switch self {
         case .standard:
             return [
-                Color(red: 0.0, green: 0.48, blue: 0.8),  // Primary blue
-                Color(red: 0.1, green: 0.1, blue: 0.1),   // Text
-                Color(red: 0.5, green: 0.6, blue: 0.7)    // Accent
+                Color(red: 0.4, green: 0.7, blue: 0.8),  // Teal
+                Color.black,
+                Color.gray
             ]
         case .highContrast:
             return [
-                Color(red: 0.95, green: 0.65, blue: 0.0), // Primary orange
-                Color(red: 0.0, green: 0.48, blue: 0.8),  // Secondary blue
-                Color(red: 1.0, green: 0.84, blue: 0.0)   // Accent yellow
+                Color.black,          // Primary
+                Color(red: 0.0, green: 0.32, blue: 0.73),  // Secondary (navy blue)
+                Color(red: 1.0, green: 0.84, blue: 0.0)   // Accent (yellow)
+            ]
+        case .colorblindFriendly:
+            return [
+                Color(red: 0.0, green: 0.45, blue: 0.7),   // Primary (blue)
+                Color(red: 0.85, green: 0.55, blue: 0.0),   // Secondary (orange)
+                Color(red: 0.2, green: 0.6, blue: 0.4)     // Accent (green)
             ]
         case .lowVision:
             return [
-                Color(red: 0.4, green: 0.3, blue: 0.2),   // Primary brown
-                Color(red: 0.85, green: 0.8, blue: 0.75), // Background beige
-                Color(red: 0.5, green: 0.4, blue: 0.3)    // Accent brown
+                Color(red: 0.2, green: 0.4, blue: 0.3),    // Primary (dark green)
+                Color(red: 0.45, green: 0.35, blue: 0.3),   // Secondary (brown)
+                Color(red: 0.5, green: 0.6, blue: 0.5)      // Accent (sage)
             ]
         }
     }
@@ -64,20 +73,17 @@ class ThemeManager: ObservableObject {
     @Published private(set) var colors: ThemeColors
     
     private init() {
-        if let savedTheme = UserDefaults.standard.string(forKey: "selectedTheme"),
-           let theme = AppTheme(rawValue: savedTheme) {
-            self.currentTheme = theme
-        } else {
-            self.currentTheme = .standard
-        }
+        // Reset the saved theme to ensure Standard is the new default
+        UserDefaults.standard.removeObject(forKey: "selectedTheme")
+        self.currentTheme = .standard
         
         self.colors = ThemeColors(
-            primary: .blue,
-            secondary: .black,
-            accent: .blue,
+            primary: Color(red: 0.4, green: 0.7, blue: 0.8),  // Teal
+            secondary: Color.black,
+            accent: Color.gray,
             background: .white,
-            text: .black,
-            subtext: .gray,
+            text: Color.black,
+            subtext: Color.gray,
             error: .red
         )
         
@@ -88,34 +94,45 @@ class ThemeManager: ObservableObject {
         switch currentTheme {
         case .standard:
             colors = ThemeColors(
-                primary: Color(red: 0.0, green: 0.48, blue: 0.8),
-                secondary: Color(red: 0.1, green: 0.1, blue: 0.1),
-                accent: Color(red: 0.5, green: 0.6, blue: 0.7),
+                primary: Color(red: 0.4, green: 0.7, blue: 0.8),  // Teal
+                secondary: Color.black,
+                accent: Color.gray,
                 background: .white,
-                text: Color(red: 0.1, green: 0.1, blue: 0.1),
-                subtext: Color(red: 0.5, green: 0.6, blue: 0.7),
+                text: Color.black,
+                subtext: Color.gray,
                 error: .red
             )
             
         case .highContrast:
             colors = ThemeColors(
-                primary: Color(red: 0.95, green: 0.65, blue: 0.0),
-                secondary: Color(red: 0.0, green: 0.48, blue: 0.8),
+                primary: .black,
+                secondary: Color(red: 0.0, green: 0.32, blue: 0.73),
                 accent: Color(red: 1.0, green: 0.84, blue: 0.0),
                 background: .white,
-                text: Color(red: 0.0, green: 0.48, blue: 0.8),
-                subtext: Color(red: 0.95, green: 0.65, blue: 0.0),
+                text: .black,
+                subtext: Color(red: 0.0, green: 0.32, blue: 0.73),
+                error: Color(red: 0.8, green: 0.0, blue: 0.0)
+            )
+            
+        case .colorblindFriendly:
+            colors = ThemeColors(
+                primary: Color(red: 0.0, green: 0.45, blue: 0.7),
+                secondary: Color(red: 0.85, green: 0.55, blue: 0.0),
+                accent: Color(red: 0.2, green: 0.6, blue: 0.4),
+                background: .white,
+                text: Color(red: 0.0, green: 0.45, blue: 0.7),
+                subtext: Color(red: 0.85, green: 0.55, blue: 0.0),
                 error: Color(red: 0.8, green: 0.0, blue: 0.0)
             )
             
         case .lowVision:
             colors = ThemeColors(
-                primary: Color(red: 0.4, green: 0.3, blue: 0.2),
-                secondary: Color(red: 0.5, green: 0.4, blue: 0.3),
-                accent: Color(red: 0.5, green: 0.4, blue: 0.3),
-                background: Color(red: 0.85, green: 0.8, blue: 0.75),
-                text: Color(red: 0.4, green: 0.3, blue: 0.2),
-                subtext: Color(red: 0.5, green: 0.4, blue: 0.3),
+                primary: Color(red: 0.2, green: 0.4, blue: 0.3),
+                secondary: Color(red: 0.45, green: 0.35, blue: 0.3),
+                accent: Color(red: 0.5, green: 0.6, blue: 0.5),
+                background: Color(red: 0.95, green: 0.93, blue: 0.90),
+                text: Color(red: 0.2, green: 0.4, blue: 0.3),
+                subtext: Color(red: 0.45, green: 0.35, blue: 0.3),
                 error: Color(red: 0.7, green: 0.0, blue: 0.0)
             )
         }
