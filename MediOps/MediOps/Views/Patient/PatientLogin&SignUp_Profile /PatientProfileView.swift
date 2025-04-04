@@ -19,6 +19,15 @@ struct PatientProfileView: View {
     @ObservedObject private var translationManager = TranslationManager.shared
     @ObservedObject private var themeManager = ThemeManager.shared
     
+    // Define standard theme colors
+    private let standardTheme = (
+        primary: Color(red: 0/255, green: 128/255, blue: 128/255),  // Pure teal color
+        text: Color.black,
+        subtext: Color.gray,
+        background: Color.white,
+        error: Color.red
+    )
+    
     private var profileContent: some View {
         VStack(spacing: 20) {
             if let patient = profileController.patient {
@@ -42,28 +51,28 @@ struct PatientProfileView: View {
             Image(systemName: "person.crop.circle.fill")
                 .resizable()
                 .frame(width: 120, height: 120)
-                .foregroundColor(themeManager.colors.primary)
+                .foregroundColor(standardTheme.primary)
                 .padding(.top, 15)
             
             Text(patient.name)
                 .font(.title)
                 .fontWeight(.semibold)
-                .foregroundColor(themeManager.colors.text)
+                .foregroundColor(standardTheme.text)
                 .padding(.top, 5)
             
             HStack(spacing: 70) {
                 VStack {
                     Image(systemName: "person.fill")
-                        .foregroundColor(themeManager.colors.primary)
+                        .foregroundColor(standardTheme.primary)
                     Text(patient.gender)
                         .padding(.horizontal)
-                        .foregroundColor(themeManager.colors.text)
+                        .foregroundColor(standardTheme.text)
                 }
                 VStack {
                     Image(systemName: "calendar")
-                        .foregroundColor(themeManager.colors.primary)
+                        .foregroundColor(standardTheme.primary)
                     Text("\(patient.age)")
-                        .foregroundColor(themeManager.colors.text)
+                        .foregroundColor(standardTheme.text)
                 }
             }
             .font(.subheadline)
@@ -76,17 +85,17 @@ struct PatientProfileView: View {
             VStack(alignment: .leading) {
                 Text("blood_group".localized)
                     .font(.headline)
-                    .foregroundColor(themeManager.colors.text)
+                    .foregroundColor(standardTheme.text)
                     .padding(.bottom, 2)
                 
                 HStack {
                     Image(systemName: "drop.fill")
-                        .foregroundColor(themeManager.colors.error)
+                        .foregroundColor(standardTheme.error)
                         .font(.title2)
                     
                     if patient.bloodGroup.isEmpty || patient.bloodGroup == "Not specified" {
                         Text("unknown".localized)
-                            .foregroundColor(themeManager.colors.warning)
+                            .foregroundColor(.orange)
                             .font(.title3)
                             .fontWeight(.semibold)
                             .onTapGesture {
@@ -104,7 +113,7 @@ struct PatientProfileView: View {
                             Text("Fix")
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(themeManager.colors.primary)
+                                .background(standardTheme.primary)
                                 .foregroundColor(.white)
                                 .cornerRadius(4)
                         }
@@ -112,7 +121,7 @@ struct PatientProfileView: View {
                         Text(patient.bloodGroup)
                             .font(.title3)
                             .fontWeight(.semibold)
-                            .foregroundColor(themeManager.colors.text)
+                            .foregroundColor(standardTheme.text)
                     }
                 }
             }
@@ -128,7 +137,7 @@ struct PatientProfileView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("personal_information".localized)
                         .font(.headline)
-                        .foregroundColor(themeManager.colors.text)
+                        .foregroundColor(standardTheme.text)
                         .padding(.bottom, 5)
                     InfoRow(title: "address".localized, value: patient.address ?? "not_provided".localized)
                     InfoRow(title: "phone_number".localized, value: patient.phoneNumber)
@@ -143,16 +152,16 @@ struct PatientProfileView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("language".localized)
                                 .font(.headline)
-                                .foregroundColor(themeManager.colors.text)
+                                .foregroundColor(standardTheme.text)
                             
                             Text(translationManager.currentLanguage.displayName)
-                                .foregroundColor(themeManager.colors.subtext)
+                                .foregroundColor(standardTheme.subtext)
                         }
                         
                         Spacer()
                         
                         Image(systemName: "chevron.right")
-                            .foregroundColor(themeManager.colors.subtext)
+                            .foregroundColor(standardTheme.subtext)
                     }
                     .contentShape(Rectangle())
                 }
@@ -170,7 +179,7 @@ struct PatientProfileView: View {
                 .fontWeight(.semibold)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(themeManager.colors.error)
+                .background(standardTheme.error)
                 .foregroundColor(.white)
                 .cornerRadius(12)
                 .padding(.horizontal)
@@ -183,16 +192,16 @@ struct PatientProfileView: View {
         VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 50))
-                .foregroundColor(themeManager.colors.warning)
+                .foregroundColor(standardTheme.error)
             
             Text("Could not load profile")
                 .font(.title3)
                 .fontWeight(.medium)
-                .foregroundColor(themeManager.colors.text)
+                .foregroundColor(standardTheme.text)
             
             Text(error.localizedDescription)
                 .multilineTextAlignment(.center)
-                .foregroundColor(themeManager.colors.subtext)
+                .foregroundColor(standardTheme.subtext)
                 .padding(.horizontal)
             
             Button("Try Again") {
@@ -208,7 +217,7 @@ struct PatientProfileView: View {
                 }
             }
             .padding()
-            .background(themeManager.colors.primary)
+            .background(standardTheme.primary)
             .foregroundColor(.white)
             .cornerRadius(8)
         }
@@ -234,14 +243,14 @@ struct PatientProfileView: View {
                     Button("cancel".localized) {
                         dismiss()
                     }
-                    .foregroundColor(themeManager.colors.text)
+                    .foregroundColor(standardTheme.text)
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("edit".localized) {
                         isEditing = true
                     }
-                    .foregroundColor(themeManager.colors.primary)
+                    .foregroundColor(standardTheme.primary)
                     .disabled(profileController.patient == nil)
                 }
             }
@@ -337,7 +346,6 @@ struct PatientProfileView: View {
     
     // CardView reusable style
     struct CardView<Content: View>: View {
-        @ObservedObject private var themeManager = ThemeManager.shared
         let content: Content
         
         init(@ViewBuilder content: () -> Content) {
@@ -349,15 +357,19 @@ struct PatientProfileView: View {
                 content
             }
             .padding()
-            .background(Color(.systemGray6))
+            .background(Color.white)
             .cornerRadius(16)
-            .shadow(color: themeManager.colors.primary.opacity(0.05), radius: 5, x: 0, y: 2)
+            .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
         }
     }
     
     // Reusable row
     struct InfoRow: View {
-        @ObservedObject private var themeManager = ThemeManager.shared
+        private let standardTheme = (
+            text: Color.black,
+            subtext: Color.gray
+        )
+        
         var title: String
         var value: String
         
@@ -365,10 +377,10 @@ struct PatientProfileView: View {
             HStack {
                 Text(title)
                     .fontWeight(.medium)
-                    .foregroundColor(themeManager.colors.text)
+                    .foregroundColor(standardTheme.text)
                 Spacer()
                 Text(value)
-                    .foregroundColor(themeManager.colors.subtext)
+                    .foregroundColor(standardTheme.subtext)
             }
         }
     }
