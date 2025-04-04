@@ -13,6 +13,12 @@ struct PatientOTPVerificationView: View {
     @State private var currentOTP: String
     @EnvironmentObject private var navigationState: AppNavigationState
     
+    // Add context parameter
+    let context: OTPContext
+    
+    // Add callback for verification success
+    var onVerificationSuccess: (() -> Void)?
+    
     @State private var otpInput: String = ""
     @State private var showError = false
     @State private var errorMessage = ""
@@ -34,9 +40,18 @@ struct PatientOTPVerificationView: View {
     
     @State private var selectedDate: Date = Date()
     
-    init(email: String, expectedOTP: String) {
+    // Add OTP context enum
+    enum OTPContext {
+        case login
+        case signup
+        case passwordReset
+    }
+    
+    init(email: String, expectedOTP: String, context: OTPContext = .login, onVerificationSuccess: (() -> Void)? = nil) {
         self.email = email
         self._currentOTP = State(initialValue: expectedOTP)
+        self.context = context
+        self.onVerificationSuccess = onVerificationSuccess
     }
     
     var body: some View {
@@ -157,21 +172,28 @@ struct PatientOTPVerificationView: View {
                     SuccessAlertView(
                         isPresented: $showSuccess,
                         message: successMessage,
+                        context: context,
                         onDismiss: {
                             if isVerified {
                                 // Only navigate after user dismisses the alert
                                 DispatchQueue.main.async {
-                                    // Set root view to HomeTabView
-                                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                                       let window = windowScene.windows.first {
-                                        let homeView = HomeTabView()
-                                        window.rootViewController = UIHostingController(rootView: 
-                                            NavigationView {
-                                                homeView
-                                            }
-                                            .environmentObject(navigationState)
-                                        )
-                                        window.makeKeyAndVisible()
+                                    switch context {
+                                    case .login, .signup:
+                                        // Set root view to HomeTabView
+                                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                                           let window = windowScene.windows.first {
+                                            let homeView = HomeTabView()
+                                            window.rootViewController = UIHostingController(rootView: 
+                                                NavigationView {
+                                                    homeView
+                                                }
+                                                .environmentObject(navigationState)
+                                            )
+                                            window.makeKeyAndVisible()
+                                        }
+                                    case .passwordReset:
+                                        // Just call the success callback, let parent view handle navigation
+                                        onVerificationSuccess?()
                                     }
                                 }
                             }
@@ -206,39 +228,42 @@ struct PatientOTPVerificationView: View {
                         let isValid = EmailService.shared.verifyOTP(email: email, otp: otpInput)
                         
                         await MainActor.run {
-                            // Print all relevant UserDefaults for debugging
-                            print("🔑 VERIFICATION: All UserDefaults keys related to patient IDs:")
-                            print("  current_user_id = \(UserDefaults.standard.string(forKey: "current_user_id") ?? "nil")")
-                            print("  current_patient_id = \(UserDefaults.standard.string(forKey: "current_patient_id") ?? "nil")")
-                            print("  userId = \(UserDefaults.standard.string(forKey: "userId") ?? "nil")")
-                            
-                            // Try to get the user ID from multiple possible sources
-                            var userIdToUse = UserDefaults.standard.string(forKey: "current_user_id")
-                            
-                            if userIdToUse == nil {
-                                // Try other keys if current_user_id is nil
-                                userIdToUse = UserDefaults.standard.string(forKey: "user_id")
-                            }
-                            
-                            // Use a hardcoded value as last resort (for testing only)
-                            if userIdToUse == nil {
-                                userIdToUse = "USER001"
-                                print("⚠️ WARNING: Using hardcoded user ID for testing: \(userIdToUse!)")
-                            }
-                            
-                            // Set both keys to ensure we have the user ID available
-                            print("✅ Setting both userId and current_user_id to: \(userIdToUse!)")
-                            UserDefaults.standard.set(userIdToUse, forKey: "userId")
-                            UserDefaults.standard.set(userIdToUse, forKey: "current_user_id")
-                            
-                            // Ensure the changes are immediately saved
-                            UserDefaults.standard.synchronize()
-                            
                             isLoading = false
                             isVerified = true
                             
-                            // Set navigation state but don't auto-navigate
-                            navigationState.signIn(as: .patient)
+                            // Only set navigation state for login/signup
+                            if context == .login || context == .signup {
+                                // Print all relevant UserDefaults for debugging
+                                print("🔑 VERIFICATION: All UserDefaults keys related to patient IDs:")
+                                print("  current_user_id = \(UserDefaults.standard.string(forKey: "current_user_id") ?? "nil")")
+                                print("  current_patient_id = \(UserDefaults.standard.string(forKey: "current_patient_id") ?? "nil")")
+                                print("  userId = \(UserDefaults.standard.string(forKey: "userId") ?? "nil")")
+                                
+                                // Try to get the user ID from multiple possible sources
+                                var userIdToUse = UserDefaults.standard.string(forKey: "current_user_id")
+                                
+                                if userIdToUse == nil {
+                                    // Try other keys if current_user_id is nil
+                                    userIdToUse = UserDefaults.standard.string(forKey: "user_id")
+                                }
+                                
+                                // Use a hardcoded value as last resort (for testing only)
+                                if userIdToUse == nil {
+                                    userIdToUse = "USER001"
+                                    print("⚠️ WARNING: Using hardcoded user ID for testing: \(userIdToUse!)")
+                                }
+                                
+                                // Set both keys to ensure we have the user ID available
+                                print("✅ Setting both userId and current_user_id to: \(userIdToUse!)")
+                                UserDefaults.standard.set(userIdToUse, forKey: "userId")
+                                UserDefaults.standard.set(userIdToUse, forKey: "current_user_id")
+                                
+                                // Ensure the changes are immediately saved
+                                UserDefaults.standard.synchronize()
+                                
+                                // Set navigation state but don't auto-navigate
+                                navigationState.signIn(as: .patient)
+                            }
                             
                             // Show success message
                             successMessage = "Verification successful!"
@@ -311,6 +336,7 @@ struct PatientOTPVerificationView: View {
 struct SuccessAlertView: View {
     @Binding var isPresented: Bool
     var message: String
+    var context: PatientOTPVerificationView.OTPContext
     var onDismiss: () -> Void
     
     @State private var scale: CGFloat = 0.5
@@ -321,15 +347,7 @@ struct SuccessAlertView: View {
             Color.black.opacity(0.4)
                 .edgesIgnoringSafeArea(.all)
                 .onTapGesture {
-                    withAnimation {
-                        scale = 0.5
-                        opacity = 0
-                    }
-                    
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        isPresented = false
-                        onDismiss()
-                    }
+                    dismissWithAnimation()
                 }
             
             VStack(spacing: 20) {
@@ -352,17 +370,7 @@ struct SuccessAlertView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
                 
-                Button(action: {
-                    withAnimation {
-                        scale = 0.5
-                        opacity = 0
-                    }
-                    
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        isPresented = false
-                        onDismiss()
-                    }
-                }) {
+                Button(action: dismissWithAnimation) {
                     Text("OK")
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
@@ -387,6 +395,18 @@ struct SuccessAlertView: View {
                     opacity = 1
                 }
             }
+        }
+    }
+    
+    private func dismissWithAnimation() {
+        withAnimation {
+            scale = 0.5
+            opacity = 0
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            isPresented = false
+            onDismiss()
         }
     }
 }

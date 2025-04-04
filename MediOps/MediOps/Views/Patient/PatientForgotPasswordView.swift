@@ -14,6 +14,11 @@ struct PatientForgotPasswordView: View {
     @State private var errorMessage: String = ""
     @State private var isLoading: Bool = false
     
+    // OTP verification state
+    @State private var showOTPVerification: Bool = false
+    @State private var currentOTP: String = ""
+    @State private var otpVerified: Bool = false
+    
     // Reset token handling
     @State private var resetToken: String = ""
     @State private var passwordResetRequested: Bool = false
@@ -49,8 +54,19 @@ struct PatientForgotPasswordView: View {
                         .foregroundColor(.teal)
                         .padding(.top, 50)
                     
-                    if !passwordResetRequested {
+                    if !showOTPVerification && !otpVerified {
                         emailSection
+                    } else if showOTPVerification && !otpVerified {
+                        PatientOTPVerificationView(
+                            email: email,
+                            expectedOTP: currentOTP,
+                            context: .passwordReset,
+                            onVerificationSuccess: {
+                                // This will be called when OTP verification is successful
+                                otpVerified = true
+                                passwordResetRequested = true
+                            }
+                        )
                     } else if !passwordResetSuccess {
                         newPasswordSection
                     } else {
@@ -302,26 +318,27 @@ struct PatientForgotPasswordView: View {
                 // If we made it here, we found an account
                 print("PASSWORD RESET: Account verification successful")
                 
-                // Send an actual password reset email with a token
+                // Send OTP email
                 do {
-                    let role = foundUserRole ?? "Patient" // Default to Patient if role not found
-                    resetToken = try await EmailService.shared.sendPasswordResetEmail(to: normalizedEmail, role: role)
-                    print("PASSWORD RESET: Reset token email sent successfully: \(resetToken)")
+                    let otp = try await EmailService.shared.sendOTP(to: normalizedEmail, role: "Patient")
+                    print("PASSWORD RESET: OTP sent successfully: \(otp)")
                     
                     await MainActor.run {
                         isLoading = false
-                        passwordResetRequested = true
+                        currentOTP = otp
+                        showOTPVerification = true
                     }
                 } catch {
-                    print("PASSWORD RESET: Failed to send reset email: \(error.localizedDescription)")
+                    print("PASSWORD RESET: Failed to send OTP email: \(error.localizedDescription)")
                     
-                    // Fallback to simulated token for development/testing
-                    resetToken = UUID().uuidString
-                    print("PASSWORD RESET: Using fallback token: \(resetToken)")
+                    // Fallback to local OTP generation for testing
+                    let otp = String(Int.random(in: 100000...999999))
+                    print("PASSWORD RESET: Using fallback OTP: \(otp)")
                     
                     await MainActor.run {
                         isLoading = false
-                        passwordResetRequested = true
+                        currentOTP = otp
+                        showOTPVerification = true
                     }
                 }
             } catch {
@@ -356,11 +373,14 @@ struct PatientForgotPasswordView: View {
         
         Task {
             do {
-                // Directly download all users and find the one we need
+                // 1. Find the user in both tables
                 let allUsers = try await SupabaseController.shared.select(from: "users")
-                print("PASSWORD RESET: Downloaded \(allUsers.count) users for password update")
+                let allPatients = try await SupabaseController.shared.select(from: "patients")
+                
+                print("PASSWORD RESET: Downloaded \(allUsers.count) users and \(allPatients.count) patients for password update")
                 
                 var userId: String? = nil
+                var patientId: String? = nil
                 
                 // Find user with case-insensitive matching
                 for user in allUsers {
@@ -372,29 +392,58 @@ struct PatientForgotPasswordView: View {
                     }
                 }
                 
+                // Find patient with case-insensitive matching
+                for patient in allPatients {
+                    if let patientEmail = patient["email"] as? String,
+                       patientEmail.lowercased() == normalizedEmail {
+                        patientId = patient["id"] as? String
+                        print("PASSWORD RESET: Found patient with ID: \(patientId ?? "unknown") to update password")
+                        break
+                    }
+                }
+                
                 guard let userId = userId else {
                     throw NSError(domain: "PasswordReset", code: 404, userInfo: [
                         NSLocalizedDescriptionKey: "User not found when trying to update password"
                     ])
                 }
                 
-                // Hash the new password (for development, this is just plain text)
-                let passwordHash = SupabaseController.shared.hashPassword(newPassword)
+                guard let patientId = patientId else {
+                    throw NSError(domain: "PasswordReset", code: 404, userInfo: [
+                        NSLocalizedDescriptionKey: "Patient not found when trying to update password"
+                    ])
+                }
                 
-                // Update the password in the database
-                let updateData: [String: String] = [
+                // 2. Update password in users table (hashed)
+                let passwordHash = SupabaseController.shared.hashPassword(newPassword)
+                let userUpdateData: [String: String] = [
                     "password_hash": passwordHash,
                     "updated_at": ISO8601DateFormatter().string(from: Date())
                 ]
                 
                 try await SupabaseController.shared.update(
                     table: "users",
-                    data: updateData,
+                    data: userUpdateData,
                     where: "id",
                     equals: userId
                 )
                 
-                print("PASSWORD RESET: Successfully updated password for user ID: \(userId)")
+                print("PASSWORD RESET: Successfully updated password hash in users table for ID: \(userId)")
+                
+                // 3. Update password in patients table (direct password)
+                let patientUpdateData: [String: String] = [
+                    "password": newPassword,
+                    "updated_at": ISO8601DateFormatter().string(from: Date())
+                ]
+                
+                try await SupabaseController.shared.update(
+                    table: "patients",
+                    data: patientUpdateData,
+                    where: "id",
+                    equals: patientId
+                )
+                
+                print("PASSWORD RESET: Successfully updated password in patients table for ID: \(patientId)")
                 
                 await MainActor.run {
                     isLoading = false
