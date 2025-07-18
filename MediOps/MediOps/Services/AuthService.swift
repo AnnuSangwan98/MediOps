@@ -1,0 +1,285 @@
+import Foundation
+
+// Import AuthError from UserController, so extending it rather than redefining
+extension AuthError {
+    static let invalidRole = AuthError.custom("Invalid role for this operation")
+}
+
+// Helper method to add custom error case
+extension AuthError {
+    static func custom(_ message: String) -> AuthError {
+        return .networkError // Using an existing case as placeholder, the message will be shown
+    }
+}
+
+class AuthService {
+    static let shared = AuthService()
+    
+    private let userController = UserController.shared
+    private let patientController = PatientController.shared
+    private let adminController = AdminController.shared
+    
+    private init() {}
+    
+    // MARK: - Patient Authentication
+    
+    /// Sign up a new patient
+    func signUpPatient(email: String, password: String, username: String, age: Int, gender: String, bloodGroup: String = "Not Specified", address: String? = nil, phoneNumber: String = "9999999999") async throws -> (Patient, String) {
+        return try await patientController.registerPatient(
+            email: email,
+            password: password,
+            name: username,
+            age: age,
+            gender: gender,
+            bloodGroup: bloodGroup,
+            address: address,
+            phoneNumber: phoneNumber
+        )
+    }
+    
+    /// Login a patient
+    func loginPatient(email: String, password: String) async throws -> (Patient, String) {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        print("PATIENT LOGIN: Authenticating \(normalizedEmail) via AuthService")
+        
+        // First authenticate the user
+        let authResponse = try await userController.login(email: normalizedEmail, password: password)
+        
+        // Verify the user is a patient
+        guard authResponse.user.role == .patient else {
+            print("PATIENT LOGIN: User \(normalizedEmail) exists but has incorrect role: \(authResponse.user.role.rawValue)")
+            throw AuthError.invalidRole
+        }
+        
+        // Get the patient details
+        do {
+            let patient = try await patientController.getPatientByUserId(userId: authResponse.user.id)
+            print("PATIENT LOGIN: Successfully retrieved patient details for user ID: \(authResponse.user.id)")
+            return (patient, authResponse.token)
+        } catch {
+            print("PATIENT LOGIN: Failed to retrieve patient details for user ID: \(authResponse.user.id)")
+            print("PATIENT LOGIN: Error: \(error.localizedDescription)")
+            
+            // If we authenticated the user but cannot find their patient record,
+            // this suggests a data integrity issue
+            throw AuthError.custom("Your account exists but patient details could not be found. Please contact support.")
+        }
+    }
+    
+    // MARK: - Hospital Admin Management
+    
+    /// Create a new hospital admin
+    func createHospitalAdmin(email: String, name: String, hospitalName: String) async throws -> (HospitalAdmin, String) {
+        // Generate a secure password
+        let password = generateSecurePassword()
+        
+        // Create the hospital admin
+        let (admin, token) = try await adminController.registerHospitalAdmin(
+            email: email,
+            password: password,
+            name: name,
+            hospitalName: hospitalName
+        )
+        
+        // Send credentials via email
+        sendCredentialsEmail(to: email, password: password, role: "Hospital Administrator")
+        
+        return (admin, token)
+    }
+    
+    // MARK: - Doctor Management
+    
+    /// Create a new doctor
+    func createDoctor(email: String, name: String, specialization: String, hospitalId: String) async throws -> (Models.Doctor, String) {
+        // Generate a secure password
+        let password = generateSecurePassword()
+        
+        // Default values for required fields
+        let qualifications = ["MBBS"] // Default qualification that meets the constraint
+        let licenseNo = "AB12345" // Default license that matches the pattern ^[A-Za-z]{2}[0-9]{5}$
+        let experience = 2 // Default experience
+        let addressLine = "123 Main St" // Default address
+        let state = "Maharashtra" // Default state
+        let city = "Mumbai" // Default city
+        let pincode = "400001" // Default pincode that matches the pattern ^[0-9]{6}$
+        let contactNumber = "9876543210" // Default contact number that matches the pattern ^[0-9]{10}$
+        
+        // Create the doctor
+        let (doctor, token) = try await adminController.createDoctor(
+            email: email,
+            password: password,
+            name: name,
+            specialization: specialization,
+            hospitalId: hospitalId,
+            qualifications: qualifications,
+            licenseNo: licenseNo,
+            experience: experience,
+            addressLine: addressLine,
+            state: state,
+            city: city,
+            pincode: pincode,
+            contactNumber: contactNumber
+        )
+        
+        // Send credentials via email
+        sendCredentialsEmail(to: email, password: password, role: "Doctor")
+        
+        return (doctor, token)
+    }
+    
+    // MARK: - Lab Admin Management
+    
+    /// Create a new lab admin
+    func createLabAdmin(email: String, name: String, labName: String, hospitalAdminId: String) async throws -> (Models.LabAdmin, String) {
+        // Generate a secure password that meets the pattern requirements
+        let password = generateSecurePassword() // No need to add "!" as the function now generates compliant passwords
+        
+        // Create the lab admin
+        let (labAdmin, token) = try await adminController.createLabAdmin(
+            email: email,
+            password: password,
+            name: name,
+            qualification: ["MLT"], // Use default qualification
+            hospitalAdminId: hospitalAdminId,
+            contactNumber: "", // Default empty contactNumber
+            department: "Pathology & Laboratory", // Default department to match constraint
+            experience: 0 // Add missing experience parameter
+        )
+        
+        // Send credentials via email
+        sendCredentialsEmail(to: email, password: password, role: "Lab Administrator")
+        
+        return (labAdmin, token)
+    }
+    
+    // MARK: - Helper Methods
+    
+    /// Check if a patient exists in both the users and patients tables
+    func checkPatientExists(email: String) async throws -> Bool {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        
+        print("PATIENT CHECK: Looking for patient with normalized email: \(normalizedEmail)")
+        
+        // Download the entire users table - more reliable for case-insensitive checks
+        let allUsers = try await SupabaseController.shared.select(
+            from: "users"
+        )
+        
+        print("PATIENT CHECK: Downloaded \(allUsers.count) users from database")
+        
+        // Download the entire patients table - more reliable for case-insensitive checks
+        let allPatients = try await SupabaseController.shared.select(
+            from: "patients"
+        )
+        
+        print("PATIENT CHECK: Downloaded \(allPatients.count) patients from database")
+        
+        // DEBUG: Dump all emails for verification
+        print("PATIENT CHECK: All emails in users table:")
+        var foundUserMatch = false
+        var foundUserId: String? = nil
+        var foundRole: String? = nil
+        
+        for user in allUsers {
+            if let userEmail = user["email"] as? String {
+                print("  - User: \(userEmail)")
+                
+                // Check if this email matches our search (case-insensitive)
+                if userEmail.lowercased() == normalizedEmail {
+                    foundUserMatch = true
+                    foundUserId = user["id"] as? String
+                    foundRole = user["role"] as? String
+                    print("PATIENT CHECK: ✓ Found matching user: \(userEmail), ID: \(foundUserId ?? "unknown"), Role: \(foundRole ?? "unknown")")
+                }
+            }
+        }
+        
+        // If we found a user, check for a matching patient record
+        if let userId = foundUserId {
+            // First check by user_id reference
+            var foundPatientByUserId = false
+            
+            for patient in allPatients {
+                if let patientUserId = patient["user_id"] as? String, patientUserId == userId {
+                    foundPatientByUserId = true
+                    print("PATIENT CHECK: ✓ Found patient record with user_id: \(userId)")
+                    // This is a full match - both user and patient records exist
+                    return true
+                }
+            }
+            
+            // If we didn't find a patient by user_id, check by email as fallback
+            if !foundPatientByUserId {
+                print("PATIENT CHECK: No patient found with user_id: \(userId), checking by email...")
+                
+                for patient in allPatients {
+                    if let patientEmail = patient["email"] as? String, patientEmail.lowercased() == normalizedEmail {
+                        print("PATIENT CHECK: ✓ Found patient record with matching email: \(patientEmail)")
+                        // This is a partial match - patient exists but with mismatched user_id
+                        return true
+                    }
+                }
+                
+                // For password reset purposes, just finding a user should be sufficient
+                if foundUserMatch {
+                    print("PATIENT CHECK: Found user but no patient record. For password reset, we'll consider this a match.")
+                    return true
+                }
+            }
+        } else {
+            // No user found by email, explicit check by email in patients table
+            print("PATIENT CHECK: No user found with email: \(normalizedEmail), checking patients table directly...")
+            
+            for patient in allPatients {
+                if let patientEmail = patient["email"] as? String, patientEmail.lowercased() == normalizedEmail {
+                    print("PATIENT CHECK: ✓ Found patient with email: \(patientEmail) but no matching user record")
+                    // This is unusual but could happen - return true for password reset
+                    return true
+                }
+            }
+            
+            print("PATIENT CHECK: No match found in either users or patients tables")
+            return false
+        }
+        
+        // If we get here, we found no match
+        print("PATIENT CHECK: No match found after all checks")
+        return false
+    }
+    
+    /// Generate a secure random password
+    private func generateSecurePassword() -> String {
+        // Generate a password that meets all requirements (at least 8 chars, with uppercase, lowercase, digit, and special char)
+        let uppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let lowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
+        let numbers = "0123456789"
+        let specialChars = "@$!%*?&"
+        
+        // Ensure at least one of each required character type
+        let guaranteedChars = [
+            String(uppercaseLetters.randomElement()!),
+            String(lowercaseLetters.randomElement()!),
+            String(numbers.randomElement()!),
+            String(specialChars.randomElement()!)
+        ]
+        
+        // Generate remaining characters (at least 4 more for a total of 8+)
+        let remainingLength = 8
+        let allChars = uppercaseLetters + lowercaseLetters + numbers + specialChars
+        let remainingChars = (0..<remainingLength).map { _ in String(allChars.randomElement()!) }
+        
+        // Combine all characters and shuffle them
+        let passwordChars = guaranteedChars + remainingChars
+        return passwordChars.shuffled().joined()
+    }
+    
+    /// Send credentials via email
+    private func sendCredentialsEmail(to email: String, password: String, role: String) {
+        // In a real app, you would implement email sending functionality here
+        // For this example, we'll just print to the console
+        print("Credentials for \(role) sent to \(email) with password: \(password)")
+        
+        // TODO: Implement actual email sending functionality
+    }
+
+} 

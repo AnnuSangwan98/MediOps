@@ -9,20 +9,15 @@ import SwiftUI
 
 @main
 struct MediOpsApp: App {
-    init() {
-        // Configure development assets
-        #if DEBUG
-        if let developmentAssetsPath = Bundle.main.path(forResource: "Development Assets", ofType: "xcassets") {
-            print("Development Assets path: \(developmentAssetsPath)")
-        }
-        #endif
-    }
+    // Add translation manager
+    @StateObject private var translationManager = TranslationManager.shared
     
     var body: some Scene {
         WindowGroup {
-            NavigationStack {
-                RoleSelectionView()
-            }
+            SplashScreenAlt()
+                // Add translation support
+                .environmentObject(translationManager)
+                .localizedLayout()
         }
     }
 }

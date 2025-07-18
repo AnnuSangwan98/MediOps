@@ -1,8 +1,8 @@
 import SwiftUI
 
 // MARK: - Models
-struct Doctor: Identifiable {
-    var id = UUID()
+struct UIDoctor: Identifiable {
+    var id: String = UUID().uuidString
     var fullName: String
     var specialization: String
     var email: String
@@ -13,6 +13,7 @@ struct Doctor: Identifiable {
     var qualification: String
     var license: String
     var address: String // Added address field
+    var maxAppointments: Int = 8 // Default value for max appointments
     
     enum Gender: String, CaseIterable, Identifiable {
         case male = "Male"
@@ -22,8 +23,9 @@ struct Doctor: Identifiable {
     }
 }
 
-struct LabAdmin: Identifiable {
+struct UILabAdmin: Identifiable {
     var id = UUID()
+    var originalId: String? // Store the original Supabase ID (e.g., LAB001)
     var fullName: String
     var email: String
     var phone: String // This will store the full phone number including +91
@@ -31,6 +33,7 @@ struct LabAdmin: Identifiable {
     var dateOfBirth: Date
     var experience: Int
     var qualification: String
+    var license: String? // License number field
     var address: String // Added address field
     
     enum Gender: String, CaseIterable, Identifiable {
@@ -38,6 +41,30 @@ struct LabAdmin: Identifiable {
         case female = "Female"
         
         var id: String { self.rawValue }
+    }
+}
+
+struct UIActivity: Identifiable {
+    var id = UUID()
+    var type: ActivityType
+    var title: String
+    var timestamp: Date
+    var status: ActivityStatus
+    var doctorDetails: UIDoctor?  // Updated to use UIDoctor
+    var labAdminDetails: UILabAdmin?  // Updated to use UILabAdmin
+    var hospitalDetails: UIHospital? // Added hospital details
+    
+    enum ActivityType {
+        case doctorAdded
+        case labAdminAdded
+        case hospitalAdded // Added new activity type
+    }
+    
+    enum ActivityStatus {
+        case pending
+        case approved
+        case rejected
+        case completed
     }
 }
 
@@ -67,526 +94,299 @@ struct AdminDashboardCard: View {
     }
 }
 
-// MARK: - Add Doctor View
-struct AddDoctorView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var fullName = ""
-    @State private var specialization = ""
-    @State private var email = ""
-    @State private var phoneNumber = "" // This will store only the 10 digits part
-    @State private var gender: Doctor.Gender = .male
-    @State private var dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
-    @State private var experience = 0
-    @State private var qualification = ""
-    @State private var license = ""
-    @State private var address = "" // Added address state
-    @State private var showAlert = false
-    @State private var alertMessage = ""
-    
-    // Calculate maximum experience based on age
-    private var maximumExperience: Int {
-        let calendar = Calendar.current
-        let ageComponents = calendar.dateComponents([.year], from: dateOfBirth, to: Date())
-        let age = ageComponents.year ?? 0
-        return max(0, age - 25) // Experience should be 19 years less than doctor's age
-    }
+// MARK: - Blood Donation Card
+struct BloodDonationCard: View {
+    let action: () -> Void
     
     var body: some View {
-        NavigationStack {
-            Form {
-                Section(header: Text("Personal Information")) {
-                    TextField("Full Name", text: $fullName)
+        Button(action: action) {
+            HStack(spacing: 15) {
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.red)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Blood Donation Request")
+                        .font(.headline)
+                        .foregroundColor(.black)
                     
-                    Picker("Gender", selection: $gender) {
-                        ForEach(Doctor.Gender.allCases) { gender in
-                            Text(gender.rawValue).tag(gender)
-                        }
-                    }
-                    
-                    DatePicker("Date of Birth",
-                              selection: $dateOfBirth,
-                              displayedComponents: .date)
-                    .onChange(of: dateOfBirth) { _, _ in
-                        // Adjust experience if it exceeds the maximum allowed
-                        if experience > maximumExperience {
-                            experience = maximumExperience
-                        }
-                    }
+                    Text("Send requests to registered donors")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .lineLimit(2)
                 }
                 
-                Section(header: Text("Professional Information")) {
-                    TextField("Specialization", text: $specialization)
-                    TextField("Qualification", text: $qualification)
-                    
-                    // Updated license field with more general format hint
-                    TextField("License (XX12345)", text: $license)
-                        .onChange(of: license) { _, newValue in
-                            // Format license to uppercase
-                            license = newValue.uppercased()
-                        }
-                    
-                    Stepper("Experience: \(experience) years", value: $experience, in: 0...maximumExperience)
-                        .onChange(of: experience) { _, newValue in
-                            // Enforce the maximum experience constraint
-                            if newValue > maximumExperience {
-                                experience = maximumExperience
-                            }
-                        }
-                }
+                Spacer()
                 
-                Section(header: Text("Contact Information")) {
-                    TextField("Email Address", text: $email)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                    
-                    // Updated phone field with prefix
-                    HStack {
-                        Text("+91")
-                            .foregroundColor(.gray)
-                        TextField("10-digit Phone Number", text: $phoneNumber)
-                            .keyboardType(.numberPad)
-                            .onChange(of: phoneNumber) { _, newValue in
-                                // Keep only digits and limit to 10
-                                let filtered = newValue.filter { "0123456789".contains($0) }
-                                if filtered.count > 10 {
-                                    phoneNumber = String(filtered.prefix(10))
-                                } else {
-                                    phoneNumber = filtered
-                                }
-                            }
-                    }
-                    
-                    // Changed to TextField for address
-                    TextField("Address", text: $address)
-                }
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
             }
-            .navigationTitle("Add Doctor")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveDoctor()
-                    }
-                }
-            }
-            .alert(alertMessage, isPresented: $showAlert) {
-                Button("OK", role: .cancel) {}
-            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
         }
-    }
-    
-    private func saveDoctor() {
-        // Basic input validation
-        if fullName.isEmpty {
-            alertMessage = "Please enter the doctor's full name"
-            showAlert = true
-            return
-        }
-        
-        if specialization.isEmpty {
-            alertMessage = "Please enter the doctor's specialization"
-            showAlert = true
-            return
-        }
-        
-        if !isValidEmail(email) {
-            alertMessage = "Please enter a valid email address"
-            showAlert = true
-            return
-        }
-        
-        // Updated phone validation
-        if phoneNumber.count != 10 {
-            alertMessage = "Please enter a valid 10-digit phone number"
-            showAlert = true
-            return
-        }
-        
-        if qualification.isEmpty {
-            alertMessage = "Please enter the doctor's qualification"
-            showAlert = true
-            return
-        }
-        
-        // Updated license validation
-        if !isValidLicense(license) {
-            alertMessage = "Please enter a valid license in the format XX12345 (2 letters followed by 5 digits)"
-            showAlert = true
-            return
-        }
-        
-        // Added address validation
-        if address.isEmpty {
-            alertMessage = "Please enter the doctor's address"
-            showAlert = true
-            return
-        }
-        
-        // Create a new doctor with full formatted phone number
-        let doctor = Doctor(
-            fullName: fullName,
-            specialization: specialization,
-            email: email,
-            phone: "+91\(phoneNumber)", // Combine the prefix and number
-            gender: gender,
-            dateOfBirth: dateOfBirth,
-            experience: experience,
-            qualification: qualification,
-            license: license,
-            address: address  // Added address
-        )
-        
-        // TODO: Add code to save the doctor to your data store
-        
-        // Display success message and dismiss
-        alertMessage = "Doctor added successfully!"
-        showAlert = true
-        
-        // Reset form for next entry
-        resetForm()
-    }
-    
-    private func resetForm() {
-        fullName = ""
-        specialization = ""
-        email = ""
-        phoneNumber = ""
-        gender = .male
-        dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
-        experience = 0
-        qualification = ""
-        license = ""
-        address = "" // Reset address
-    }
-    
-    private func isValidEmail(_ email: String) -> Bool {
-        let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
-        return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email)
-    }
-    
-    // Updated license validation function to accept any 2 letters followed by 5 digits
-    private func isValidLicense(_ license: String) -> Bool {
-        let licenseRegex = #"^[A-Z]{2}\d{5}$"#
-        return NSPredicate(format: "SELF MATCHES %@", licenseRegex).evaluate(with: license)
     }
 }
 
-// MARK: - Add Lab Admin View
-struct AddLabAdminView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var fullName = ""
-    @State private var email = ""
-    @State private var phoneNumber = "" // This will store only the 10 digits part
-    @State private var gender: LabAdmin.Gender = .male
-    @State private var dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
-    @State private var experience = 0
-    @State private var qualification = ""
-    @State private var address = "" // Added address state
-    @State private var showAlert = false
-    @State private var alertMessage = ""
-    
-    // Calculate maximum experience based on age
-    private var maximumExperience: Int {
-        let calendar = Calendar.current
-        let ageComponents = calendar.dateComponents([.year], from: dateOfBirth, to: Date())
-        let age = ageComponents.year ?? 0
-        return max(0, age - 25) // Experience should be 18 years less than admin's age
-    }
+// MARK: - Blood Donors List Card
+struct BloodDonorsListCard: View {
+    let action: () -> Void
     
     var body: some View {
-        NavigationStack {
-            Form {
-                Section(header: Text("Personal Information")) {
-                    TextField("Full Name", text: $fullName)
+        Button(action: action) {
+            HStack(spacing: 15) {
+                Image(systemName: "doc.text.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.blue)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("All Blood Donors")
+                        .font(.headline)
+                        .foregroundColor(.black)
                     
-                    Picker("Gender", selection: $gender) {
-                        ForEach(LabAdmin.Gender.allCases) { gender in
-                            Text(gender.rawValue).tag(gender)
-                        }
-                    }
-                    
-                    DatePicker("Date of Birth",
-                              selection: $dateOfBirth,
-                              displayedComponents: .date)
-                    .onChange(of: dateOfBirth) { _, _ in
-                        // Adjust experience if it exceeds the maximum allowed
-                        if experience > maximumExperience {
-                            experience = maximumExperience
-                        }
-                    }
+                    Text("View all registered blood donors")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
                 }
                 
-                Section(header: Text("Professional Information")) {
-                    TextField("Qualification", text: $qualification)
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
+            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
+        }
+    }
+}
+
+// MARK: - Analytics Card
+struct AnalyticsCard: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 15) {
+                Image(systemName: "chart.bar.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.purple)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Hospital Revenue")
+                        .font(.headline)
+                        .foregroundColor(.black)
                     
-                    Stepper("Experience: \(experience) years", value: $experience, in: 0...maximumExperience)
-                        .onChange(of: experience) { _, newValue in
-                            // Enforce the maximum experience constraint
-                            if newValue > maximumExperience {
-                                experience = maximumExperience
-                            }
-                        }
+                    Text("View appointment revenue analytics")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
                 }
                 
-                Section(header: Text("Contact Information")) {
-                    TextField("Email Address", text: $email)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                    
-                    // Phone field with prefix
-                    HStack {
-                        Text("+91")
-                            .foregroundColor(.gray)
-                        TextField("10-digit Phone Number", text: $phoneNumber)
-                            .keyboardType(.numberPad)
-                            .onChange(of: phoneNumber) { _, newValue in
-                                // Keep only digits and limit to 10
-                                let filtered = newValue.filter { "0123456789".contains($0) }
-                                if filtered.count > 10 {
-                                    phoneNumber = String(filtered.prefix(10))
-                                } else {
-                                    phoneNumber = filtered
-                                }
-                            }
-                    }
-                    
-                    // Changed to TextField for address
-                    TextField("Address", text: $address)
-                }
-            }
-            .navigationTitle("Add Lab Admin")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
+                Spacer()
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveLabAdmin()
-                    }
-                }
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
             }
-            .alert(alertMessage, isPresented: $showAlert) {
-                Button("OK", role: .cancel) {}
-            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
         }
-    }
-    
-    private func saveLabAdmin() {
-        // Basic input validation
-        if fullName.isEmpty {
-            alertMessage = "Please enter the lab admin's full name"
-            showAlert = true
-            return
-        }
-        
-        if !isValidEmail(email) {
-            alertMessage = "Please enter a valid email address"
-            showAlert = true
-            return
-        }
-        
-        // Phone validation
-        if phoneNumber.count != 10 {
-            alertMessage = "Please enter a valid 10-digit phone number"
-            showAlert = true
-            return
-        }
-        
-        if qualification.isEmpty {
-            alertMessage = "Please enter the lab admin's qualification"
-            showAlert = true
-            return
-        }
-        
-        // Added address validation
-        if address.isEmpty {
-            alertMessage = "Please enter the lab admin's address"
-            showAlert = true
-            return
-        }
-        
-        // Create a new lab admin with full formatted phone number
-        let labAdmin = LabAdmin(
-            fullName: fullName,
-            email: email,
-            phone: "+91\(phoneNumber)", // Combine the prefix and number
-            gender: gender,
-            dateOfBirth: dateOfBirth,
-            experience: experience,
-            qualification: qualification,
-            address: address  // Added address
-        )
-        
-        // TODO: Add code to save the lab admin to your data store
-        
-        // Display success message and dismiss
-        alertMessage = "Lab Admin added successfully!"
-        showAlert = true
-        
-        // Reset form for next entry
-        resetForm()
-    }
-    
-    private func resetForm() {
-        fullName = ""
-        email = ""
-        phoneNumber = ""
-        gender = .male
-        dateOfBirth = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
-        experience = 0
-        qualification = ""
-        address = "" // Reset address
-    }
-    
-    private func isValidEmail(_ email: String) -> Bool {
-        let emailRegex = #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"#
-        return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(with: email)
     }
 }
 
 // MARK: - Modified Admin Home View
 struct AdminHomeView: View {
-    @State private var showAddDoctorView = false
-    @State private var showAddLabAdminView = false
+    @State private var showAddDoctor = false
+    @State private var showAddLabAdmin = false
+    @State private var showProfile = false
+    @State private var showBloodDonationRequest = false
+    @State private var showAllBloodDonors = false
+    @State private var showHospitalAnalytics = false
+    @State private var doctors: [UIDoctor] = []
+    @State private var labAdmins: [UILabAdmin] = []
+    @State private var isLoggedIn = false
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    
+    private let adminController = AdminController.shared
+    
+    private var doctorCount: Int {
+        doctors.count
+    }
+    
+    private var labAdminCount: Int {
+        labAdmins.count
+    }
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(gradient: Gradient(colors: [Color.teal.opacity(0.1), Color.white]),
-                             startPoint: .topLeading,
-                             endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 20) {
-                        // Header
-                        HStack {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Admin's Dashboard")
-                                    .font(.title)
-                                    .fontWeight(.bold)
-                                Text("Hospital Management System")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                            }
-                            Spacer()
-                            
-                            Button(action: {
-                                // TODO: Implement profile action
-                            }) {
-                                Image(systemName: "person.circle.fill")
-                                    .resizable()
-                                    .frame(width: 40, height: 40)
-                                    .foregroundColor(.teal)
-                            }
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Header
+                    HStack {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Admin Dashboard")
+                                .font(.title)
+                                .fontWeight(.bold)
                         }
-                        .padding(.horizontal)
-                        .padding(.top)
+                        Spacer()
                         
-                        // Statistics Summary
+                        Button(action: {
+                            showProfile = true
+                        }) {
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .frame(width: 40, height: 40)
+                                .foregroundColor(.teal)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top)
+                    
+                    if isLoggedIn {
+                        // Quick action
                         LazyVGrid(columns: [
-                            GridItem(.flexible()),
                             GridItem(.flexible()),
                             GridItem(.flexible())
                         ], spacing: 15) {
-                            AdminStatCard(title: "Doctors", value: "0", icon: "stethoscope")
-                            AdminStatCard(title: "Lab Admins", value: "0", icon: "flask.fill")
-                            AdminStatCard(title: "Staff", value: "0", icon: "person.3")
+                            AdminStatCard(
+                                title: "Doctors",
+                                value: "\(doctorCount)",
+                                icon: "stethoscope",
+                                doctors: $doctors
+                            )
+                            AdminStatCard(
+                                title: "Lab Admins",
+                                value: "\(labAdminCount)",
+                                icon: "flask.fill",
+                                labAdmins: $labAdmins
+                            )
                         }
                         .padding(.horizontal)
                         
-                        // Quick Actions Grid
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 20) {
-                            // Add Doctor
-                            AdminDashboardCard(
-                                title: "Add Doctor",
-                                icon: "person.badge.plus",
-                                color: .blue,
-                                action: { showAddDoctorView = true }
-                            )
-                            
-                            // Add Lab Admin (replaced Manage Patients)
-                            AdminDashboardCard(
-                                title: "Add Lab Admin",
-                                icon: "flask.fill",
-                                color: .green,
-                                action: { showAddLabAdminView = true }
-                            )
-                            
-                            // Departments
-                            AdminDashboardCard(
-                                title: "Departments",
-                                icon: "building.2.fill",
-                                color: .purple,
-                                action: { /* TODO: Implement action */ }
-                            )
-                            
-                            // Reports
-                            AdminDashboardCard(
-                                title: "Reports",
-                                icon: "chart.bar.fill",
-                                color: .orange,
-                                action: { /* TODO: Implement action */ }
-                            )
-                            
-                            // Settings
-                            AdminDashboardCard(
-                                title: "Settings",
-                                icon: "gear",
-                                color: .gray,
-                                action: { /* TODO: Implement action */ }
-                            )
-                            
-                            // Notifications
-                            AdminDashboardCard(
-                                title: "Notifications",
-                                icon: "bell.fill",
-                                color: .red,
-                                action: { /* TODO: Implement action */ }
-                            )
+                        // Add Blood Donation Card here
+                        BloodDonationCard {
+                            showBloodDonationRequest = true
                         }
-                        .padding()
+                        .padding(.horizontal)
                         
-                        // Recent Activity
-                        VStack(alignment: .leading, spacing: 15) {
-                            Text("Recent Activity")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .padding(.horizontal)
-                            
-                            // Placeholder for activity list
-                            Text("No recent activity")
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(10)
-                                .shadow(color: .gray.opacity(0.1), radius: 5)
+                        // Add Blood Donors List Card
+                        BloodDonorsListCard {
+                            showAllBloodDonors = true
                         }
-                        .padding()
+                        .padding(.horizontal)
+                        
+                        // Add Analytics Card
+                        AnalyticsCard {
+                            showHospitalAnalytics = true
+                        }
+                        .padding(.horizontal)
                     }
                 }
             }
+            .navigationBarBackButtonHidden(true)
             .navigationBarHidden(true)
-            .sheet(isPresented: $showAddDoctorView) {
-                AddDoctorView()
+            .task {
+                await checkLoginAndFetchData()
             }
-            .sheet(isPresented: $showAddLabAdminView) {
-                AddLabAdminView()
+            .overlay {
+                if isLoading {
+                    ProgressView("Loading...")
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(10)
+                        .shadow(radius: 5)
+                }
             }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
+            .sheet(isPresented: $showAddDoctor) {
+                AddDoctorView { activity in
+                    if let doctor = activity.doctorDetails {
+                        doctors.append(doctor)
+                    }
+                }
+            }
+            .sheet(isPresented: $showAddLabAdmin) {
+                AddLabAdminView { activity in
+                    if let labAdmin = activity.labAdminDetails {
+                        labAdmins.append(labAdmin)
+                    }
+                }
+            }
+            .sheet(isPresented: $showBloodDonationRequest) {
+                BloodDonationRequestView()
+            }
+            .sheet(isPresented: $showAllBloodDonors) {
+                AllBloodDonorsView()
+            }
+            .sheet(isPresented: $showHospitalAnalytics) {
+                HospitalAnalyticsView()
+            }
+            .sheet(isPresented: $showProfile) {
+                HospitalAdminProfileView()
+            }
+        }
+    }
+    
+    private func checkLoginAndFetchData() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        // Check if user is logged in by verifying hospital_id in UserDefaults
+        if let hospitalId = UserDefaults.standard.string(forKey: "hospital_id") {
+            isLoggedIn = true
+            
+            // Activity logging has been disabled
+            
+            do {
+                // Fetch doctors
+                let fetchedDoctors = try await adminController.getDoctorsByHospitalAdmin(hospitalAdminId: hospitalId)
+                doctors = fetchedDoctors.map { doctor in
+                    UIDoctor(
+                        id: doctor.id,
+                        fullName: doctor.name,
+                        specialization: doctor.specialization,
+                        email: doctor.email,
+                        phone: doctor.contactNumber ?? "",
+                        gender: .male, // Default value
+                        dateOfBirth: Date(), // Default value
+                        experience: doctor.experience,
+                        qualification: doctor.qualifications.joined(separator: ", "),
+                        license: doctor.licenseNo,
+                        address: doctor.addressLine
+                    )
+                }
+                
+                // Fetch lab admins
+                let fetchedLabAdmins = try await adminController.getLabAdmins(hospitalAdminId: hospitalId)
+                labAdmins = fetchedLabAdmins.map { labAdmin in
+                    UILabAdmin(
+                        originalId: labAdmin.id,
+                        fullName: labAdmin.name,
+                        email: labAdmin.email,
+                        phone: labAdmin.contactNumber ?? "",
+                        gender: .male, // Default value
+                        dateOfBirth: labAdmin.dateOfBirth ?? Date(), // Use actual DOB from Supabase with fallback
+                        experience: labAdmin.experience, // Use actual experience from Supabase
+                        qualification: labAdmin.department,
+                        license: labAdmin.licenseNo,
+                        address: labAdmin.address
+                    )
+                }
+            } catch {
+                errorMessage = "Failed to fetch data: \(error.localizedDescription)"
+                showError = true
+            }
+        } else {
+            isLoggedIn = false
         }
     }
 }
@@ -595,24 +395,133 @@ struct AdminStatCard: View {
     let title: String
     let value: String
     let icon: String
+    var doctors: Binding<[UIDoctor]>? = nil
+    var labAdmins: Binding<[UILabAdmin]>? = nil
     
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundColor(.teal)
-            Text(value)
-                .font(.title2)
-                .fontWeight(.bold)
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.gray)
+        NavigationLink(destination: destinationView) {
+            VStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 24))
+                    .foregroundColor(.teal)
+                Text(value)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.white)
+            .cornerRadius(15)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
         }
-        .frame(maxWidth: .infinity)
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    @ViewBuilder
+    private var destinationView: some View {
+        switch title {
+        case "Doctors":
+            if let doctorsBinding = doctors {
+                DoctorsListView(doctors: doctorsBinding)
+            } else {
+                DoctorsListView(doctors: .constant([]))
+            }
+        case "Lab Admins":
+            if let labAdminsBinding = labAdmins {
+                LabAdminsListView(labAdmins: labAdminsBinding)
+            } else {
+                LabAdminsListView(labAdmins: .constant([]))
+            }
+        default:
+            EmptyView()
+        }
+    }
+}
+
+struct ActivityRow: View {
+    let activity: UIActivity
+    let onEdit: (UIActivity) -> Void
+    let onDelete: (UIActivity) -> Void
+    @State private var showDetail = false
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(activity.title)
+                    .font(.system(size: 16, weight: .medium))
+                Text(activity.timestamp, style: .relative)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            
+            Spacer()
+            
+            // Status indicator
+            Text(statusText)
+                .font(.caption)
+                .foregroundColor(statusColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(statusColor.opacity(0.1))
+                .cornerRadius(8)
+            
+            // Three dots menu
+            Menu {
+                Button(action: { 
+                    showDetail = true
+                }) {
+                    Label("View Details", systemImage: "eye")
+                }
+                
+                Button(action: { onEdit(activity) }) {
+                    Label("Edit", systemImage: "pencil")
+                }
+                
+                Button(role: .destructive, action: { onDelete(activity) }) {
+                    Label("Delete", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .foregroundColor(.gray)
+                    .padding(8)
+            }
+        }
         .padding()
         .background(Color.white)
-        .cornerRadius(15)
+        .cornerRadius(10)
         .shadow(color: .gray.opacity(0.1), radius: 5)
+        .sheet(isPresented: $showDetail) {
+            ActivityDetailView(activity: activity)
+        }
+    }
+    
+    private var statusText: String {
+        switch activity.status {
+        case .pending:
+            return "Pending"
+        case .approved:
+            return "Approved"
+        case .rejected:
+            return "Rejected"
+        case .completed:
+            return "Completed"
+        }
+    }
+    
+    private var statusColor: Color {
+        switch activity.status {
+        case .pending:
+            return .orange
+        case .approved:
+            return .green
+        case .rejected:
+            return .red
+        case .completed:
+            return .blue
+        }
     }
 }
 
