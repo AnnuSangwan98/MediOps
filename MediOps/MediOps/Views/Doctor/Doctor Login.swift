@@ -11,6 +11,7 @@ struct DoctorLoginView: View {
     @State private var newPassword: String = ""
     @State private var confirmPassword: String = ""
     @State private var isPasswordVisible: Bool = false
+    @State private var shouldShowPasswordReset: Bool = false
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
@@ -102,7 +103,7 @@ struct DoctorLoginView: View {
                             }
                         }
                         
-                        Text("Must contain at least 8 characters, one uppercase letter, one number, and one special character")
+                        Text("Must be at least 8 characters with exactly one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)")
                             .font(.caption)
                             .foregroundColor(.gray)
                             .padding(.top, 4)
@@ -161,25 +162,107 @@ struct DoctorLoginView: View {
     }
     
     private func handleLogin() {
-        // All validation is now handled by the isValidLoginInput computed property
-        // Show change password sheet
-        showChangePasswordSheet = true
+        // Create the request body
+        let credentials = [
+            "userId": doctorId,
+            "password": password,
+            "userType": "doctor"
+        ]
+        
+        // Create the URL request
+        guard let url = URL(string: "http://localhost:8082/validate-credentials") else {
+            errorMessage = "Invalid server URL"
+            showError = true
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Convert credentials to JSON data
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: credentials) else {
+            errorMessage = "Error preparing request"
+            showError = true
+            return
+        }
+        
+        request.httpBody = jsonData
+        
+        // Make the network request
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.errorMessage = "Network error: \(error.localizedDescription)"
+                    self.showError = true
+                    return
+                }
+                
+                guard let data = data else {
+                    self.errorMessage = "No data received from server"
+                    self.showError = true
+                    return
+                }
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    self.errorMessage = "Invalid server response"
+                    self.showError = true
+                    return
+                }
+                
+                // Check HTTP status code
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    self.errorMessage = "Server error (Status \(httpResponse.statusCode))"
+                    self.showError = true
+                    return
+                }
+                
+                // Parse the response using Codable
+                do {
+                    let decoder = JSONDecoder()
+                    struct LoginResponse: Codable {
+                        let status: String
+                        let message: String
+                        let valid: Bool
+                        let data: LoginData?
+                        
+                        struct LoginData: Codable {
+                            let userId: String
+                            let userType: String
+                            let remainingTime: Int
+                        }
+                    }
+                    
+                    let response = try decoder.decode(LoginResponse.self, from: data)
+                    
+                    if response.status == "success" && response.valid {
+                        self.showChangePasswordSheet = true
+                    } else {
+                        self.errorMessage = response.message
+                        self.showError = true
+                    }
+                } catch let decodingError {
+                    print("Parsing error: \(decodingError)")
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("Raw response: \(responseString)")
+                    }
+                    self.errorMessage = "Unable to process server response. Please try again."
+                    self.showError = true
+                }
+            }
+        }.resume()
     }
     
     private func handlePasswordChange() {
-        // All validation is now handled by the isValidPasswordChange computed property
-        // Close the sheet and proceed to login
         showChangePasswordSheet = false
         isLoggedIn = true
     }
     
-    // Validates that the admin ID is in format HOS followed by numbers
     private func isValidAdminId(_ id: String) -> Bool {
         let adminIdRegex = #"^DOC\d+$"#
         return NSPredicate(format: "SELF MATCHES %@", adminIdRegex).evaluate(with: id)
     }
     
-    // Validates password complexity
     private func isValidPassword(_ password: String) -> Bool {
         // At least 8 characters
         guard password.count >= 8 else { return false }
@@ -253,7 +336,6 @@ struct ChangePasswordSheets: View {
                         .padding(.top, 4)
                 }
                 
-                // Confirm Password field with toggle
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Confirm Password")
                         .font(.subheadline)

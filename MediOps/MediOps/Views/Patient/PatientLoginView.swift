@@ -7,6 +7,9 @@ struct PatientLoginView: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var navigateToOTP = false
+    @State private var showForgotPassword = false
+    @State private var isLoading = false
+    @State private var currentOTP: String = ""
     
     private var isloginButtonEnabled: Bool {
         !email.isEmpty && !password.isEmpty && isValidEmail(email) && password.count >= 8
@@ -69,6 +72,13 @@ struct PatientLoginView: View {
                                     .font(.caption)
                                     .foregroundColor(.red)
                             }
+                            Button(action: { showForgotPassword = true }) {
+                                Text("Forgot Password?")
+                                    .font(.caption)
+                                    .foregroundColor(.teal)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.top, 4)
                         }
                         Button(action: handleLogin) {
                             HStack {
@@ -114,7 +124,10 @@ struct PatientLoginView: View {
                 }
             }
             .navigationDestination(isPresented: $navigateToOTP) {
-                PatientOTPVerificationView(email: email)
+                PatientOTPVerificationView(email: email, expectedOTP: currentOTP)
+            }
+            .navigationDestination(isPresented: $showForgotPassword) {
+                PatientForgotPasswordView()
             }
             .navigationBarBackButtonHidden(true)
             .navigationBarItems(leading: CustomBackButton())
@@ -138,9 +151,79 @@ struct PatientLoginView: View {
             showError = true
             return
         }
-        navigateToOTP = true
+        
+        sendOTP()
     }
-
+    
+    private func generateOTP() -> String {
+        String(Int.random(in: 100000...999999))
+    }
+    
+    private func sendOTP() {
+        isLoading = true
+        currentOTP = generateOTP()
+        
+        // Configure server URL with timeout and connection handling
+        var urlComponents = URLComponents()
+        urlComponents.scheme = "http"
+        urlComponents.host = "localhost"
+        urlComponents.port = 8082
+        urlComponents.path = "/send-email"
+        
+        guard let url = urlComponents.url else {
+            errorMessage = "Invalid server configuration. Please contact support."
+            showError = true
+            isLoading = false
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let emailData: [String: Any] = [
+            "to": email,
+            "role": "patient",
+            "otp": currentOTP
+        ]
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: emailData)
+            
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 30
+            config.timeoutIntervalForResource = 30
+            
+            URLSession(configuration: config).dataTask(with: request) { data, response, error in
+                DispatchQueue.main.async {
+                    isLoading = false
+                    
+                    if let error = error {
+                        errorMessage = error.localizedDescription.contains("connection") ? 
+                            "Cannot reach the server. Please check your internet connection and try again." :
+                            "Error: \(error.localizedDescription)"
+                        showError = true
+                        return
+                    }
+                    
+                    if let httpResponse = response as? HTTPURLResponse {
+                        if httpResponse.statusCode == 200 {
+                            navigateToOTP = true
+                        } else {
+                            errorMessage = "Failed to send OTP. Please try again later."
+                            showError = true
+                        }
+                    }
+                }
+            }.resume()
+        } catch {
+            DispatchQueue.main.async {
+                isLoading = false
+                errorMessage = "Error: Failed to prepare email data"
+                showError = true
+            }
+        }
+    }
     
     private func isValidEmail(_ email: String) -> Bool {
         let emailRegEx = "^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}$"

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to MediOps - Hospital Admin Account Details</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; background-color: #f4f7f9;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); margin-top: 20px; margin-bottom: 20px;">
+        <!-- Header -->
+        <div style="background-color: #34495e; padding: 30px 20px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">MediOps</h1>
+            <p style="color: #ffffff; margin: 10px 0 0; font-size: 16px;">Hospital Admin Access Notification</p>
+        </div>
+
+        <!-- Main Content -->
+        <div style="padding: 40px 30px;">
+            <h2 style="color: #2c3e50; margin: 0 0 20px; font-size: 24px;">Hello, {{fullName}}!</h2>
+            <p style="color: #444; margin-bottom: 25px;">You have been assigned as a Hospital Admin in the MediOps system. Below are your account details:</p>
+
+            <!-- Credentials Box -->
+            <div style="background-color: #f8f9fa; border-left: 4px solid #34495e; padding: 20px; margin-bottom: 30px; border-radius: 4px;">
+                <div style="margin-bottom: 15px;">
+                    <p style="margin: 0 0 8px; color: #666;">Hospital Name</p>
+                    <p style="margin: 0; font-size: 18px; color: #2c3e50; font-weight: 600;">{{hospitalName}}</p>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <p style="margin: 0 0 8px; color: #666;">Hospital ID</p>
+                    <p style="margin: 0; font-size: 18px; color: #2c3e50; font-weight: 600;">{{hospitalId}}</p>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <p style="margin: 0 0 8px; color: #666;">Email Address</p>
+                    <p style="margin: 0; font-size: 18px; color: #2c3e50;">{{email}}</p>
+                </div>
+                <div>
+                    <p style="margin: 0 0 8px; color: #666;">Temporary Password</p>
+                    <p style="margin: 0; font-size: 18px; color: #2c3e50; font-family: monospace;">{{password}}</p>
+                </div>
+            </div>
+
+            <!-- Hospital Details -->
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 4px; margin-bottom: 30px;">
+                <h3 style="color: #2c3e50; margin: 0 0 15px; font-size: 18px;">Hospital Details</h3>
+                <p style="color: #444; margin: 0 0 10px;">Address: {{street}}, {{city}}, {{state}} - {{zipCode}}</p>
+                <p style="color: #444; margin: 0 0 10px;">Phone: {{phone}}</p>
+                <p style="color: #444; margin: 0;">License Number: {{licenseNumber}}</p>
+            </div>
+
+            <!-- Security Notice -->
+            <div style="background-color: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 4px; margin-bottom: 30px;">
+                <p style="margin: 0; color: #856404;"><strong>Important Security Notice:</strong> For security purposes, please change your password immediately upon your first login.</p>
+            </div>
+
+            <p style="color: #444; margin-bottom: 0;">For any queries or technical issues, kindly contact the Super Admin or the IT department.</p>
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #eee;">
+            <p style="margin: 0; color: #666; font-size: 12px;">This is an automated message from MediOps Super Admin.</p>
+            <p style="margin: 5px 0 0; color: #666; font-size: 12px;">&copy; 2024 MediOps. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -12,6 +12,7 @@ struct PatientSignupView: View {
     @State private var errorMessage: String = ""
     @State private var navigateToOTP = false
     @State private var suggestedPassword: String? = nil
+    @State private var currentOTP: String = ""
     
     let genders = ["Male", "Female", "Other"]
     
@@ -319,7 +320,7 @@ struct PatientSignupView: View {
             Text(errorMessage)
         }
         .navigationDestination(isPresented: $navigateToOTP) {
-            PatientOTPVerificationView(email: email)
+            PatientOTPVerificationView(email: email, expectedOTP: currentOTP)
         }
     }
     
@@ -327,6 +328,10 @@ struct PatientSignupView: View {
         let emailRegEx = "^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}$"
         let emailPred = NSPredicate(format: "SELF MATCHES %@", emailRegEx)
         return emailPred.evaluate(with: email)
+    }
+    
+    private func generateOTP() -> String {
+        String(Int.random(in: 100000...999999))
     }
     
     private func handleSubmit() {
@@ -360,6 +365,64 @@ struct PatientSignupView: View {
             return
         }
         
-        navigateToOTP = true
+        sendOTP()
+    }
+    
+    private func sendOTP() {
+        currentOTP = generateOTP()
+        
+        guard let url = URL(string: "http://localhost:8082/send-email") else {
+            errorMessage = "Unable to connect to the server. Please verify your network connection and try again."
+            showError = true
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30 // Set timeout to 30 seconds
+        
+        let emailData: [String: Any] = [
+            "to": email,
+            "role": "patient",
+            "otp": currentOTP
+        ]
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: emailData)
+            
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                DispatchQueue.main.async {
+                    if let error = error as NSError? {
+                        switch error.code {
+                        case NSURLErrorTimedOut:
+                            errorMessage = "Request timed out. Please try again."
+                        case NSURLErrorNotConnectedToInternet:
+                            errorMessage = "No internet connection. Please check your network settings."
+                        case NSURLErrorCannotConnectToHost:
+                            errorMessage = "Cannot connect to server. Please try again later."
+                        default:
+                            errorMessage = "Error: \(error.localizedDescription)"
+                        }
+                        showError = true
+                        return
+                    }
+                    
+                    if let httpResponse = response as? HTTPURLResponse {
+                        if httpResponse.statusCode == 200 {
+                            navigateToOTP = true
+                        } else {
+                            errorMessage = "Failed to send OTP. Please try again later."
+                            showError = true
+                        }
+                    }
+                }
+            }.resume()
+        } catch {
+            DispatchQueue.main.async {
+                errorMessage = "Error: Failed to prepare email data"
+                showError = true
+            }
+        }
     }
 }

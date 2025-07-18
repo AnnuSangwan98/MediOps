@@ -10,9 +10,22 @@
 		EFC466352D830B7A001C272D /* MediOps.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MediOps.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EF3FFFE62D8C3B3D00EF3626 /* Exceptions for "MediOps" folder in "MediOps" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+			);
+			target = EFC466342D830B79001C272D /* MediOps */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EFC466372D830B7A001C272D /* MediOps */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				EF3FFFE62D8C3B3D00EF3626 /* Exceptions for "MediOps" folder in "MediOps" target */,
+			);
 			path = MediOps;
 			sourceTree = "<group>";
 		};

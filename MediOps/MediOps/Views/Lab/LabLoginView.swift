@@ -8,11 +8,20 @@ struct LabLoginView: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var isPasswordVisible: Bool = false
+    @State private var showChangePasswordSheet: Bool = false
+    @State private var newPassword: String = ""
+    @State private var confirmPassword: String = ""
+    @State private var shouldShowPasswordReset: Bool = false
     
     // Computed properties for validation
     private var isValidLoginInput: Bool {
         return !labId.isEmpty && !password.isEmpty &&
                isValidLabId(labId) && isValidPassword(password)
+    }
+    
+    private var isValidPasswordChange: Bool {
+        return !newPassword.isEmpty && !confirmPassword.isEmpty &&
+               newPassword == confirmPassword && isValidPassword(newPassword)
     }
     
     var body: some View {
@@ -93,6 +102,11 @@ struct LabLoginView: View {
                                 }
                             }
                         }
+                        
+                        Text("Must be at least 8 characters with exactly one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .padding(.top, 4)
                     }
                     
                     // Login Button
@@ -129,6 +143,14 @@ struct LabLoginView: View {
             NavigationLink(destination: LabDashboardView(), isActive: $isLoggedIn) {
                 EmptyView()
             }
+            NavigationLink(destination: ChangePasswordSheet(
+                newPassword: $newPassword,
+                confirmPassword: $confirmPassword,
+                isValidInput: isValidPasswordChange,
+                onSubmit: handlePasswordChange
+            ), isActive: $shouldShowPasswordReset) {
+                EmptyView()
+            }
         }
         .navigationBarBackButtonHidden(true)
         .navigationBarItems(leading: CustomBackButton())
@@ -137,10 +159,110 @@ struct LabLoginView: View {
         } message: {
             Text(errorMessage)
         }
+        .sheet(isPresented: $showChangePasswordSheet) {
+            ChangePasswordSheet(
+                newPassword: $newPassword,
+                confirmPassword: $confirmPassword,
+                isValidInput: isValidPasswordChange,
+                onSubmit: handlePasswordChange
+            )
+        }
     }
     
     private func handleLogin() {
-        // TODO: Implement actual login logic here
+        // Create the request body
+        let credentials = [
+            "userId": labId,
+            "password": password,
+            "userType": "lab"
+        ]
+        
+        // Create the URL request
+        guard let url = URL(string: "http://localhost:8082/validate-credentials") else {
+            errorMessage = "Invalid server URL"
+            showError = true
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Convert credentials to JSON data
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: credentials) else {
+            errorMessage = "Error preparing request"
+            showError = true
+            return
+        }
+        
+        request.httpBody = jsonData
+        
+        // Make the network request
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.errorMessage = "Network error: \(error.localizedDescription)"
+                    self.showError = true
+                    return
+                }
+                
+                guard let data = data else {
+                    self.errorMessage = "No data received from server"
+                    self.showError = true
+                    return
+                }
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    self.errorMessage = "Invalid server response"
+                    self.showError = true
+                    return
+                }
+                
+                // Check HTTP status code
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    self.errorMessage = "Server error (Status \(httpResponse.statusCode))"
+                    self.showError = true
+                    return
+                }
+                
+                // Parse the response using Codable
+                do {
+                    let decoder = JSONDecoder()
+                    struct LoginResponse: Codable {
+                        let status: String
+                        let message: String
+                        let valid: Bool
+                        let data: LoginData?
+                        
+                        struct LoginData: Codable {
+                            let userId: String
+                            let userType: String
+                            let remainingTime: Int
+                        }
+                    }
+                    
+                    let response = try decoder.decode(LoginResponse.self, from: data)
+                    
+                    if response.status == "success" && response.valid {
+                        self.showChangePasswordSheet = true
+                    } else {
+                        self.errorMessage = response.message
+                        self.showError = true
+                    }
+                } catch let decodingError {
+                    print("Parsing error: \(decodingError)")
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("Raw response: \(responseString)")
+                    }
+                    self.errorMessage = "Unable to process server response. Please try again."
+                    self.showError = true
+                }
+            }
+        }.resume()
+    }
+    
+    private func handlePasswordChange() {
+        showChangePasswordSheet = false
         isLoggedIn = true
     }
     
@@ -159,6 +281,10 @@ struct LabLoginView: View {
         let uppercaseRegex = ".*[A-Z]+.*"
         guard NSPredicate(format: "SELF MATCHES %@", uppercaseRegex).evaluate(with: password) else { return false }
         
+        // Check for at least one lowercase letter
+        let lowercaseRegex = ".*[a-z]+.*"
+        guard NSPredicate(format: "SELF MATCHES %@", lowercaseRegex).evaluate(with: password) else { return false }
+        
         // Check for at least one number
         let numberRegex = ".*[0-9]+.*"
         guard NSPredicate(format: "SELF MATCHES %@", numberRegex).evaluate(with: password) else { return false }
@@ -168,6 +294,149 @@ struct LabLoginView: View {
         guard NSPredicate(format: "SELF MATCHES %@", specialCharRegex).evaluate(with: password) else { return false }
         
         return true
+    }
+}
+
+struct ChangePasswordSheetForLab: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var newPassword: String
+    @Binding var confirmPassword: String
+    @State private var isNewPasswordVisible: Bool = false
+    @State private var isConfirmPasswordVisible: Bool = false
+    var isValidInput: Bool
+    var onSubmit: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            // Header
+            Text("Change Password")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundColor(.teal)
+                .padding(.top, 20)
+            
+            // Form fields
+            VStack(spacing: 20) {
+                // New Password field with toggle
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("New Password")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    
+                    ZStack {
+                        if isNewPasswordVisible {
+                            TextField("Enter new password", text: $newPassword)
+                                .textFieldStyle(CustomTextFieldStyle())
+                        } else {
+                            SecureField("Enter new password", text: $newPassword)
+                                .textFieldStyle(CustomTextFieldStyle())
+                        }
+                        
+                        HStack {
+                            Spacer()
+                            Button(action: {
+                                isNewPasswordVisible.toggle()
+                            }) {
+                                Image(systemName: isNewPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                                    .foregroundColor(.gray)
+                                    .padding(.trailing, 16)
+                            }
+                        }
+                    }
+                    
+                    Text("Must contain at least 8 characters, one uppercase letter, one number, and one special character")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.top, 4)
+                }
+                
+                // Confirm Password field with toggle
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Confirm Password")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    
+                    ZStack {
+                        if isConfirmPasswordVisible {
+                            TextField("Confirm new password", text: $confirmPassword)
+                                .textFieldStyle(CustomTextFieldStyle())
+                        } else {
+                            SecureField("Confirm new password", text: $confirmPassword)
+                                .textFieldStyle(CustomTextFieldStyle())
+                        }
+                        
+                        HStack {
+                            Spacer()
+                            Button(action: {
+                                isConfirmPasswordVisible.toggle()
+                            }) {
+                                Image(systemName: isConfirmPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                                    .foregroundColor(.gray)
+                                    .padding(.trailing, 16)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            
+            // Submit Button
+            Button(action: onSubmit) {
+                Text("Submit")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 55)
+                    .background(
+                        LinearGradient(gradient: Gradient(colors: [
+                            isValidInput ? Color.teal : Color.gray.opacity(0.5),
+                            isValidInput ? Color.teal.opacity(0.8) : Color.gray.opacity(0.3)
+                        ]),
+                        startPoint: .leading,
+                        endPoint: .trailing)
+                    )
+                    .cornerRadius(15)
+                    .shadow(color: isValidInput ? .teal.opacity(0.3) : .gray.opacity(0.1), radius: 5, x: 0, y: 5)
+            }
+            .disabled(!isValidInput)
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            
+            Spacer()
+        }
+        .padding(.top, 20)
+        .background(Color.white)
+        .cornerRadius(20)
+        .shadow(radius: 10)
+    }
+}
+
+// Custom TextField Style
+struct CustomTextFieldStyleForLab: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .padding()
+            .background(Color.white)
+            .cornerRadius(10)
+            .shadow(color: .gray.opacity(0.1), radius: 5, x: 0, y: 2)
+    }
+}
+
+// Custom Back Button
+struct CustomBackButtonForLab: View {
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        Button(action: {
+            dismiss()
+        }) {
+            Image(systemName: "chevron.left")
+                .foregroundColor(.teal)
+                .font(.system(size: 16, weight: .semibold))
+                .padding(10)
+                .background(Circle().fill(Color.white))
+                .shadow(color: .gray.opacity(0.2), radius: 3)
+        }
     }
 }
 
